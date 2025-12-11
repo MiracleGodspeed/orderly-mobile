@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
+import { ProgressProvider } from '../../context/ProgressContext';
 
 // Import screens
 import SplashScreen from '../screens/SplashScreen';
@@ -15,13 +16,18 @@ import OtpSuccess from '../screens/OtpSuccess';
 import ForgotPassword from '../screens/ForgotPassword'
 import ResetLink from '../screens/ResetLink'
 import ResetPassword from '../screens/ResetPassword'
+import SetupStep1 from '../screens/SetupStep1';
+import SetupStep2 from '../screens/SetupStep2';
+import SetupStep3 from '../screens/SetupStep3';
+import SetupStep4 from '../screens/SetupStep4';
 
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   return (
-    <NavigationContainer
+    <ProgressProvider>
+        <NavigationContainer
       theme={{
         dark: false,
         colors: {
@@ -83,10 +89,17 @@ export default function RootNavigator() {
         <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
         <Stack.Screen name="ResetLink" component={ResetLink} />
         <Stack.Screen name="ResetPassword" component={ResetPassword} />
+        <Stack.Screen name="SetupStep1" component={SetupStep1} />
+        <Stack.Screen name="SetupStep2" component={SetupStep2} />
+        <Stack.Screen name="SetupStep3" component={SetupStep3} />
+        <Stack.Screen name="SetupStep4" component={SetupStep4} />
+
 
 
         <Stack.Screen name="Login" component={Login} />
       </Stack.Navigator>
     </NavigationContainer>
+    </ProgressProvider>
+    
   );
 }

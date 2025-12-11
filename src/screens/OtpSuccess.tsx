@@ -12,7 +12,7 @@ import ConfettiCannon from "react-native-confetti-cannon";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { RootStackParamList } from "../navigation/types"; // adjust path if needed
+import { RootStackParamList } from "../navigation/types"; 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -66,7 +66,7 @@ export default function OtpSuccess() {
           <TouchableOpacity
             onPress={() => {
               // navigate to main app screen — change route name to whatever your flow expects
-              navigation.navigate("Home" as any);
+              navigation.navigate("SetupStep1");
             }}
             activeOpacity={0.8}
             className="w-full py-4 rounded-full items-center justify-center bg-[#1A56DB]"

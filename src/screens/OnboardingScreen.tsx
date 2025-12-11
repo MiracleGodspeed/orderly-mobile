@@ -136,7 +136,7 @@ export default function OnboardingScreen() {
             
             <TouchableOpacity 
               className="w-full py-4 border-2 border-[#fff] rounded-xl items-center justify-center"
-              // onPress={() => navigation.navigate('Login')}
+              onPress={() => navigation.navigate('Login')}
               activeOpacity={0.8}
             >
               <Text className="text-[#265CC7] text-lg font-semibold">

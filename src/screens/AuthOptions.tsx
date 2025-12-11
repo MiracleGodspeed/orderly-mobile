@@ -2,7 +2,7 @@ import {
   View,
   Text,
   TouchableOpacity,
- 
+  Image,
   StatusBar,
   Platform
 } from 'react-native';
@@ -12,6 +12,8 @@ import { useNavigation } from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
+import Fontisto from '@expo/vector-icons/Fontisto';
+import AntDesign from '@expo/vector-icons/AntDesign';
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -38,9 +40,9 @@ export default function AuthOptions ()  {
     <Text className='px-3 text-[16px] font-[400] pt-8 text-[#6B7280]'>Start your stress free business management journey here.</Text>
     <View className="space-y-4">
         <TouchableOpacity 
-            className="w-full mt-5 py-4 border-2 border-[#265CC7] bg-[#265CC7] rounded-full items-center justify-center flex-row space-x-8"
-            
+            className="w-full mt-5 py-4 border border-[#265CC7] bg-[#265CC7] rounded-full items-center justify-center flex-row space-x-8"
             activeOpacity={0.8}
+             onPress={() => navigation.navigate('EmailSignUp')}
           >
             <Ionicons name="mail-outline" size={22} color="#fff" className='mr-3'/>
 
@@ -48,7 +50,29 @@ export default function AuthOptions ()  {
               Continue with Email
             </Text>
           </TouchableOpacity>
+        
+          <TouchableOpacity 
+          
+            className="w-full mt-5 mb-5 py-4 border border-[#9CA3AF] bg-[#fff] rounded-full items-center justify-center flex-row space-x-8"
+            
+            activeOpacity={0.8}
+          >
+            
+            <Image
+              source={require('../../assets/Google.png')}
+              style={{ width: 24, height: 24 }}
+              resizeMode="contain"
+              className='mr-3'
+            />
+            <Text className="text-[#4B5563] text-[16px] font-[500] ">
+              Sign in with Google
+            </Text>
+          </TouchableOpacity>
+          
 
+          <View className='text-center px-5 mx-auto'>
+           <Text className="text-[#6B7280] text-[16px] font-[400]">Already have an account? <Text className="text-[#1C64F2] text-[16px] font-[400]" onPress={() => navigation.navigate('Login')}>Sign In</Text> </Text>
+          </View>
 
     </View>
     </View>

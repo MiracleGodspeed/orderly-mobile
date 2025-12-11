@@ -9,6 +9,13 @@ import Login from '../screens/Login';
 import SignupScreen from '../screens/Signup';
 import OnboardingScreen from '../screens/OnboardingScreen';
 import AuthOptions from '../screens/AuthOptions';
+import EmailSignUp from '../screens/EmailSignUp';
+import OtpVerification from '../screens/OtpVerification';
+import OtpSuccess from '../screens/OtpSuccess';
+import ForgotPassword from '../screens/ForgotPassword'
+import ResetLink from '../screens/ResetLink'
+import ResetPassword from '../screens/ResetPassword'
+
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -69,9 +76,16 @@ export default function RootNavigator() {
           }}
         />
         <Stack.Screen name="AuthOptions" component={AuthOptions} />
-          <Stack.Screen name="Signup" component={SignupScreen} />
+        <Stack.Screen name="EmailSignUp" component={EmailSignUp} />
+        <Stack.Screen name="Signup" component={SignupScreen} />
+        <Stack.Screen name="OtpVerification" component={OtpVerification} />
+        <Stack.Screen name="OtpSuccess" component={OtpSuccess} />
+        <Stack.Screen name="ForgotPassword" component={ForgotPassword} />
+        <Stack.Screen name="ResetLink" component={ResetLink} />
+        <Stack.Screen name="ResetPassword" component={ResetPassword} />
+
+
         <Stack.Screen name="Login" component={Login} />
-      
       </Stack.Navigator>
     </NavigationContainer>
   );

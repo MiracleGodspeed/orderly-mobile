@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect, useState, useCallback } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import RootNavigator from './src/navigation/RootNavigator';
+import Toast from 'react-native-toast-message';
 
 
 SplashScreen.preventAutoHideAsync();
@@ -42,6 +43,7 @@ export default function App() {
         <StatusBar style="light" backgroundColor="#265CC7" />
         <RootNavigator />
       </View>
+      <Toast />
     </SafeAreaProvider>
   );
 }

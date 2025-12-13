@@ -191,9 +191,9 @@ useEffect(() => {
       </View>
 
       {/* Bottom Modal */}
-      <Modal
-           visible={modalVisible}
-            transparent
+          <Modal
+            visible={modalVisible}
+            transparent = {true}
             animationType="slide"
             onRequestClose={() => !isResetting && setModalVisible(false)}
             >

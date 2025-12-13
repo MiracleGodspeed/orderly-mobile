@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, } from 'react';
 import { 
   View, 
   Text, 
@@ -42,11 +42,54 @@ export default function OnboardingScreen() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const [currentIndex, setCurrentIndex] = useState(0);
   const flatListRef = useRef<FlatList>(null);
+ const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+
+ useEffect(() => {
+    startAutoScroll();
+    
+    return () => {
+      // Cleanup timer on unmount
+      if (autoScrollTimer.current) {
+        clearInterval(autoScrollTimer.current);
+      }
+    };
+  }, [currentIndex]);
+
+  const startAutoScroll = () => {
+    // Clear existing timer
+    if (autoScrollTimer.current) {
+      clearInterval(autoScrollTimer.current);
+    }
+
+    // Start new timer
+    autoScrollTimer.current = setInterval(() => {
+      const nextIndex = (currentIndex + 1) % slides.length;
+      flatListRef.current?.scrollToIndex({
+        index: nextIndex,
+        animated: true,
+      });
+      setCurrentIndex(nextIndex);
+    }, 3000); // Auto-scroll every 3 seconds
+  };
+
 
   const handleScroll = (event: any) => {
     const contentOffsetX = event.nativeEvent.contentOffset.x;
     const index = Math.round(contentOffsetX / screenWidth);
-    setCurrentIndex(index);
+    
+    if (index !== currentIndex) {
+      setCurrentIndex(index);
+    }
+  };
+
+  const handleScrollBeginDrag = () => {
+    if (autoScrollTimer.current) {
+      clearInterval(autoScrollTimer.current);
+    }
+  };
+
+  const handleScrollEndDrag = () => {
+    startAutoScroll();
   };
 
   const renderSlide = ({ item }: { item: any }) => (
@@ -102,6 +145,8 @@ export default function OnboardingScreen() {
             showsHorizontalScrollIndicator={false}
             onScroll={handleScroll}
             scrollEventThrottle={16}
+            onScrollBeginDrag={handleScrollBeginDrag}
+            onScrollEndDrag={handleScrollEndDrag}
             decelerationRate="fast"
           />
           

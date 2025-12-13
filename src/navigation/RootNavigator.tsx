@@ -19,7 +19,7 @@ import ResetPassword from '../screens/ResetPassword'
 import SetupStep1 from '../screens/SetupStep1';
 import SetupStep2 from '../screens/SetupStep2';
 import SetupStep3 from '../screens/SetupStep3';
-import SetupStep4 from '../screens/SetupStep4';
+import Home from '../screens/Home';
 
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -92,7 +92,7 @@ export default function RootNavigator() {
         <Stack.Screen name="SetupStep1" component={SetupStep1} />
         <Stack.Screen name="SetupStep2" component={SetupStep2} />
         <Stack.Screen name="SetupStep3" component={SetupStep3} />
-        <Stack.Screen name="SetupStep4" component={SetupStep4} />
+        <Stack.Screen name="Home" component={Home} />
 
 
 

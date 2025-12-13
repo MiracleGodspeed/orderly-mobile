@@ -13,5 +13,9 @@ export type RootStackParamList = {
   SetupStep1: undefined;
   SetupStep2: undefined;
   SetupStep3: undefined;
-  SetupStep4: undefined;
+  Home: undefined;
+  Orders: undefined;
+  Store: undefined;
+  Reports: undefined;
+  Profile: undefined;
 };

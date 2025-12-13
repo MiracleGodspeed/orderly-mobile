@@ -39,27 +39,18 @@ export default function SetupStep1() {
 
   return (
     <SafeAreaView className="flex-1 bg-white">
-      <View className="px-4 pt-5">
-        <View className="flex-row items-center justify-between">
-          <TouchableOpacity
+      <View className="pt-6 px-6">
+        <View className="flex-row items-center justify-between relative">
+          <TouchableOpacity 
+            className="absolute left-0 p-2"
             onPress={() => navigation.goBack()}
             activeOpacity={0.7}
-            className="p-2"
-          >
-            <Ionicons name="arrow-back" size={22} color="#111827" />
-          </TouchableOpacity>
-
-          <View className="flex-1 px-3">
-            
-            <View className="flex-row items-center">
-              <View className="flex-1">
-                <ProgressBar />
-              </View>
-              <Text className="ml-3 text-sm text-gray-400">
-                {Math.round((progress ?? 0) * 100)}%
-              </Text>
-            </View>
-          </View>
+            >
+                <Ionicons name="arrow-back" size={24} color="#000" />
+          </TouchableOpacity>   
+        </View>
+        <View className="mt-10">
+          <ProgressBar />
         </View>
 
       
@@ -162,7 +153,7 @@ export default function SetupStep1() {
             disabled={!selectedOption}
             activeOpacity={0.9}
             className={`w-full py-4 rounded-full items-center justify-center ${
-              selectedOption ? 'bg-[#E6EEF9]' : 'bg-gray-200'
+              selectedOption ? 'bg-[#1A56DB]' : 'bg-[#E5E7EB]'
             }`}
             style={{
              
@@ -170,10 +161,10 @@ export default function SetupStep1() {
             }}
           >
             <View className="flex-row items-center ">
-              <Text className={`${selectedOption ? 'text-[#111827]' : 'text-gray-500'} font-semibold text-base`}>
+              <Text className={`${selectedOption ? 'text-[#fff]' : 'text-[#1F2A37]'} font-[500] text-[16px]`}>
                 Continue
               </Text>
-              <Ionicons name="arrow-forward" size={18} color={selectedOption ? '#111827' : '#9CA3AF'} style={{ marginLeft: 10 }} />
+              <Ionicons name="arrow-forward" size={18} color={selectedOption ? '#fff' : '#1F2A37'} style={{ marginLeft: 10 }} />
             </View>
           </TouchableOpacity>
         </View>

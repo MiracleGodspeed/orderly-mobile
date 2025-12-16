@@ -6,6 +6,8 @@ import { useEffect, useState, useCallback } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import RootNavigator from './src/navigation/RootNavigator';
 import Toast from 'react-native-toast-message';
+import { useFonts } from 'expo-font';
+import { Ionicons, AntDesign, Octicons, MaterialIcons } from '@expo/vector-icons';
 
 
 SplashScreen.preventAutoHideAsync();
@@ -16,10 +18,10 @@ export default function App() {
   useEffect(() => {
     async function prepare() {
       try {
-        
         setAppIsReady(true);
       } catch (e) {
         console.warn(e);
+        setAppIsReady(true);
       }
     }
 

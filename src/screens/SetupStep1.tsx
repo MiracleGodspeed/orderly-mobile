@@ -14,6 +14,7 @@ import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import Feather from '@expo/vector-icons/Feather';
+import { useVendor } from "../../context/VendorContext";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -24,6 +25,7 @@ import { useProgress } from '../../context/ProgressContext';
 export default function SetupStep1() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const { setProgress } = useProgress();
+  const { setBusinessInfo } = useVendor();
 
   const [businessName, setBusinessName] = useState('');
   const [description, setDescription] = useState('');
@@ -33,13 +35,12 @@ export default function SetupStep1() {
   const isValid = businessName.trim() !== '' && description.trim() !== '';
 
   const handleContinue = () => {
-    if (!isValid) return;
-    
-    navigation.navigate('SetupStep2');
-    // setTimeout(() => {
-      setProgress(0.25);
-    // }, 50);
-  };
+  if (!isValid) return;
+
+  setBusinessInfo(businessName, description);
+  setProgress(0.25);
+  navigation.navigate("SetupStep2");
+};
 
   return (
     <SafeAreaView  className="flex-1 bg-white">

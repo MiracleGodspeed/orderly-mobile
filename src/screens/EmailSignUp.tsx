@@ -6,14 +6,17 @@ import {
   StatusBar,
   Platform,
   TextInput,
-
+  ActivityIndicator,
 } from 'react-native';
 import React, { useState } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import Toast from 'react-native-toast-message';
+import { SignupRequest } from '../api/auth/auth.types';
+import { signup } from '../api/auth/auth.api';
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -27,13 +30,66 @@ export default function EmailSignUp() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [acceptMarketing, setAcceptMarketing] = useState(false)
+   const [loading, setLoading] = useState(false);
 
   const isFormValid = email.trim() !== '' && 
                       password.trim() !== '' && 
                       confirmPassword.trim() !== '';
   
-  const handleNext = () => {
-    // Add your navigation logic here
+  const handleSignup = async () => {
+    if(password !== confirmPassword) {
+      Toast.show({
+        type: 'error',
+        text1: 'Passwords do not match',
+      })
+      return;
+    }
+    setLoading(true);
+
+    const payload: SignupRequest = {
+      email: email,
+      password: password,
+      otp: '',
+      skipVerificationForLater: false,
+    }
+    try {
+      const response = await signup(payload);
+       console.log('Signup response:', response);
+       Toast.show({
+        type: 'success',
+        text1: 'OTP sent',
+        text2: 'Check your email for the verification code',
+      });
+      navigation.navigate('OtpVerification', { email, password });
+
+
+    } catch(err) {
+       console.error('Signup error:', err);
+       let errorMessage = 'Signup failed. Please try again.';
+    
+    
+    if (err instanceof Error) {
+      errorMessage = err.message;
+    } else if (typeof err === 'string') {
+      errorMessage = err;
+    } else if (err && typeof err === 'object' && 'message' in err) {
+     
+      errorMessage = String((err as any).message);
+    }
+    
+    Toast.show({
+      type: 'error',
+      text1: 'Sign Up Failed',
+      text2: errorMessage,
+    });
+
+    } finally {
+       setLoading(false);
+
+    }
+
+   
+
     console.log('Form submitted', { email, password, confirmPassword, acceptMarketing });
   };
   
@@ -145,21 +201,22 @@ export default function EmailSignUp() {
             I'd like to receive marketing offers from Orderly
           </Text>
         </TouchableOpacity>
-        <TouchableOpacity 
+        <TouchableOpacity
           className={`py-4 rounded-full items-center justify-center ${
             isFormValid ? 'bg-[#1A56DB]' : 'bg-[#E5E7EB]'
-          }`}
-          onPress={() => navigation.navigate('OtpVerification')}
-
-          disabled={!isFormValid}
+          } flex-row`}
+          onPress={handleSignup}
+          disabled={!isFormValid || loading} // disable during loading
           activeOpacity={0.8}
         >
+          {loading && <ActivityIndicator color="#fff" size="small" className="mr-2" />}
           <Text className={`text-lg font-semibold ${
             isFormValid ? 'text-white' : 'text-[#1F2A37]'
           }`}>
-            Next
+            {loading ? 'Signing up...' : 'Next'}
           </Text>
         </TouchableOpacity>
+
         <View className="mt-auto pb-6 mb-6fgh">
           <Text className="text-[14px] text-center text-[#6B7280]">
             By signing up, I agree to Orderly's{' '}

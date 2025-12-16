@@ -8,11 +8,8 @@ import Header from '../components/Header';
 import BottomNav from '../components/BottomNav';
 import MenuOverlay from '../components/MenuOverlay';
 import StoreSetupProgress from '../components/StoreSetupProgress';
-import { Ionicons } from '@expo/vector-icons';
-import Feather from '@expo/vector-icons/Feather';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import Octicons from '@expo/vector-icons/Octicons';
-import AntDesign from '@expo/vector-icons/AntDesign';
+import { Ionicons, Feather, MaterialIcons, Octicons } from '@expo/vector-icons';
+
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -156,7 +153,7 @@ export default function Home() {
 
                             <TouchableOpacity className="items-center" activeOpacity={0.7}>
                             <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
-                                <AntDesign name="bar-chart" size={24} color="#1A56DB" />
+                                  <Ionicons name="bar-chart-outline" size={24} color="#1A56DB" />
                             </View>
                             <Text className="text-xs text-[#404040] text-center w-16">
                                 Analytics

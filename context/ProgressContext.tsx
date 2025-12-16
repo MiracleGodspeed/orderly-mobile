@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useState } from 'react';
 
 type ProgressContextType = {
-  progress: number; // 0..1
+  progress: number; 
   setProgress: (p: number) => void;
   resetProgress: () => void;
 };
@@ -13,7 +13,7 @@ export const ProgressProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const [progress, setProgressState] = useState<number>(0);
 
   const setProgress = (p: number) => {
-    // clamp between 0 and 1
+   
     const clamped = Math.max(0, Math.min(1, p));
     setProgressState(clamped);
   };

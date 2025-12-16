@@ -6,9 +6,8 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "resizeMode": "contain",
+    "newArchEnabled": false,
+   "splash": {
       "backgroundColor": "#265CC7"
     },
     "ios": {

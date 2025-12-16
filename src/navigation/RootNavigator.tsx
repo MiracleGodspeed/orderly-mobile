@@ -2,8 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
-import { ProgressProvider } from '../../context/ProgressContext';
-
+import { AppProviders } from '../../context/AppProviders';
 // Import screens
 import SplashScreen from '../screens/SplashScreen';
 import Login from '../screens/Login';
@@ -26,7 +25,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function RootNavigator() {
   return (
-    <ProgressProvider>
+    <AppProviders>
         <NavigationContainer
       theme={{
         dark: false,
@@ -99,7 +98,7 @@ export default function RootNavigator() {
         <Stack.Screen name="Login" component={Login} />
       </Stack.Navigator>
     </NavigationContainer>
-    </ProgressProvider>
+    </AppProviders>
     
   );
 }

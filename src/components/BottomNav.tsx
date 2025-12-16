@@ -32,7 +32,7 @@ export default function BottomNav() {
   };
 
   const handleTabPress = (screen: keyof RootStackParamList) => {
-    navigation.navigate(screen);
+    navigation.navigate(screen as any);
   };
 
   return (

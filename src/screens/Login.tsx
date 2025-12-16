@@ -6,6 +6,7 @@ import {
   StatusBar,
   Platform,
   TextInput,
+  ActivityIndicator,
 
 } from 'react-native';
 import React, { useState } from 'react';
@@ -14,18 +15,52 @@ import { useNavigation } from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../../context/AuthContext';
+import Toast from 'react-native-toast-message';
+
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export default function Login() {
   const navigation = useNavigation<ScreenNavigationProp>();
+  const {login} = useAuth()
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
-    console.log('Login pressed:', { email, password,  });
+  const handleLogin = async () => {
+   try {
+    setLoading(true);
+
+     console.log('Login pressed:', { email, password,  });
+    const data = await login(email, password);
+    console.log("LOGIN API RESPONSE:", data);
+
+     navigation.navigate('Home')
+   } catch (err) {
+    console.log("Login error:", err);
+    let errorMessage = 'Signup failed. Please try again.';
+        
+        
+        if (err instanceof Error) {
+          errorMessage = err.message;
+        } else if (typeof err === 'string') {
+          errorMessage = err;
+        } else if (err && typeof err === 'object' && 'message' in err) {
+         
+          errorMessage = String((err as any).message);
+        }
+        
+        Toast.show({
+          type: 'error',
+          text1: 'Login Failed',
+          text2: errorMessage,
+        });
+   } finally {
+    setLoading(false);
+   }
   };
 
     const isFormValid = email.trim() !== '' && 
@@ -90,21 +125,25 @@ export default function Login() {
                 </View>
            
           
-           <TouchableOpacity 
-             className={`py-4 rounded-full items-center justify-center ${
-               isFormValid ? 'bg-[#1A56DB]' : 'bg-[#E5E7EB]'
-             }`}
-             onPress={() => navigation.navigate('OtpVerification')}
-   
-             disabled={!isFormValid}
-             activeOpacity={0.8}
-           >
-             <Text className={`text-lg font-semibold ${
-               isFormValid ? 'text-white' : 'text-[#1F2A37]'
-             }`}>
-               Login
-             </Text>
-           </TouchableOpacity>
+           <TouchableOpacity
+              className={`py-4 rounded-full flex-row justify-center items-center ${
+                isFormValid ? 'bg-[#1A56DB]' : 'bg-[#E5E7EB]'
+              }`}
+              onPress={handleLogin}
+              disabled={!isFormValid || loading} // disable while loading
+              activeOpacity={0.8}
+            >
+              {loading ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" className="mr-2" />
+                  <Text className="text-lg font-semibold text-white">Logging in...</Text>
+                </>
+              ) : (
+                <Text className={`text-lg font-semibold ${isFormValid ? 'text-white' : 'text-[#1F2A37]'}`}>
+                  Login
+                </Text>
+              )}
+            </TouchableOpacity>
            <Text className='text-center mt-5 text-[#6B7280] text-[16px] ' onPress={() => navigation.navigate('ForgotPassword')}>Forgot password?</Text>
            <View className="flex-row items-center my-4 mt-8">
               <View className="flex-1 h-[1px] bg-gray-300" />

@@ -17,4 +17,5 @@
 ## Run the App
 ```bash
 npx expo run:ios
+npx expo run:android
 ```

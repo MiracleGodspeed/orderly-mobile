@@ -13,6 +13,7 @@ import { useNavigation } from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
+import { useVendor } from "../../context/VendorContext";
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -23,6 +24,7 @@ import { useProgress } from '../../context/ProgressContext';
 export default function SetupStep1() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const { setProgress, progress } = useProgress();
+  const { setServiceType } = useVendor();
 
   const [selectedOption, setSelectedOption] = useState<'products' | 'services' | null>(null);
 
@@ -33,6 +35,7 @@ export default function SetupStep1() {
 
   const handleContinue = () => {
     if (!selectedOption) return;
+    setServiceType(selectedOption === 'services');
     setProgress(0.5);
     navigation.navigate('SetupStep3'); 
   };

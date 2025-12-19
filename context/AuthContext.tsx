@@ -2,6 +2,11 @@ import React, { createContext, useContext, useState, ReactNode, useEffect } from
 import { login as loginApi } from "./../src/api/auth/auth.api";
 import {setAuthToken} from "./../src/api/setAuthToken"
 import { LoginResponse } from "../src/api/auth/auth.types";
+import {
+  saveAuthToStorage,
+  clearAuthFromStorage,
+  getAuthFromStorage,
+} from "./auth.storage";
 
 
 
@@ -16,8 +21,10 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (email: string, password: string) => Promise<LoginResponse>;
-  logout: () => void;
-  setAuthData: (token: string, user: User) => void;
+  logout: () => Promise<void>;
+ setAuthData: (token: string, user: User) => Promise<void>;
+
+   isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -25,6 +32,27 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const restoreAuth = async () => {
+      try {
+        const { token, user } = await getAuthFromStorage();
+
+        if (token && user) {
+          setToken(token);
+          setUser(user);
+        }
+      } catch (e) {
+        console.error("Failed to restore auth", e);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    restoreAuth();
+  }, []);
+
 
   useEffect(() => {
     setAuthToken(token);
@@ -32,37 +60,48 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
 
-  const login = async (email: string, password: string): Promise<LoginResponse> => {
+ const login = async (
+  email: string,
+  password: string
+): Promise<LoginResponse> => {
   try {
     const data = await loginApi({ email, password });
 
-   
-   
+    const user: User = {
+      id: data.userId,
+      email: data.email,
+      name: data.fullName ?? undefined,
+      storeId: data.storeId,
+    };
+
     setToken(data.token);
-    setUser(data.user);
+    setUser(user);
 
-  
+    await saveAuthToStorage(data.token, user);
+
     return data;
-  } catch (err: any) {
+  } catch (err) {
     console.error("Login API error:", err);
-
-   
     throw err;
   }
 };
-  const logout = () => {
-    setToken(null);
-    setUser(null);
-  };
 
-  const setAuthData = (newToken: string, newUser: User) => {
-    setToken(newToken);
-    setUser(newUser);
-  };
+ const logout = async () => {
+  setToken(null);
+  setUser(null);
+  await clearAuthFromStorage();
+};
 
+ const setAuthData = async (newToken: string, newUser: User) => {
+  setToken(newToken);
+  setUser(newUser);
+  await saveAuthToStorage(newToken, newUser);
+};
+
+ if (isLoading) return null;
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, setAuthData }}>
+    <AuthContext.Provider value={{ user, token, login, logout, setAuthData, isLoading }}>
       {children}
     </AuthContext.Provider>
   );

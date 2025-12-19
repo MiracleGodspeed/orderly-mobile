@@ -6,6 +6,7 @@ import {
   Image,
   Modal,
   ActivityIndicator,
+  Platform,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -16,8 +17,10 @@ import { RootStackParamList } from '../navigation/types';
 import ProgressBar from '../components/ProgressBar';
 import { useProgress } from '../../context/ProgressContext';
 import { useVendor } from '../../context/VendorContext';
-import { useAuth } from '../../context/AuthContext'; // assuming you have auth context
+import { useAuth } from '../../context/AuthContext'; 
 import { getCategories, submitVendorOnboarding } from '../api/vendor/vendor.api';
+import CheckIcon from '../../assets/icons/check.svg';
+import PlusIcon from '../../assets/icons/plus.svg';
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -107,32 +110,49 @@ export default function SetupStep3() {
             const active = selectedCategories.includes(category.id);
 
             return (
-              <TouchableOpacity
-                key={category.id}
-                onPress={() => toggleCategory(category.id)}
-                className={`mr-3 mb-3 px-4 py-3 rounded-full flex-row items-center border ${
-                  active ? 'border-[#C27803] bg-[#FDFDEA]' : 'border-[#D1D5DB]'
-                }`}
-              >
-                 <Text className={active ? 'text-[#C27803]' : 'text-[#1F2A37]'}>
-                  {category.name}
-                </Text>
-                {active ? (
-                  <Ionicons
-                    name="checkmark"
-                    size={20}
-                    color="#C27803"
-                    style={{ marginLeft: 8 }}
-                  />
-                ) : (
-                  <Ionicons
-                    name="add"
-                    size={20}
-                    color="#6B7280"
-                    style={{ marginLeft: 8 }}
-                  />
-                )}
-              </TouchableOpacity>
+             <TouchableOpacity
+  key={category.id}
+  onPress={() => toggleCategory(category.id)}
+  className={`mr-3 mb-3 px-4 py-3 rounded-full flex-row items-center border ${
+    active ? 'border-[#C27803] bg-[#FDFDEA]' : 'border-[#D1D5DB]'
+  }`}
+>
+  <Text className={active ? 'text-[#C27803]' : 'text-[#1F2A37]'}>
+    {category.name}
+  </Text>
+
+ {Platform.OS === 'ios' ? (
+  active ? (
+    <Ionicons
+      name="checkmark"
+      size={20}
+      color="#C27803"
+      style={{ marginLeft: 8 }}
+    />
+  ) : (
+    <Ionicons
+      name="add"
+      size={20}
+      color="#6B7280"
+      style={{ marginLeft: 8 }}
+    />
+  )
+) : (
+  active ? (
+    <CheckIcon
+      width={20}
+      height={20}
+      style={{ marginLeft: 8 }}
+    />
+  ) : (
+    <PlusIcon
+      width={20}
+      height={20}
+      style={{ marginLeft: 8 }}
+    />
+  )
+)}
+</TouchableOpacity>
             );
           })}
         </View>

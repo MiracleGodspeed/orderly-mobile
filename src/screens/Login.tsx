@@ -17,6 +17,8 @@ import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import Toast from 'react-native-toast-message';
+import EyeIcon from '../../assets/icons/eye.svg';
+import EyeOffIcon from '../../assets/icons/eye-off.svg';
 
 
 
@@ -110,17 +112,37 @@ export default function Login() {
                       autoCapitalize="none"
                       autoCorrect={false}
                     />
+
                     <TouchableOpacity
                       className="absolute right-4 top-3"
                       onPress={() => setShowPassword(!showPassword)}
                       activeOpacity={0.7}
                     >
-                      <Ionicons 
-                        name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                        size={24} 
-                        color="#6B7280" 
-                      />
+                      {Platform.OS === 'ios' ? (
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={24}
+                color="#6B7280"
+              />
+            ) : (
+              showPassword ? (
+                <EyeOffIcon
+                  width={24}
+                  height={24}
+                  fill="#6B7280"
+                />
+              ) : (
+                <EyeIcon
+                  width={20}
+                  height={20}
+                  fill="#6B7280"
+                />
+              )
+            )}
+                      
+
                     </TouchableOpacity>
+
                   </View>
                 </View>
            
@@ -130,7 +152,7 @@ export default function Login() {
                 isFormValid ? 'bg-[#1A56DB]' : 'bg-[#E5E7EB]'
               }`}
               onPress={handleLogin}
-              disabled={!isFormValid || loading} // disable while loading
+              disabled={!isFormValid || loading} 
               activeOpacity={0.8}
             >
               {loading ? (

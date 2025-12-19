@@ -3,6 +3,7 @@ import {
   GetCategoriesResponse,
   VendorOnboardingRequest,
   VendorOnboardingResponse,
+  GetStorefrontDetailsResponse,
 } from "./vendor.types";
 
 
@@ -38,4 +39,21 @@ export const submitVendorOnboarding = async (
   }
 
   return response.data;
+};
+
+export const getStorefrontDetails = async () => {
+  const response = await apiClient.get<GetStorefrontDetailsResponse>(
+    "/storefront/get-storefront-details-by-store-id",
+    {
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.data.code !== "200") {
+    throw new Error(
+      response.data.message || "Failed to fetch storefront details"
+    );
+  }
+
+  return response.data.data;
 };

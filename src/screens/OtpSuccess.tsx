@@ -20,11 +20,9 @@ export default function OtpSuccess() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const { width } = Dimensions.get("window");
 
-  // We will create quick bursts repeatedly for a few seconds to feel like a continuous confetti effect
   const [bursts, setBursts] = useState<number[]>([]);
 
   useEffect(() => {
-    // create 4 bursts spaced 700ms apart (≈ ~2.1s of activity)
     let count = 0;
     const maxBursts = 4;
     const interval = setInterval(() => {
@@ -42,16 +40,14 @@ export default function OtpSuccess() {
     <SafeAreaView className="flex-1 bg-white">
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       <View className="flex-1 px-6 pt-10 items-center">
-        {/* Image */}
         <View className="mb-6 mt-8 pt-8">
           <Image
-            source={require("../../assets/check.png")} // <-- replace with your asset path
+            source={require("../../assets/check.png")} 
             style={{ width: 140, height: 140 }}
             resizeMode="contain"
           />
         </View>
 
-        {/* Title + writeup */}
         <View className="items-center px-4 mb-8">
           <Text className="text-2xl font-semibold text-[#374151] mb-3">
             Congratulations!
@@ -61,11 +57,9 @@ export default function OtpSuccess() {
           </Text>
         </View>
 
-        {/* Continue button */}
         <View className="w-full px-6 mt-auto mb-12">
           <TouchableOpacity
             onPress={() => {
-              // navigate to main app screen — change route name to whatever your flow expects
               navigation.navigate("SetupStep1");
             }}
             activeOpacity={0.8}
@@ -75,7 +69,6 @@ export default function OtpSuccess() {
           </TouchableOpacity>
         </View>
 
-        {/* Confetti bursts (rendered last so they float above) */}
         {bursts.map((bKey) => (
           <ConfettiCannon
             key={String(bKey)}
@@ -83,7 +76,7 @@ export default function OtpSuccess() {
             origin={{ x: width / 2, y: 0 }}
             fadeOut={true}
             autoStart={true}
-            fallSpeed={3000} // longer fall speed for nicer effect
+            fallSpeed={3000} 
           />
         ))}
       </View>

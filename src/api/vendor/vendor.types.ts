@@ -1,10 +1,8 @@
-// Category returned from GET categories
 export interface Category {
   id: number;
   name: string;
 }
 
-// Final onboarding request payload
 export interface VendorOnboardingRequest {
   storeId: string;
   businessName: string;
@@ -13,16 +11,41 @@ export interface VendorOnboardingRequest {
   isServiceBased: boolean;
 }
 
-// Backend standard response shape
 export interface VendorOnboardingResponse {
   message: string;
   code: string;
   data: boolean | null;
 }
 
-// Categories response
 export interface GetCategoriesResponse {
   message: string;
   code: string;
   data: Category[];
 }
+
+export interface StorefrontDetailsData {
+  storeId: string;
+  storeName: string;
+  slugUrl: string;
+  isPublished: boolean;
+
+  vendorOnboardProgressResponse: {
+    addedFirstProduct: boolean;
+    managedStoreFront: boolean;
+    updatedPersonsalProfile: boolean;
+  };
+
+  storeSubscription: {
+    isTrial: boolean;
+    daysRemaining: number;
+    gracePeriodInDays: number;
+  };
+}
+
+
+export interface GetStorefrontDetailsResponse {
+  message: string;
+  code: string;
+  data: StorefrontDetailsData;
+}
+

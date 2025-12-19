@@ -102,7 +102,21 @@ export default function SetupStep1() {
                 <Text className={`${isValid ? 'text-[#fff]' : 'text-[#1F2A37]'} font-[500] text-[16px]`}>
                   Continue
                 </Text>
+               {Platform.OS === 'ios' ? (
                 <Ionicons name="arrow-forward" size={18} color={isValid ? '#fff' : '#1F2A37'} style={{ marginLeft: 10 }} />
+
+               ) : (
+                <Image
+                  source={require('../../assets/icons/arrow-forward.png')}
+                  style={{
+                    width: 15,
+                    height: 16,
+                    marginLeft: 10,
+                    tintColor: isValid ? '#fff' : '#1F2A37', 
+                  }}
+                  resizeMode="contain"
+                />
+               )}
               </View>
             </TouchableOpacity>
           </View>

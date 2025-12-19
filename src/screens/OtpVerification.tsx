@@ -49,7 +49,6 @@ export default function OtpVerification({ route, navigation }: Props) {
       return;
     }
 
-    // Handle single character input or deletion
     if (digits.length === 0) {
       // User deleted - clear current field
       newOtp[index] = '';
@@ -165,7 +164,6 @@ export default function OtpVerification({ route, navigation }: Props) {
   };
 
   const handleResendOtp = () => {
-    // Clear OTP inputs
     setOtp(['', '', '', '', '', '']);
     inputRefs.current[0]?.focus();
     
@@ -178,7 +176,6 @@ export default function OtpVerification({ route, navigation }: Props) {
     });
   };
 
-  // Check if all OTP digits are filled
   const isOtpComplete = otp.every(digit => digit !== '');
 
   return (

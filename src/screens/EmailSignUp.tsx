@@ -17,12 +17,15 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import Toast from 'react-native-toast-message';
 import { SignupRequest } from '../api/auth/auth.types';
 import { signup } from '../api/auth/auth.api';
+import EyeIcon from '../../assets/icons/eye.svg';
+import EyeOffIcon from '../../assets/icons/eye-off.svg';
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 
 export default function EmailSignUp() {
+
     const navigation = useNavigation<ScreenNavigationProp>();
       const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -149,11 +152,29 @@ export default function EmailSignUp() {
               onPress={() => setShowPassword(!showPassword)}
               activeOpacity={0.7}
             >
-              <Ionicons 
-                name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                size={24} 
-                color="#6B7280" 
+              {Platform.OS === 'ios' ? (
+              <Ionicons
+                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={24}
+                color="#6B7280"
               />
+            ) : (
+              showPassword ? (
+                <EyeOffIcon
+                  width={24}
+                  height={24}
+                  fill="#6B7280"
+                />
+              ) : (
+                <EyeIcon
+                  width={24}
+                  height={24}
+                  fill="#6B7280"
+                />
+              )
+            )}
+                
+                      
             </TouchableOpacity>
           </View>
         </View>
@@ -176,12 +197,29 @@ export default function EmailSignUp() {
               className="absolute right-4 top-3"
               onPress={() => setShowConfirmPassword(!showConfirmPassword)}
               activeOpacity={0.7}
-            >
-              <Ionicons 
-                name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
-                size={24} 
-                color="#6B7280" 
+            > 
+            {Platform.OS === 'ios' ? (
+              <Ionicons
+                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                size={24}
+                color="#6B7280"
               />
+            ) : (
+              showConfirmPassword ? (
+                <EyeOffIcon
+                  width={24}
+                  height={24}
+                  fill="#6B7280"
+                />
+              ) : (
+                <EyeIcon
+                  width={24}
+                  height={24}
+                  fill="#6B7280"
+                />
+              )
+            )}
+                                  
             </TouchableOpacity>
           </View>
         </View>

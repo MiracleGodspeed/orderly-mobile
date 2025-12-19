@@ -5,13 +5,16 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   token: string;
-  user: {
-    id: string;
-    name: string;
-    email: string;
-    storeId: string;
-  }
+  userId: string;
+  email: string;
+  fullName: string | null;
+  storeId: string;
+  storeName: string;
+  storeSlug: string;
+  role: number;
+  userStatus: number;
 }
+
 
 export interface SignupRequest {
     email: string;

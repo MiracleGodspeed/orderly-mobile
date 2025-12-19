@@ -1,7 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect,  } from 'react';
 import { View, ScrollView, StatusBar, TouchableOpacity, Text, Dimensions, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import Header from '../components/Header';
@@ -9,6 +9,8 @@ import BottomNav from '../components/BottomNav';
 import MenuOverlay from '../components/MenuOverlay';
 import StoreSetupProgress from '../components/StoreSetupProgress';
 import { Ionicons, Feather, MaterialIcons, Octicons } from '@expo/vector-icons';
+import Modal from 'react-native-modal';
+import { getStorefrontDetails } from '../api/vendor/vendor.api';
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -23,6 +25,41 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState('home');
   const [currentSlide, setCurrentSlide] = useState(0);
   const scrollViewRef = useRef<ScrollView>(null);
+  const [setupModalOpen, setSetupModalOpen] = useState(false);
+  const [trialModalVisible, setTrialModalVisible] = useState(false);
+const [isTrial, setIsTrial] = useState<boolean>(false);
+const [loadingTrialStatus, setLoadingTrialStatus] = useState(false);
+const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+
+const fetchTrialStatus = async () => {
+  try {
+    const data = await getStorefrontDetails();
+
+    setIsTrial(data.storeSubscription.isTrial);
+    setDaysRemaining(data.storeSubscription.daysRemaining);
+
+    if (data.storeSubscription.isTrial) {
+      setTrialModalVisible(true);
+    }
+
+  } catch (error) {
+    console.error("Failed to fetch storefront details", error);
+  }
+};
+
+useFocusEffect(
+  React.useCallback(() => {
+    fetchTrialStatus();
+  }, [])
+);
+
+const openSetupModal = () => {
+  setSetupModalOpen(true);
+};
+
+const closeSetupModal = () => {
+  setSetupModalOpen(false);
+};
 
    const handleContinueSetup = () => {
     navigation.navigate('SetupStep1');
@@ -64,15 +101,22 @@ export default function Home() {
     
     return () => clearInterval(timer);
   }, [currentSlide]);
+
+  const goToStep = (screen: keyof RootStackParamList) => {
+  setSetupModalOpen(false);
+//   navigation.navigate(screen);
+};
+
   return (
     <SafeAreaView className="flex-1 bg-[#FFFFFF]" >
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
          <Header onMenuClick={() => setMenuOpen(true)} />
             <MenuOverlay isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
                 <ScrollView className='flex-1' showsVerticalScrollIndicator={false}  contentContainerStyle={{ paddingBottom: 80 }}  >
-                    <StoreSetupProgress progress={25} onContinue={handleContinueSetup} />
+                    <StoreSetupProgress progress={25} onContinue={openSetupModal} />
 
                     <View className="px-10 pt-2 pb-3 flex-row items-center justify-between">
+
                         <Text className="text-[18px] text-gray-600">Akara Ogbe Super Stores</Text>
                         <TouchableOpacity className="p-2" activeOpacity={0.7}>
                         <Ionicons name="share-social-outline" size={20} color="#6B7280" />
@@ -267,6 +311,175 @@ export default function Home() {
                     
 
                 </ScrollView>
+
+                <Modal
+                    isVisible={setupModalOpen}
+                    onBackdropPress={closeSetupModal}
+                    style={{ justifyContent: 'flex-end', margin: 0 }}
+                    >
+                    <View className="bg-white rounded-t-3xl px-5 pt-4 pb-6">
+                        
+                        {/* Header */}
+                        <View className="flex-row items-center justify-between mb-4">
+                            <View></View>
+                        <Text className=" text-[#1F2A37] text-[16px]">Account Setup</Text>
+                        <TouchableOpacity onPress={closeSetupModal}>
+                            <Ionicons name="close" size={22} color="#111827" />
+                        </TouchableOpacity>
+                        </View>
+
+                        {/* Title */}
+                        <Text className="text-[24px] font-[400] text-gray-900 mb-2 text-center">
+                        Complete Your Store Setup
+                        </Text>
+
+                        <Text className="text-sm text-gray-500 mb-4">
+                        You're almost there! Finish these steps to get your store ready to sell
+                        and start accepting orders.
+                        </Text>
+
+                        {/* Progress */}
+                        <View className="flex-row items-center justify-between mb-2">
+                        <Text className="text-xs text-gray-500">Step 1 of 3</Text>
+                        <Text className="text-xs text-blue-600 font-medium">
+                            25% complete
+                        </Text>
+                        </View>
+
+                        <View className="w-full h-1.5 bg-gray-200 rounded-full mb-5">
+                        <View
+                            className="h-1.5 bg-blue-600 rounded-full"
+                            style={{ width: '25%' }}
+                        />
+                        </View>
+
+                        {/* Step Card */}
+                        <TouchableOpacity
+                        activeOpacity={0.7}
+                        className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-3"
+                        >
+                        <View className="flex-row gap-3 flex-1">
+                            <View className="w-5 h-5 border border-gray-400 rounded-full mt-1" />
+                            <View className="flex-1">
+                            <Text className="text-sm font-medium text-gray-900 mb-1">
+                                Customize Your Storefront
+                            </Text>
+                            <Text className="text-xs text-gray-500">
+                                Add your logo, brand colors, and layout to make your store look
+                                professional and on-brand.
+                            </Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#2563EB" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                        activeOpacity={0.7}
+                        className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-3"
+                        >
+                        <View className="flex-row gap-3 flex-1">
+                            <View className="w-5 h-5 border border-gray-400 rounded-full mt-1" />
+                            <View className="flex-1">
+                            <Text className="text-sm font-medium text-gray-900 mb-1">
+                                Add Your First Product
+                            </Text>
+                            <Text className="text-xs text-gray-500">
+                                Upload product photos, set prices, and organise your inventory so
+                                customers can start shopping.
+                            </Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#2563EB" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                        activeOpacity={0.7}
+                        className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-6"
+                        >
+                        <View className="flex-row gap-3 flex-1">
+                            <View className="w-5 h-5 border border-gray-400 rounded-full mt-1" />
+                            <View className="flex-1">
+                            <Text className="text-sm font-medium text-gray-900 mb-1">
+                                Set Up Your Payment Method
+                            </Text>
+                            <Text className="text-xs text-gray-500">
+                                Connect your bank or payment provider to start receiving payments
+                                securely.
+                            </Text>
+                            </View>
+                        </View>
+                        <Ionicons name="chevron-forward" size={18} color="#2563EB" />
+                        </TouchableOpacity>
+
+                        
+
+                    </View>
+                </Modal>
+
+                <Modal
+                    isVisible={trialModalVisible && isTrial}
+                    onBackdropPress={() => setTrialModalVisible(false)}
+                    style={{ justifyContent: "flex-end", margin: 0 }}
+                    >
+                    <View className="bg-white rounded-t-3xl px-5 pt-4 pb-10 py-6">
+                        
+                        <View className="flex-row items-center justify-between mb-4">
+                            <View></View>
+                        <Text className="text-[16px]  text-gray-800">Subscription</Text>
+                        <TouchableOpacity onPress={() => setTrialModalVisible(false)}>
+                            <Ionicons name="close" size={22} color="#111827" />
+                        </TouchableOpacity>
+                        </View>
+
+                        <Text className="text-[24px] font-[400] text-gray-900 text-center mb-4">
+                        Welcome to Your 14-Day{'\n'}Free Trial on us.
+                        </Text>
+
+                        <View className="items-center mb-5">
+                        <View className="w-48 h-48 bg-[#EBF5FF] rounded-full items-center justify-center">
+                            <Image
+                            source={require('../../assets/hourglass.png')} 
+                            className="w-36 h-36"
+                            resizeMode="contain"
+                            />
+                        </View>
+                        </View>
+
+                        <Text className="text-[14px] text-gray-900 text-center font-[300] mb-3 px-2">
+                        You're all set! Your store is now live in trial mode. Explore all premium
+                        features, customise your storefront, and start adding your products or
+                        services.
+                        </Text>
+
+                        <Text className="text-[12px] text-gray-500 text-center mb-8 px-4">
+                        Your trial includes unlimited access to the website builder, product
+                        management, analytics, and customer tools.
+                        </Text>
+
+                        <Text className="text-sm text-red-500 text-center mb-4">
+                        Trial Ends: January 28, 2025
+                        </Text>
+
+                        <TouchableOpacity
+                        activeOpacity={0.8}
+                        className="bg-blue-600 py-3 rounded-full items-center mb-5"
+                        onPress={() => {
+                            setTrialModalVisible(false);
+                        }}
+                        >
+                        <Text className="text-white font-semibold text-base">
+                            Choose a Plan
+                        </Text>
+                        </TouchableOpacity>
+
+                        <Text className="text-[12px] text-gray-500 text-center mb-6">
+                        No charges today. Upgrade anytime to keep your store live after your trial.
+                        </Text>
+
+                    </View>
+                </Modal>
+
+
       
         <BottomNav/>
     </SafeAreaView>

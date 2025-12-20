@@ -11,6 +11,7 @@ import StoreSetupProgress from '../components/StoreSetupProgress';
 import { Ionicons, Feather, MaterialIcons, Octicons } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
 import { getStorefrontDetails } from '../api/vendor/vendor.api';
+import { useVendor } from '../../context/VendorContext';
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -27,9 +28,11 @@ export default function Home() {
   const scrollViewRef = useRef<ScrollView>(null);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [trialModalVisible, setTrialModalVisible] = useState(false);
-const [isTrial, setIsTrial] = useState<boolean>(false);
 const [loadingTrialStatus, setLoadingTrialStatus] = useState(false);
 const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
+  const {storeData} = useVendor()
+    const [isTrial, setIsTrial] = useState<boolean>(storeData?.storeSubscription?.isTrial || false);
+
 
 const fetchTrialStatus = async () => {
   try {
@@ -49,7 +52,7 @@ const fetchTrialStatus = async () => {
 
 useFocusEffect(
   React.useCallback(() => {
-    fetchTrialStatus();
+    // fetchTrialStatus();
   }, [])
 );
 
@@ -117,7 +120,7 @@ const closeSetupModal = () => {
 
                     <View className="px-10 pt-2 pb-3 flex-row items-center justify-between">
 
-                        <Text className="text-[18px] text-gray-600">Akara Ogbe Super Stores</Text>
+                        <Text className="text-[18px] text-gray-600 font-semibold">{storeData?.storeName || '[store_name]'}</Text>
                         <TouchableOpacity className="p-2" activeOpacity={0.7}>
                         <Ionicons name="share-social-outline" size={20} color="#6B7280" />
                         </TouchableOpacity>
@@ -130,7 +133,10 @@ const closeSetupModal = () => {
                             <Feather name="chevron-down" size={15} color="black" />
                         </TouchableOpacity>
                         
-                        <Text className="text-4xl font-[600] text-gray-800 mb-6 text-center mt-3">₦24,500.00</Text>
+                        <Text className="text-4xl font-[600] text-gray-800 mb-6 text-center mt-3">
+                            {/* ₦24,500.00 */}
+                            0.00
+                            </Text>
                         
                         <View className="flex-row justify-between">
                             <View className="items-center">
@@ -312,6 +318,7 @@ const closeSetupModal = () => {
 
                 </ScrollView>
 
+            {/* Progress Prompt Modal */}
                 <Modal
                     isVisible={setupModalOpen}
                     onBackdropPress={closeSetupModal}
@@ -416,9 +423,10 @@ const closeSetupModal = () => {
                     </View>
                 </Modal>
 
+            {/* Trial  Notice  Drawer */}
                 <Modal
-                    isVisible={trialModalVisible && isTrial}
-                    onBackdropPress={() => setTrialModalVisible(false)}
+              isVisible={isTrial}
+              onBackdropPress={() => setIsTrial(false)}
                     style={{ justifyContent: "flex-end", margin: 0 }}
                     >
                     <View className="bg-white rounded-t-3xl px-5 pt-4 pb-10 py-6">
@@ -426,13 +434,13 @@ const closeSetupModal = () => {
                         <View className="flex-row items-center justify-between mb-4">
                             <View></View>
                         <Text className="text-[16px]  text-gray-800">Subscription</Text>
-                        <TouchableOpacity onPress={() => setTrialModalVisible(false)}>
+                        <TouchableOpacity onPress={() => setIsTrial(false)}>
                             <Ionicons name="close" size={22} color="#111827" />
                         </TouchableOpacity>
                         </View>
 
                         <Text className="text-[24px] font-[400] text-gray-900 text-center mb-4">
-                        Welcome to Your 14-Day{'\n'}Free Trial on us.
+                        Welcome to Your 5-Day{'\n'}Free Trial on us.
                         </Text>
 
                         <View className="items-center mb-5">

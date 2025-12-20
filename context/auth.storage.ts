@@ -26,6 +26,17 @@ export const getAuthFromStorage = async () => {
   };
 };
 
+export const IsLoggedIn = async () : Promise<boolean> => {
+  const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
+  const user = await AsyncStorage.getItem(AUTH_USER_KEY);
+
+  const parsedUser = user ? JSON.parse(user) : null;
+  if (parsedUser != null && parsedUser.id != null) {
+    return true;
+  }
+  return false;
+};
+
 export const clearAuthFromStorage = async () => {
   await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
   await AsyncStorage.removeItem(AUTH_USER_KEY);

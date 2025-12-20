@@ -1,3 +1,5 @@
+import { StoreData } from "../../../context/VendorContext";
+
 export interface Category {
   id: number;
   name: string;
@@ -46,6 +48,6 @@ export interface StorefrontDetailsData {
 export interface GetStorefrontDetailsResponse {
   message: string;
   code: string;
-  data: StorefrontDetailsData;
+  data: StoreData;
 }
 

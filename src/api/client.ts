@@ -1,6 +1,6 @@
 import axios from "axios";
 
-export const apiClient =axios.create({
+export const apiClient = axios.create({
     baseURL: "https://api.orderlystores.com/api",
     headers: {
         "Content-Type": "application/json",

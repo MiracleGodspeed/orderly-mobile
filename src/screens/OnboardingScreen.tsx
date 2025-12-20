@@ -96,22 +96,22 @@ export default function OnboardingScreen() {
     <View style={{ width: screenWidth }} className="px-8 items-center justify-center">
       <View className="items-center">
        
-        <View className=" mb-6 items-center justify-center" style={{ width: 358, height: 280 }}>
+        <View className=" mb-6 items-center justify-center" style={{ width: 358, height: 200 }}>
           <Image
             source={item.image}
             className=" rounded-2xl"
-            resizeMode="contain"
+            resizeMode="cover"
             style={{ width: '100%', height: '100%' }}
           />
         </View>
         
         
-        <Text className="text-[30px] font-bold text-center text-gray-900 mb-6 leading-tight">
+        <Text className="text-[28px] font-bold text-center text-gray-900 mb-6 leading-tight">
           {item.title}
         </Text>
         
      
-        <Text className=" min-h-[120px] text-[18px] text-center text-gray-600 leading-relaxed mb-6">
+        <Text className=" min-h-[120px] text-[16px] text-center text-gray-600 leading-relaxed mb-6">
           {item.description}
         </Text>
       </View>

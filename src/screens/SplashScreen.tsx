@@ -8,6 +8,7 @@ import Animated, {
   withSpring,
   Easing
 } from 'react-native-reanimated';
+import { getAuthFromStorage, IsLoggedIn } from '../../context/auth.storage';
 
 export default function SplashScreen({ navigation }: any) {
  
@@ -35,8 +36,13 @@ export default function SplashScreen({ navigation }: any) {
       }));
       
     
-      setTimeout(() => {
-        navigation.replace('Onboarding');
+      setTimeout(async () => {
+        let isLoggedIn = await IsLoggedIn();
+        if (isLoggedIn) {
+          navigation.replace('Home');
+        } else {
+          navigation.replace('Onboarding');
+        }
       }, 2500);
     };
 

@@ -18,4 +18,5 @@ OtpVerification: { email: string; password: string };
   Store: undefined;
   Reports: undefined;
   Profile: undefined;
+  ManageStore: undefined;
 };

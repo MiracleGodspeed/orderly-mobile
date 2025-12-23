@@ -11,6 +11,10 @@ import { useState, useEffect } from "react";
 import HeroSectionModal from "../components/HeroSectionModal";
 import AboutSectionModal from "../components/AboutSectionModal";
 import FeaturedProductsModal from "../components/FeaturedProductsModal";
+import StoreLogoModal from "../components/StoreLogoModal";
+import TypographyModal from "../components/TypographyModal";
+import BrandAssetsModal from "../components/BrandAssetsModal";
+
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Octicons from '@expo/vector-icons/Octicons';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -33,6 +37,10 @@ export default function ManageStoreScreen() {
   const [selectedTypography, setSelectedTypography] = useState<string>("Modern");
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [showContactUsModal, setShowContactUsModal] = useState(false);
+  const [showTypographyModal, setShowTypographyModal] = useState(false);
+  const [showBrandAssetsModal, setShowBrandAssetsModal] = useState(false);
+  const [showStoreLogoModal, setShowStoreLogoModal] = useState(false);
+  const [showThemeLayoutModal, setShowThemeLayoutModal] = useState(false);
 
 
 
@@ -168,107 +176,134 @@ export default function ManageStoreScreen() {
           )}
 
           {activeTab === "branding" && (
-            <View className="px-4 py-4">
-              <Text className="text-sm text-gray-700 mb-3">Store Logo</Text>
-              <Pressable 
-                onPress={pickLogo}
-                className="bg-white rounded-xl p-8 mb-6 items-center justify-center border border-gray-200"
-              >
-                {logo ? (
-                  <Image 
-                    source={{ uri: logo }} 
-                    className="w-24 h-24 rounded-lg"
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <>
-                    <MaterialIcons name="image" size={48} color="#d1d5db" />
-                    <Text className="text-gray-500 text-sm mt-3">Upload your Logo</Text>
-                  </>
-                )}
-              </Pressable>
-
-              <Text className="text-sm text-gray-700 mb-3">Brand Colors</Text>
-              <View className="bg-white rounded-xl p-4 mb-6">
-                <View className="flex-row items-center mb-4">
-                  <View className="w-12 h-12 rounded-lg bg-blue-500 mr-4" />
-                  <View className="flex-1">
-                    <Text className="text-base text-gray-900 font-medium mb-1">Primary</Text>
-                    <Text className="text-sm text-gray-500">#3b82f6</Text>
-                  </View>
-                </View>
-
-                <View className="flex-row items-center">
-                  <View className="w-12 h-12 rounded-lg bg-gray-800 mr-4" />
-                  <View className="flex-1">
-                    <Text className="text-base text-gray-900 font-medium mb-1">Secondary</Text>
-                    <Text className="text-sm text-gray-500">#3b82f6</Text>
-                  </View>
-                </View>
-              </View>
-
-              <Text className="text-sm text-gray-700 mb-3">Typography</Text>
-              <View className="bg-white rounded-xl p-4 mb-6">
-                <View className="flex-row flex-wrap">
-                  <Pressable 
-                    onPress={() => setSelectedTypography("Modern")}
-                    className={`${
-                      selectedTypography === "Modern" 
-                        ? "border-2 border-blue-600" 
-                        : "border border-gray-300"
-                    } rounded-lg px-6 py-3 mr-3 mb-3`}
-                  >
-                    <Text className={`${
-                      selectedTypography === "Modern" 
-                        ? "text-blue-600" 
-                        : "text-gray-700"
-                    } font-medium`}>Modern</Text>
-                  </Pressable>
-                  <Pressable 
-                    onPress={() => setSelectedTypography("Classic")}
-                    className={`${
-                      selectedTypography === "Classic" 
-                        ? "border-2 border-blue-600" 
-                        : "border border-gray-300"
-                    } rounded-lg px-6 py-3 mr-3 mb-3`}
-                  >
-                    <Text className={`${
-                      selectedTypography === "Classic" 
-                        ? "text-blue-600" 
-                        : "text-gray-700"
-                    } font-medium`}>Classic</Text>
-                  </Pressable>
-                  <Pressable 
-                    onPress={() => setSelectedTypography("Elegant")}
-                    className={`${
-                      selectedTypography === "Elegant" 
-                        ? "border-2 border-blue-600" 
-                        : "border border-gray-300"
-                    } rounded-lg px-6 py-3 mr-3 mb-3`}
-                  >
-                    <Text className={`${
-                      selectedTypography === "Elegant" 
-                        ? "text-blue-600" 
-                        : "text-gray-700"
-                    } font-medium`}>Elegant</Text>
-                  </Pressable>
-                  <Pressable 
-                    onPress={() => setSelectedTypography("Bold")}
-                    className={`${
-                      selectedTypography === "Bold" 
-                        ? "border-2 border-blue-600" 
-                        : "border border-gray-300"
-                    } rounded-lg px-6 py-3 mb-3`}
-                  >
-                    <Text className={`${
-                      selectedTypography === "Bold" 
-                        ? "text-blue-600" 
-                        : "text-gray-700"
-                    } font-medium`}>Bold</Text>
-                  </Pressable>
-                </View>
+             <View className="px-4 py-4">
+              <View className="bg-white rounded-xl overflow-hidden">
+                <SectionItem 
+                  icon={<MaterialIcons name="drag-indicator" size={20} color="#d1d5db" />}
+                  title="Theme & Layout" 
+                  // onPress={() => setShowThemeLayoutModal(true)} 
+                />
+                <Divider />
+                <SectionItem 
+                  icon={<MaterialIcons name="drag-indicator" size={20} color="#d1d5db" />}
+                  title="Store Logo" 
+                  onPress={() => setShowStoreLogoModal(true)}
+                />
+                <Divider />
+                <SectionItem 
+                  icon={<MaterialIcons name="drag-indicator" size={20} color="#d1d5db" />}
+                  title="Brand Assets" 
+                  onPress={() => setShowBrandAssetsModal(true)}
+                />
+                <Divider />
+                <SectionItem 
+                  icon={<MaterialIcons name="drag-indicator" size={20} color="#d1d5db" />}
+                  title="Typography" 
+                  onPress={() => setShowTypographyModal(true)}
+                />
               </View>
             </View>
+            // <View className="px-4 py-4">
+            //   <Text className="text-sm text-gray-700 mb-3">Store Logo</Text>
+            //   <Pressable 
+            //     onPress={pickLogo}
+            //     className="bg-white rounded-xl p-8 mb-6 items-center justify-center border border-gray-200"
+            //   >
+            //     {logo ? (
+            //       <Image 
+            //         source={{ uri: logo }} 
+            //         className="w-24 h-24 rounded-lg"
+            //         resizeMode="cover"
+            //       />
+            //     ) : (
+            //       <>
+            //         <MaterialIcons name="image" size={48} color="#d1d5db" />
+            //         <Text className="text-gray-500 text-sm mt-3">Upload your Logo</Text>
+            //       </>
+            //     )}
+            //   </Pressable>
+
+            //   <Text className="text-sm text-gray-700 mb-3">Brand Colors</Text>
+            //   <View className="bg-white rounded-xl p-4 mb-6">
+            //     <View className="flex-row items-center mb-4">
+            //       <View className="w-12 h-12 rounded-lg bg-blue-500 mr-4" />
+            //       <View className="flex-1">
+            //         <Text className="text-base text-gray-900 font-medium mb-1">Primary</Text>
+            //         <Text className="text-sm text-gray-500">#3b82f6</Text>
+            //       </View>
+            //     </View>
+
+            //     <View className="flex-row items-center">
+            //       <View className="w-12 h-12 rounded-lg bg-gray-800 mr-4" />
+            //       <View className="flex-1">
+            //         <Text className="text-base text-gray-900 font-medium mb-1">Secondary</Text>
+            //         <Text className="text-sm text-gray-500">#3b82f6</Text>
+            //       </View>
+            //     </View>
+            //   </View>
+
+            //   <Text className="text-sm text-gray-700 mb-3">Typography</Text>
+            //   <View className="bg-white rounded-xl p-4 mb-6">
+            //     <View className="flex-row flex-wrap">
+            //       <Pressable 
+            //         onPress={() => setSelectedTypography("Modern")}
+            //         className={`${
+            //           selectedTypography === "Modern" 
+            //             ? "border-2 border-blue-600" 
+            //             : "border border-gray-300"
+            //         } rounded-lg px-6 py-3 mr-3 mb-3`}
+            //       >
+            //         <Text className={`${
+            //           selectedTypography === "Modern" 
+            //             ? "text-blue-600" 
+            //             : "text-gray-700"
+            //         } font-medium`}>Modern</Text>
+            //       </Pressable>
+            //       <Pressable 
+            //         onPress={() => setSelectedTypography("Classic")}
+            //         className={`${
+            //           selectedTypography === "Classic" 
+            //             ? "border-2 border-blue-600" 
+            //             : "border border-gray-300"
+            //         } rounded-lg px-6 py-3 mr-3 mb-3`}
+            //       >
+            //         <Text className={`${
+            //           selectedTypography === "Classic" 
+            //             ? "text-blue-600" 
+            //             : "text-gray-700"
+            //         } font-medium`}>Classic</Text>
+            //       </Pressable>
+            //       <Pressable 
+            //         onPress={() => setSelectedTypography("Elegant")}
+            //         className={`${
+            //           selectedTypography === "Elegant" 
+            //             ? "border-2 border-blue-600" 
+            //             : "border border-gray-300"
+            //         } rounded-lg px-6 py-3 mr-3 mb-3`}
+            //       >
+            //         <Text className={`${
+            //           selectedTypography === "Elegant" 
+            //             ? "text-blue-600" 
+            //             : "text-gray-700"
+            //         } font-medium`}>Elegant</Text>
+            //       </Pressable>
+            //       <Pressable 
+            //         onPress={() => setSelectedTypography("Bold")}
+            //         className={`${
+            //           selectedTypography === "Bold" 
+            //             ? "border-2 border-blue-600" 
+            //             : "border border-gray-300"
+            //         } rounded-lg px-6 py-3 mb-3`}
+            //       >
+            //         <Text className={`${
+            //           selectedTypography === "Bold" 
+            //             ? "text-blue-600" 
+            //             : "text-gray-700"
+            //         } font-medium`}>Bold</Text>
+            //       </Pressable>
+            //     </View>
+            //   </View>
+            // </View>
           )}
         </ScrollView>
 
@@ -293,6 +328,18 @@ export default function ManageStoreScreen() {
         <ContactUsSectionModal
           visible={showContactUsModal}
           onClose={() => setShowContactUsModal(false)}
+        />
+        <TypographyModal
+          visible={showTypographyModal}
+          onClose={() => setShowTypographyModal(false)}
+        />
+        <BrandAssetsModal
+          visible={showBrandAssetsModal}
+          onClose={() => setShowBrandAssetsModal(false)}
+        />
+        <StoreLogoModal
+          visible={showStoreLogoModal}
+          onClose={() => setShowStoreLogoModal(false)}
         />
       </View>
     </SafeAreaView>

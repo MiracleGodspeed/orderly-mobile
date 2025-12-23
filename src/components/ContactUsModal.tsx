@@ -78,14 +78,14 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
           <View className="flex-row items-center px-4 py-4 border-t border-gray-200 mb-10">
             <Pressable 
               onPress={handleCancel}
-              className="flex-1 py-3 items-center justify-center rounded-lg border border-gray-300 mr-3"
+              className="flex-1 py-3 items-center justify-center rounded-full border border-gray-300 mr-3"
             >
               <Text className="text-gray-900 font-medium text-base">Cancel</Text>
             </Pressable>
 
             <Pressable 
               onPress={handleSave}
-              className="flex-1 py-3 items-center justify-center rounded-lg bg-blue-600"
+              className="flex-1 py-3 items-center justify-center rounded-full bg-blue-600"
             >
               <Text className="text-white font-medium text-base">Save Changes</Text>
             </Pressable>

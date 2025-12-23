@@ -12,7 +12,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yagazierem.orderlystores"
+      "bundleIdentifier": "com.yagazierem.orderlystores",
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "We need access to your photos so you can upload banner images for your store.",
+        "NSCameraUsageDescription": "We need camera access so you can take photos for your store."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,7 +32,14 @@
     },
     "plugins": [
       "expo-font",
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "We need access to your photos so you can upload banner images for your store.",
+          "cameraPermission": "We need camera access so you can take photos for your store."
+        }
+      ]
     ]
   }
 }

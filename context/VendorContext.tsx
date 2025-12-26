@@ -11,6 +11,7 @@ interface VendorContextType {
   setServiceType: (isService: boolean) => void;
   toggleCategory: (categoryId: number) => void;
   resetVendorData: () => void;
+  fetchVendorData: () => Promise<void>;
 }
 export interface StoreData {
   storeName: string;
@@ -197,11 +198,10 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
       const response = await getStorefrontDetails();
       console.log(response, "storeData")
       setStoreData(response)
-      // if (response === "success") {
-      //   setBusinessName(response.data.storeName || "");
-      //   setDescription(response.data.description || "");
-      //   setIsServiceBased(response.data.isServiceBased);
-      // }
+      if (response) {
+        setBusinessName(response.storeName || "");
+        setIsServiceBased(response.isServiceBased);
+      }
     } catch (error) {
       console.error("Error fetching vendor data:", error);
     }
@@ -245,7 +245,8 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
         setServiceType,
         toggleCategory,
         resetVendorData,
-        storeData
+        storeData,
+        fetchVendorData
       }}
     >
       {children}

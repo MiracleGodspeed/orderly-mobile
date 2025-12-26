@@ -49,11 +49,12 @@ export const getStorefrontDetails = async () => {
     }
   );
 
-  if (response.data.code !== "200") {
-    throw new Error(
-      response.data.message || "Failed to fetch storefront details"
-    );
-  }
+  // if (response.data.code !== "200") {
+  //   console.log(response, "code")
+  //   throw new Error(
+  //     response.data.message || "Failed to fetch storefront details"
+  //   );
+  // }
 
   return response.data.data;
 };

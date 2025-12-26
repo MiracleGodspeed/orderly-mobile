@@ -2,6 +2,7 @@
 import React from 'react';
 import { View, TouchableOpacity, Text, Modal, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { clearAuthFromStorage } from '../../context/auth.storage';
 
 interface MenuOverlayProps {
   isOpen: boolean;
@@ -65,6 +66,14 @@ export default function MenuOverlay({ isOpen, onClose }: MenuOverlayProps) {
           
               <MenuItem icon="person-outline" label="Profile" />
               <MenuItem icon="globe-outline" label="Help & Support" />
+              <MenuItem 
+                icon="log-out-outline" 
+                label="Log Out" 
+                onPress={async () => {
+                  onClose();
+                  await clearAuthFromStorage();
+                }}
+              />
             
           </View>
         </View>

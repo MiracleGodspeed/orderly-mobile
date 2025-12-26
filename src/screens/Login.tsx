@@ -16,16 +16,18 @@ import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
+import { useVendor } from '../../context/VendorContext';
 import Toast from 'react-native-toast-message';
 import EyeIcon from '../../assets/icons/eye.svg';
 import EyeOffIcon from '../../assets/icons/eye-off.svg';
 
 
 
-type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+export type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export default function Login() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const {login} = useAuth()
+  const { fetchVendorData } = useVendor();
   
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -40,7 +42,9 @@ export default function Login() {
     const data = await login(email, password);
     console.log("LOGIN API RESPONSE:", data);
 
-     navigation.navigate('Home')
+    await fetchVendorData();
+
+    navigation.navigate('Home')
    } catch (err) {
     console.log("Login error:", err);
     let errorMessage = 'Signup failed. Please try again.';

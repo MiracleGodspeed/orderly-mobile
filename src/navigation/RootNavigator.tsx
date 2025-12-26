@@ -2,6 +2,7 @@ import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RootStackParamList } from './types';
+import { navigationRef } from './NavigationService';
 import { AppProviders } from '../../context/AppProviders';
 // Import screens
 import SplashScreen from '../screens/SplashScreen';
@@ -28,6 +29,7 @@ export default function RootNavigator() {
   return (
     <AppProviders>
         <NavigationContainer
+      ref={navigationRef}
       theme={{
         dark: false,
         colors: {

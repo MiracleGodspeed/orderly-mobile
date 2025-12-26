@@ -34,21 +34,21 @@ const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
     const [isTrial, setIsTrial] = useState<boolean>(storeData?.storeSubscription?.isTrial || false);
 
 
-const fetchTrialStatus = async () => {
-  try {
-    const data = await getStorefrontDetails();
+// const fetchTrialStatus = async () => {
+//   try {
+//     const data = await getStorefrontDetails();
 
-    setIsTrial(data.storeSubscription.isTrial);
-    setDaysRemaining(data.storeSubscription.daysRemaining);
+//     setIsTrial(data.storeSubscription.isTrial);
+//     setDaysRemaining(data.storeSubscription.daysRemaining);
 
-    if (data.storeSubscription.isTrial) {
-      setTrialModalVisible(true);
-    }
+//     if (data.storeSubscription.isTrial) {
+//       setTrialModalVisible(true);
+//     }
 
-  } catch (error) {
-    console.error("Failed to fetch storefront details", error);
-  }
-};
+//   } catch (error) {
+//     console.error("Failed to fetch storefront details", error);
+//   }
+// };
 
 useFocusEffect(
   React.useCallback(() => {

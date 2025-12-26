@@ -1,4 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { navigate } from '../src/navigation/NavigationService';
 
 const AUTH_TOKEN_KEY = "auth_token";
 const AUTH_USER_KEY = "auth_user";
@@ -40,4 +41,5 @@ export const IsLoggedIn = async () : Promise<boolean> => {
 export const clearAuthFromStorage = async () => {
   await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
   await AsyncStorage.removeItem(AUTH_USER_KEY);
+  navigate('AuthOptions')
 };

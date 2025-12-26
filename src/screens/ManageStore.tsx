@@ -14,6 +14,7 @@ import FeaturedProductsModal from "../components/FeaturedProductsModal";
 import StoreLogoModal from "../components/StoreLogoModal";
 import TypographyModal from "../components/TypographyModal";
 import BrandAssetsModal from "../components/BrandAssetsModal";
+import ThemeLayoutModal from "../components/ThemeAndLayout";
 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Octicons from '@expo/vector-icons/Octicons';
@@ -181,7 +182,7 @@ export default function ManageStoreScreen() {
                 <SectionItem 
                   icon={<MaterialIcons name="drag-indicator" size={20} color="#d1d5db" />}
                   title="Theme & Layout" 
-                  // onPress={() => setShowThemeLayoutModal(true)} 
+                  onPress={() => setShowThemeLayoutModal(true)} 
                 />
                 <Divider />
                 <SectionItem 
@@ -340,6 +341,10 @@ export default function ManageStoreScreen() {
         <StoreLogoModal
           visible={showStoreLogoModal}
           onClose={() => setShowStoreLogoModal(false)}
+        />
+        <ThemeLayoutModal
+          visible={showThemeLayoutModal}
+          onClose={() => setShowThemeLayoutModal(false)}
         />
       </View>
     </SafeAreaView>

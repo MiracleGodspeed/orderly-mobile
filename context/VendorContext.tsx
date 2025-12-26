@@ -12,6 +12,17 @@ interface VendorContextType {
   toggleCategory: (categoryId: number) => void;
   resetVendorData: () => void;
   fetchVendorData: () => Promise<void>;
+  checklistItems: ChecklistItem[];
+}
+
+export interface ChecklistItem {
+  id: string;
+  title: string;
+  description: string;
+  // icon: React.ComponentType<any>;
+  completed: boolean;
+  isPrimary?: boolean;
+  route?: string
 }
 export interface StoreData {
   storeName: string;
@@ -191,16 +202,46 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
   const [isServiceBased, setIsServiceBased] = useState<boolean | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [storeData, setStoreData] = useState<StoreData>({} as StoreData);
+  const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
 
 
   const fetchVendorData = async () => {
     try {
       const response = await getStorefrontDetails();
-      console.log(response, "storeData")
+      // console.log(response, "storeData")
+      // console.log(response?.vendorOnboardProgressResponse, "vendorOnboardProgressResponse")
       setStoreData(response)
       if (response) {
         setBusinessName(response.storeName || "");
         setIsServiceBased(response.isServiceBased);
+        setChecklistItems(
+          [
+            {
+              id: 'customize-store',
+              title: 'Customize your storefront',
+              description: 'Add your logo, hero image, and tell customers about your business',
+              // icon: null,
+              completed: response?.vendorOnboardProgressResponse?.managedStoreFront,
+              isPrimary: true,
+              route: "/vendor/manage-storefront"
+            },
+            {
+              id: 'add-product',
+              title: 'Add your first product',
+              description: 'Upload product photos, set prices, and create your first listing',
+              // icon: FiPackage,
+              completed: response?.vendorOnboardProgressResponse?.addedFirstProduct,
+              route: "/vendor/catalogs2"
+            },
+            {
+              id: 'setup-payment',
+              title: 'Setup payment method',
+              description: 'Connect your bank account or payment processor to receive payments',
+              // icon: FiCreditCard,
+              completed: response?.vendorOnboardProgressResponse?.updatedPersonsalProfile
+            }
+          ]
+        )
       }
     } catch (error) {
       console.error("Error fetching vendor data:", error);
@@ -246,7 +287,8 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
         toggleCategory,
         resetVendorData,
         storeData,
-        fetchVendorData
+        fetchVendorData,
+        checklistItems
       }}
     >
       {children}

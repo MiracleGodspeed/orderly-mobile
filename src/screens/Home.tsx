@@ -30,7 +30,7 @@ export default function Home() {
   const [trialModalVisible, setTrialModalVisible] = useState(false);
 const [loadingTrialStatus, setLoadingTrialStatus] = useState(false);
 const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
-  const {storeData} = useVendor()
+    const { storeData, checklistItems } = useVendor()
     const [isTrial, setIsTrial] = useState<boolean>(storeData?.storeSubscription?.isTrial || false);
 
 
@@ -109,18 +109,22 @@ const closeSetupModal = () => {
   setSetupModalOpen(false);
 //   navigation.navigate(screen);
 };
+    const completedCount = checklistItems.filter(item => item.completed).length;
+    // const progressPercentage = (completedCount / checklistItems.length) * 100;
+    const progressPercentage = Math.floor((completedCount / checklistItems.length) * 100);
 
+    // console.log(checklistItems, "checklistItems")
   return (
-    <SafeAreaView className="flex-1 bg-[#FFFFFF]" >
+      <SafeAreaView className="flex-1 bg-[#f4f4f5]" >
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
          <Header onMenuClick={() => setMenuOpen(true)} />
             <MenuOverlay isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
                 <ScrollView className='flex-1' showsVerticalScrollIndicator={false}  contentContainerStyle={{ paddingBottom: 80 }}  >
-                    <StoreSetupProgress progress={25} onContinue={openSetupModal} />
+              <StoreSetupProgress progress={progressPercentage == 0 ? 25 : progressPercentage} onContinue={openSetupModal} />
 
-                    <View className="px-10 pt-2 pb-3 flex-row items-center justify-between">
+                    <View className="px-10 mt-2 pb-3 flex-row items-center justify-between">
 
-                        <Text className="text-[18px] text-gray-600 font-semibold">{storeData?.storeName || '[store_name]'}</Text>
+                        <Text className="text-[17px] text-gray-600 font-semibold">{storeData?.storeName || '[store_name]'}</Text>
                         <TouchableOpacity className="p-2" activeOpacity={0.7}>
                         <Ionicons name="share-social-outline" size={20} color="#6B7280" />
                         </TouchableOpacity>
@@ -158,100 +162,102 @@ const closeSetupModal = () => {
                             </View>
                         </View>
                     </View>
-                     <View className="px-4 mb-4">
-                        <Text className="text-[16px] font-[400] text-gray-600 mb-4">Quick Actions</Text>
-                        
-                        <View className="flex-row justify-between mb-6">
-                            <TouchableOpacity className="items-center" activeOpacity={0.7}>
-                                <View className="relative">
-                                    <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
-                                    <Ionicons name="add" size={24} color="#1A56DB" />
-                                    </View>
-                                </View>
-                                <Text className="text-xs text-[#404040] text-center w-16">
-                                    Add Product
-                                </Text>
-                            </TouchableOpacity>
+              <View className="mb-4 mx-4 bg-[#fff] px-3 py-3 rounded-2xl border border-gray-100">
+                 
+                      <Text className="text-[16px] font-[400] text-gray-600 mb-4">Quick Actions</Text>
+                  <View className='' >
+                      <View className="flex-row justify-between mb-6 ">
+                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                              <View className="relative">
+                                  <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
+                                      <Ionicons name="add" size={24} color="#1A56DB" />
+                                  </View>
+                              </View>
+                              <Text className="text-xs text-[#404040] text-center w-16">
+                                  Add Product
+                              </Text>
+                          </TouchableOpacity>
 
-                            <TouchableOpacity className="items-center" activeOpacity={0.7}>
-                                <View className="relative">
-                                    <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
-                                    <Ionicons name="cube-outline" size={24} color="#1A56DB" />
-                                    </View>
-                                    <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
-                                        <Text className="text-white text-xs font-semibold">48</Text>
-                                    </View>
-                                </View>
-                                <Text className="text-xs text-[#404040] text-center w-16" >
-                                    Products
-                                </Text>
-                            </TouchableOpacity>
+                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                              <View className="relative">
+                                  <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
+                                      <Ionicons name="cube-outline" size={24} color="#1A56DB" />
+                                  </View>
+                                  <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
+                                      <Text className="text-white text-xs font-semibold">48</Text>
+                                  </View>
+                              </View>
+                              <Text className="text-xs text-[#404040] text-center w-16" >
+                                  Products
+                              </Text>
+                          </TouchableOpacity>
 
-                            <TouchableOpacity className="items-center" activeOpacity={0.7}>
-                                <View className="relative">
-                                    <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
-                                    <Ionicons name="cart-outline" size={24} color="#1A56DB" />
-                                    </View>
-                                    <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
-                                    <Text className="text-white text-xs font-semibold">6</Text>
-                                    </View>
-                                </View>
-                                <Text className="text-xs text-[#404040] text-center w-16">
-                                    Orders
-                                </Text>
-                            </TouchableOpacity>
+                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                              <View className="relative">
+                                  <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
+                                      <Ionicons name="cart-outline" size={24} color="#1A56DB" />
+                                  </View>
+                                  <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
+                                      <Text className="text-white text-xs font-semibold">6</Text>
+                                  </View>
+                              </View>
+                              <Text className="text-xs text-[#404040] text-center w-16">
+                                  Orders
+                              </Text>
+                          </TouchableOpacity>
 
-                            <TouchableOpacity className="items-center" activeOpacity={0.7}>
-                            <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
+                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                              <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
                                   <Ionicons name="bar-chart-outline" size={24} color="#1A56DB" />
-                            </View>
-                            <Text className="text-xs text-[#404040] text-center w-16">
-                                Analytics
-                            </Text>
-                            </TouchableOpacity>
-                        </View>
-                        
-                        <View className="flex-row justify-between">
-                            <TouchableOpacity className="items-center" activeOpacity={0.7}>
-                                <View className="relative">
-                                    <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
-                                    <Ionicons name="people-outline" size={24} color="#1A56DB" />
-                                    </View>
-                                    <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
-                                    <Text className="text-white text-xs font-semibold">122</Text>
-                                    </View>
-                                </View>
-                                <Text className="text-xs text-[#404040] text-center w-16">
-                                    Customers
-                                </Text>
-                            </TouchableOpacity>
+                              </View>
+                              <Text className="text-xs text-[#404040] text-center w-16">
+                                  Analytics
+                              </Text>
+                          </TouchableOpacity>
+                      </View>
 
-                            <TouchableOpacity className="items-center" activeOpacity={0.7}>
-                            <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
-                                <Ionicons name="globe-outline" size={24} color="#1A56DB" />
-                            </View>
-                            <Text className="text-xs text-[#404040] text-center w-16">
-                                Website
-                            </Text>
-                            </TouchableOpacity>
+                      <View className="flex-row justify-between">
+                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                              <View className="relative">
+                                  <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
+                                      <Ionicons name="people-outline" size={24} color="#1A56DB" />
+                                  </View>
+                                  <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
+                                      <Text className="text-white text-xs font-semibold">122</Text>
+                                  </View>
+                              </View>
+                              <Text className="text-xs text-[#404040] text-center w-16">
+                                  Customers
+                              </Text>
+                          </TouchableOpacity>
 
-                            <TouchableOpacity className="items-center" activeOpacity={0.7}>
-                            <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
-                                <Ionicons name="car-outline" size={24} color="#1A56DB" />
-                            </View>
-                            <Text className="text-xs text-[#404040] text-center w-16">
-                                Delivery
-                            </Text>
-                            </TouchableOpacity>
+                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                              <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
+                                  <Ionicons name="globe-outline" size={24} color="#1A56DB" />
+                              </View>
+                              <Text className="text-xs text-[#404040] text-center w-16">
+                                  Website
+                              </Text>
+                          </TouchableOpacity>
 
-                            <TouchableOpacity className="items-center" activeOpacity={0.7}>
-                            <View className="w-14 h-14 bg-blue-50 rounded-xl items-center justify-center mb-2">
-                                <Ionicons name="settings-outline" size={24} color="#1A56DB" />
-                            </View>
-                            <Text className="text-xs text-[#404040] text-center w-16">
-                                Settings
-                            </Text>
-                            </TouchableOpacity>
+                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                              <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
+                                  <Ionicons name="car-outline" size={24} color="#1A56DB" />
+                              </View>
+                              <Text className="text-xs text-[#404040] text-center w-16">
+                                  Delivery
+                              </Text>
+                          </TouchableOpacity>
+
+                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                              <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
+                                  <Ionicons name="settings-outline" size={24} color="#1A56DB" />
+                              </View>
+                              <Text className="text-xs text-[#404040] text-center w-16">
+                                  Settings
+                              </Text>
+                          </TouchableOpacity>
+                      </View>
                         </View>
                     </View>
                     <View className="px-4 mb-5">

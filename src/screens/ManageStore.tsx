@@ -5,7 +5,8 @@ import {
   ScrollView, 
   StatusBar,
   Image,
-  Platform
+  Platform,
+  Linking
 } from "react-native";
 import { useState, useEffect } from "react";
 import HeroSectionModal from "../components/HeroSectionModal";
@@ -24,6 +25,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import ContactUsSectionModal from "../components/ContactUsModal";
+import { useVendor } from '../../context/VendorContext';
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -42,6 +44,7 @@ export default function ManageStoreScreen() {
   const [showBrandAssetsModal, setShowBrandAssetsModal] = useState(false);
   const [showStoreLogoModal, setShowStoreLogoModal] = useState(false);
   const [showThemeLayoutModal, setShowThemeLayoutModal] = useState(false);
+    const { storeData, checklistItems } = useVendor()
 
 
 
@@ -75,6 +78,16 @@ export default function ManageStoreScreen() {
     }
   };
 
+  const openStoreFrontLink = () => {
+    if (storeData?.slugUrl) {
+
+      //const url = `http://${storeData.slugUrl}.localhost:3000/`;//dev
+      const url = `https://${storeData.slugUrl}.orderlystores.com/`;//prod
+
+      Linking.openURL(url).catch(err => console.error("Couldn't load page", err));
+    }
+  }
+
   return (
     <SafeAreaView className="bg-white flex-1" edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
@@ -85,11 +98,14 @@ export default function ManageStoreScreen() {
             <Pressable className="mr-3" onPress={() => navigation.goBack()}>
               <MaterialIcons name="arrow-back" size={24} color="#000" />
             </Pressable>
-            <Text className="text-lg font-medium text-gray-900">My Store</Text>
+            <Text className="text-lg font-medium text-gray-900">Manage Store</Text>
           </View>
           
           <View className="flex-row items-center">
-            <Pressable className="mr-3">
+            <Pressable 
+              className="mr-3"
+              onPress={() => openStoreFrontLink()}
+            >
               <Text className="text-blue-600 font-medium text-base">Preview Store</Text>
             </Pressable>
             <Pressable>

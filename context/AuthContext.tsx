@@ -14,7 +14,8 @@ interface User {
   id: string;
   email: string;
   name?: string;
- storeId: string;
+  storeId: string;
+  userStatus?: number;
 }
 
 interface AuthContextType {
@@ -73,6 +74,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       email: data.email,
       name: data.fullName ?? undefined,
       storeId: data.storeId,
+      userStatus: data.userStatus,
     };
 
     setToken(data.token);
@@ -88,16 +90,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 };
 
  const googleLogin = async (idToken: any): Promise<LoginResponse> => {
-   console.log(idToken, "idToken")
+  //  console.log(idToken, "idToken")
 
   try {
     const data = await googleLoginApi(idToken);
-    console.log(data, "internalAuth")
+    // console.log(data, "internalAuth")
     const user: User = {
       id: data.userId,
       email: data.email,
       name: data.fullName ?? undefined,
       storeId: data.storeId,
+      userStatus: data.userStatus
     };
 
     setToken(data.token);

@@ -11,12 +11,13 @@ export const saveAuthToStorage = async (
   if (token) {
     await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
   }
-
+  console.log(user, "user_storage")
+  console.log(user?.userStatus, "userStatus")
   if (user) {
     await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
   }
-  if (user && user.userStatus === 2) {
-    navigate('Onboarding')
+  if (user && user?.userStatus == 2) {
+    navigate('SetupStep1')
   } else {
     navigate('Home')
   }

@@ -52,10 +52,6 @@ export default function Login() {
             // console.log(payload, "payload")
             await googleLogin(payload);
              await fetchVendorData();
-             navigation.reset({
-                index: 0,
-                routes: [{ name: 'Home' }],
-             });
           } else {
              Alert.alert("Error", "No ID token received from Google");
           }
@@ -81,8 +77,6 @@ export default function Login() {
     console.log("LOGIN API RESPONSE:", data);
 
     await fetchVendorData();
-
-    navigation.navigate('Home')
    } catch (err) {
     console.log("Login error:", err);
     let errorMessage = 'Signup failed. Please try again.';

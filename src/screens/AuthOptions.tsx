@@ -47,10 +47,6 @@ export default function AuthOptions ()  {
           console.log(payload, "payload")
           await googleLogin(payload);
            await fetchVendorData();
-           navigation.reset({
-              index: 0,
-              routes: [{ name: 'Home' }],
-           });
         } else {
            Alert.alert("Error", "No ID token received from Google");
         }

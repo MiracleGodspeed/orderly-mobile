@@ -6,9 +6,14 @@ import {
   TouchableOpacity, 
   TextInput,
   KeyboardAvoidingView,
-  Platform
+  Platform,
+  Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useAuth } from '../../context/AuthContext';
+import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+import { useVendor } from '../../context/VendorContext';
+
 
 export default function SignupScreen({ navigation }: any) {
   const [name, setName] = useState('');
@@ -16,12 +21,47 @@ export default function SignupScreen({ navigation }: any) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
+  const { googleLogin } = useAuth();
+  const { fetchVendorData } = useVendor();
 
   const handleSignup = () => {
     console.log('Signup pressed:', { name, email, password, confirmPassword, agreeTerms });
     navigation.navigate('Login');
   };
-
+ const handleGoogleSignIn = async () => {
+        try {
+          await GoogleSignin.hasPlayServices();
+          const userInfo = await GoogleSignin.signIn();
+          if (userInfo.data?.idToken) {
+  
+            const payload = {
+              "email": "",
+              "idToken": userInfo.data.idToken,
+              "role": 2
+            }
+            // console.log(payload, "payload")
+            await googleLogin(payload);
+             await fetchVendorData();
+             navigation.reset({
+                index: 0,
+                routes: [{ name: 'Home' }],
+             });
+          } else {
+             Alert.alert("Error", "No ID token received from Google");
+          }
+        } catch (error: any) {
+          if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+            console.log("Cancelled");
+          } else if (error.code === statusCodes.IN_PROGRESS) {
+             console.log("In Progress");
+          } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+             Alert.alert("Error", "Google Play Services not available");
+          } else {
+            console.error(error);
+            Alert.alert("Error", "Google Sign In failed: " + error.message);
+          }
+        }
+      };
   return (
     <KeyboardAvoidingView 
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}

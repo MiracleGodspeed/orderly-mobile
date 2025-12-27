@@ -30,10 +30,7 @@ export default function AuthOptions ()  {
     const { fetchVendorData } = useVendor();
 
     useEffect(() => {
-      GoogleSignin.configure({
-        webClientId: '912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f.apps.googleusercontent.com', // client ID of type WEB for your server
-        iosClientId: '912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f.apps.googleusercontent.com', // [iOS] if you want to specify the client ID of type iOS (otherwise, it is taken from GoogleService-Info.plist)
-      });
+   
     }, []);
 
     const handleGoogleSignIn = async () => {
@@ -42,8 +39,13 @@ export default function AuthOptions ()  {
         const userInfo = await GoogleSignin.signIn();
         if (userInfo.data?.idToken) {
 
-          // Sign in with Google using the ID token
-           await googleLogin(userInfo.data.idToken);
+          const payload = {
+            "email": "",
+            "idToken": userInfo.data.idToken,
+            "role": 2
+          }
+          console.log(payload, "payload")
+          await googleLogin(payload);
            await fetchVendorData();
            navigation.reset({
               index: 0,
@@ -54,16 +56,12 @@ export default function AuthOptions ()  {
         }
       } catch (error: any) {
         if (error.code === statusCodes.SIGN_IN_CANCELLED) {
-          // user cancelled the login flow
           console.log("Cancelled");
         } else if (error.code === statusCodes.IN_PROGRESS) {
-          // operation (e.g. sign in) is in progress already
            console.log("In Progress");
         } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
-          // play services not available or outdated
            Alert.alert("Error", "Google Play Services not available");
         } else {
-          // some other error happened
           console.error(error);
           Alert.alert("Error", "Google Sign In failed: " + error.message);
         }

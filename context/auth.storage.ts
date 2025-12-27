@@ -15,6 +15,11 @@ export const saveAuthToStorage = async (
   if (user) {
     await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
   }
+  if (user && user.userStatus === 2) {
+    navigate('Onboarding')
+  } else {
+    navigate('Home')
+  }
 };
 
 export const getAuthFromStorage = async () => {

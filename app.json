@@ -15,6 +15,7 @@
       "bundleIdentifier": "com.orderly.stores",
       "googleServicesFile": "./ios/GoogleService-Info.plist",
       "infoPlist": {
+        "GIDClientID": "912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f.apps.googleusercontent.com",
         "CFBundleURLTypes": [
           {
             "CFBundleURLSchemes": [

@@ -21,7 +21,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (email: string, password: string) => Promise<LoginResponse>;
-  googleLogin: (idToken: string) => Promise<LoginResponse>;
+  googleLogin: (idToken: any) => Promise<LoginResponse>;
   logout: () => Promise<void>;
  setAuthData: (token: string, user: User) => Promise<void>;
 
@@ -87,10 +87,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 };
 
- const googleLogin = async (idToken: string): Promise<LoginResponse> => {
+ const googleLogin = async (idToken: any): Promise<LoginResponse> => {
+   console.log(idToken, "idToken")
+
   try {
     const data = await googleLoginApi(idToken);
-
+    console.log(data, "internalAuth")
     const user: User = {
       id: data.userId,
       email: data.email,

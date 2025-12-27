@@ -53,3 +53,12 @@ export const verifyOtp = async (
  
   return handleApiResponse<SignupResponseComplete>(response);
 };
+
+export const googleLogin = async (idToken: string): Promise<LoginResponse> => {
+  const response = await apiClient.post<LoginResponse>(
+    "/auth/authenticate-with-google",
+    { idToken },
+    { validateStatus: () => true }
+  );
+  return handleApiResponse<LoginResponse>(response);
+};

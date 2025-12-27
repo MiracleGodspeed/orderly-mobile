@@ -4,9 +4,10 @@ import {
   TouchableOpacity,
   Image,
   StatusBar,
-  Platform
+  Platform,
+  Alert
 } from 'react-native';
-import React from 'react'
+import React, { useEffect } from 'react'
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
@@ -14,11 +15,61 @@ import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import Fontisto from '@expo/vector-icons/Fontisto';
 import AntDesign from '@expo/vector-icons/AntDesign';
+import {
+  GoogleSignin,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
+import { useAuth } from '../../context/AuthContext';
+import { useVendor } from '../../context/VendorContext';
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function AuthOptions ()  {
     const navigation = useNavigation<ScreenNavigationProp>();
+    const { googleLogin } = useAuth();
+    const { fetchVendorData } = useVendor();
+
+    useEffect(() => {
+      GoogleSignin.configure({
+        webClientId: '912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f.apps.googleusercontent.com', // client ID of type WEB for your server
+        iosClientId: '912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f.apps.googleusercontent.com', // [iOS] if you want to specify the client ID of type iOS (otherwise, it is taken from GoogleService-Info.plist)
+      });
+    }, []);
+
+    const handleGoogleSignIn = async () => {
+      try {
+        await GoogleSignin.hasPlayServices();
+        const userInfo = await GoogleSignin.signIn();
+        if (userInfo.data?.idToken) {
+
+          // Sign in with Google using the ID token
+           await googleLogin(userInfo.data.idToken);
+           await fetchVendorData();
+           navigation.reset({
+              index: 0,
+              routes: [{ name: 'Home' }],
+           });
+        } else {
+           Alert.alert("Error", "No ID token received from Google");
+        }
+      } catch (error: any) {
+        if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+          // user cancelled the login flow
+          console.log("Cancelled");
+        } else if (error.code === statusCodes.IN_PROGRESS) {
+          // operation (e.g. sign in) is in progress already
+           console.log("In Progress");
+        } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+          // play services not available or outdated
+           Alert.alert("Error", "Google Play Services not available");
+        } else {
+          // some other error happened
+          console.error(error);
+          Alert.alert("Error", "Google Sign In failed: " + error.message);
+        }
+      }
+    };
+
   return (
     <SafeAreaView className="flex-1 bg-white">
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
@@ -54,7 +105,7 @@ export default function AuthOptions ()  {
           <TouchableOpacity 
           
             className="w-full mt-5 mb-5 py-4 border border-[#9CA3AF] bg-[#fff] rounded-full items-center justify-center flex-row space-x-8"
-            
+            onPress={handleGoogleSignIn}
             activeOpacity={0.8}
           >
             

@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
-import { login as loginApi } from "./../src/api/auth/auth.api";
+import { login as loginApi, googleLogin as googleLoginApi } from "./../src/api/auth/auth.api";
 import {setAuthToken} from "./../src/api/setAuthToken"
 import { LoginResponse } from "../src/api/auth/auth.types";
 import {
@@ -21,6 +21,7 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   login: (email: string, password: string) => Promise<LoginResponse>;
+  googleLogin: (idToken: string) => Promise<LoginResponse>;
   logout: () => Promise<void>;
  setAuthData: (token: string, user: User) => Promise<void>;
 
@@ -86,6 +87,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 };
 
+ const googleLogin = async (idToken: string): Promise<LoginResponse> => {
+  try {
+    const data = await googleLoginApi(idToken);
+
+    const user: User = {
+      id: data.userId,
+      email: data.email,
+      name: data.fullName ?? undefined,
+      storeId: data.storeId,
+    };
+
+    setToken(data.token);
+    setUser(user);
+
+    await saveAuthToStorage(data.token, user);
+
+    return data;
+  } catch (err) {
+    console.error("Google Login API error:", err);
+    throw err;
+  }
+};
+
  const logout = async () => {
   setToken(null);
   setUser(null);
@@ -101,7 +125,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
  if (isLoading) return null;
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, setAuthData, isLoading }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        login,
+        googleLogin,
+        logout,
+        setAuthData,
+        isLoading
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -63,20 +63,20 @@ export default function ManageStoreScreen() {
     })();
   }, []);
 
-  const pickLogo = async () => {
-    if (hasPermission === false) return;
+  // const pickLogo = async () => {
+  //   if (hasPermission === false) return;
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.9,
-      allowsEditing: true,
-      aspect: [1, 1],
-    });
+  //   const result = await ImagePicker.launchImageLibraryAsync({
+  //     mediaTypes: ImagePicker.MediaTypeOptions.Images,
+  //     quality: 0.9,
+  //     allowsEditing: true,
+  //     aspect: [1, 1],
+  //   });
 
-    if (!result.canceled && result.assets.length > 0) {
-      setLogo(result.assets[0].uri);
-    }
-  };
+  //   if (!result.canceled && result.assets.length > 0) {
+  //     setLogo(result.assets[0].uri);
+  //   }
+  // };
 
   const openStoreFrontLink = () => {
     if (storeData?.slugUrl) {

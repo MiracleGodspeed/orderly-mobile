@@ -12,8 +12,16 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yagazierem.orderlystores",
+      "bundleIdentifier": "com.orderly.stores",
+      "googleServicesFile": "./ios/GoogleService-Info.plist",
       "infoPlist": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f"
+            ]
+          }
+        ],
         "NSPhotoLibraryUsageDescription": "We need access to your photos so you can upload banner images for your store.",
         "NSCameraUsageDescription": "We need camera access so you can take photos for your store."
       }
@@ -25,12 +33,13 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.yagazierem.orderlystores"
+      "package": "com.orderly.stores"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
+      "@react-native-google-signin/google-signin",
       "expo-font",
       "expo-asset",
       [

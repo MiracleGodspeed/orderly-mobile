@@ -16,6 +16,9 @@ interface Props {
 export default function BrandAssetsModal({ visible, onClose }: Props) {
   const [primaryColor, setPrimaryColor] = useState("#3b82f6");
   const [secondaryColor, setSecondaryColor] = useState("#1f2937");
+type SelectedColor = "primary" | "secondary" | null;
+
+  const [selectedColor, setSelectedColor] = useState<SelectedColor>(null);
 
    const handleSave = () => {
     onClose();
@@ -45,7 +48,10 @@ export default function BrandAssetsModal({ visible, onClose }: Props) {
           <View className="pt-6">
             <Text className="text-sm text-gray-700 mb-3">Brand Colors</Text>
             
-            <View className="flex-row items-center mb-4 p-4 bg-gray-50 rounded-lg">
+            <Pressable onPress={() => setSelectedColor("primary")}
+              className={`flex-row items-center mb-4 p-4 bg-gray-50 rounded-lg ${
+                selectedColor === "primary" ? "border-2 border-blue-600" : "border border-transparent"
+              }`}>
               <View 
                 className="w-16 h-16 rounded-lg mr-4"
                 style={{ backgroundColor: primaryColor }}
@@ -54,12 +60,15 @@ export default function BrandAssetsModal({ visible, onClose }: Props) {
                 <Text className="text-base text-gray-900 font-medium mb-1">Primary</Text>
                 <Text className="text-sm text-gray-500">{primaryColor}</Text>
               </View>
-              <Pressable className="p-2">
+              {/* <Pressable className="p-2">
                 <MaterialIcons name="edit" size={20} color="#6b7280" />
-              </Pressable>
-            </View>
+              </Pressable> */}
+            </Pressable>
 
-            <View className="flex-row items-center p-4 bg-gray-50 rounded-lg">
+            <Pressable onPress={() => setSelectedColor("secondary")}
+              className={`flex-row items-center p-4 bg-gray-50 rounded-lg ${
+                selectedColor === "secondary" ? "border-2 border-blue-600" : "border border-transparent"
+              }`}>
               <View 
                 className="w-16 h-16 rounded-lg mr-4"
                 style={{ backgroundColor: secondaryColor }}
@@ -68,10 +77,10 @@ export default function BrandAssetsModal({ visible, onClose }: Props) {
                 <Text className="text-base text-gray-900 font-medium mb-1">Secondary</Text>
                 <Text className="text-sm text-gray-500">{secondaryColor}</Text>
               </View>
-              <Pressable className="p-2">
+              {/* <Pressable className="p-2">
                 <MaterialIcons name="edit" size={20} color="#6b7280" />
-              </Pressable>
-            </View>
+              </Pressable> */}
+            </Pressable>
            
           </View>
            <View className="flex-row items-center px-4 py-4 border-t border-gray-200 mb-5 mt-5">

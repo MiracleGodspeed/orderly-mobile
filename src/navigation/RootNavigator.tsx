@@ -21,7 +21,8 @@ import SetupStep2 from '../screens/SetupStep2';
 import SetupStep3 from '../screens/SetupStep3';
 import Home from '../screens/Home';
 import ManageStoreScreen from '../screens/ManageStore';
-
+import ProductsDashboard from '../screens/ProductDashboard';
+import ProductsList from '../screens/ProductsList';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -96,6 +97,8 @@ export default function RootNavigator() {
         <Stack.Screen name="SetupStep3" component={SetupStep3} />
         <Stack.Screen name="Home" component={Home} />
         <Stack.Screen name="ManageStore" component={ManageStoreScreen} />
+        <Stack.Screen name="ProductsDashboard" component={ProductsDashboard} />
+        <Stack.Screen name="ProductsList" component={ProductsList} />
 
 
 

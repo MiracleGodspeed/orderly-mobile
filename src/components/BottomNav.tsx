@@ -23,7 +23,7 @@ export default function BottomNav() {
     { id: 'home', icon: 'home', label: 'Home', screen: 'Home' },
     { id: 'orders', icon: 'receipt', label: 'Orders', screen: 'Orders' },
     { id: 'store', icon: 'storefront', label: 'Store', screen: 'ManageStore' },
-    { id: 'reports', icon: 'document-text', label: 'Reports', screen: 'Reports' },
+    { id: 'reports', icon: 'document-text', label: 'Reports', screen: 'ReportsAnalytics' },
     { id: 'profile', icon: 'person', label: 'Profile', screen: 'Profile' }
   ];
 

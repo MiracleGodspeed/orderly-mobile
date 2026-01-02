@@ -1,3 +1,19 @@
+export type OrderStatus =
+  | 'Paid'
+  | 'Pending'
+  | 'Shipped'
+  | 'Completed'
+  | 'Cancelled';
+
+  export type Order = {
+  id: string;
+  orderNumber: string;
+  status: OrderStatus;
+  customerName: string;
+  amount: string;
+   image: any;
+};
+
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
@@ -5,7 +21,7 @@ export type RootStackParamList = {
   Login: undefined;
   Signup: undefined;
   EmailSignUp: undefined;
-OtpVerification: { email: string; password: string };
+  OtpVerification: { email: string; password: string };
   OtpSuccess: undefined;
   ForgotPassword: undefined;
   ResetLink: undefined;
@@ -21,4 +37,10 @@ OtpVerification: { email: string; password: string };
   ManageStore: undefined;
   ProductsDashboard: undefined;
   ProductsList: undefined;
+  OrderDetails: {
+    order: Order;
+  };
+
+    ReportsAnalytics: undefined;
+
 };

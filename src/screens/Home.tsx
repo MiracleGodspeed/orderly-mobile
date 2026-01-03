@@ -178,7 +178,7 @@ const closeSetupModal = () => {
                               </Text>
                           </TouchableOpacity>
 
-                          <TouchableOpacity className="items-center" activeOpacity={0.7} onPress={() => navigation.navigate('ProductsDashboard')}>
+                          <TouchableOpacity className="items-center" activeOpacity={0.7} onPress={() => navigation.navigate('ProductsList')}>
                               <View className="relative">
                                   <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
                                       <Ionicons name="cube-outline" size={24} color="#1A56DB" />

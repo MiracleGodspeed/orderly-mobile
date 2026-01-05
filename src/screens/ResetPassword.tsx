@@ -27,7 +27,6 @@ export default function ResetPassword() {
   const [confirmPassword, setconfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
 
-  // modal + loading state
   const [modalVisible, setModalVisible] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
 
@@ -36,62 +35,59 @@ export default function ResetPassword() {
     newPassword.trim() !== '' &&
     confirmPassword.trim() !== '';
 
-  // When user taps the "Change Password" button: show bottom modal
   const openResetModal = () => {
     setModalVisible(true);
   };
 
-  // Simulate resetting process: spinner for ~5s then close modal and show toast
   const handleResetPassword = () => {
-    // Prevent double clicks
     if (isResetting) return;
 
     setIsResetting(true);
 
-    // Simulate network / processing time (5 seconds)
+   
     setTimeout(() => {
       setIsResetting(false);
       setModalVisible(false);
 
-      // Show success toast
+    
       Toast.show({
         type: 'success',
         text1: 'Password updated',
         text2: 'Your password has been successfully updated.',
         position: 'top',
+        autoHide: true
       });
 
-      // optional: clear fields or navigate
-      // setcurrentPassword('');
-      // setnewPassword('');
+      
       // setconfirmPassword('');
     }, 5000);
   };
 
-  // automatic reset flow when modal becomes visible
+ 
 useEffect(() => {
   let timer: number = setTimeout(() => {}, 5000);
 
   if (modalVisible) {
-    // start spinner
+   
     setIsResetting(true);
 
-    // automatically "reset" for 5 seconds then close and show toast
+   
     timer = setTimeout(() => {
       setIsResetting(false);
       setModalVisible(false);
 
-      // show toast success
+     
       Toast.show({
         type: 'success',
         text1: 'Password updated',
         text2: 'Your password has been reset successfully.',
         position: 'bottom',
         visibilityTime: 3000,
+        autoHide: true
       });
     }, 5000);
   } else {
-    // if modal closed early, ensure spinner stops
+   
     setIsResetting(false);
   }
 
@@ -176,7 +172,7 @@ useEffect(() => {
             </TouchableOpacity>
           </View>
 
-          {/* Change Password button now opens modal */}
+         
           <TouchableOpacity
             className={`py-4 rounded-full items-center justify-center mt-5 ${isFormValid ? 'bg-[#1A56DB]' : 'bg-[#E5E7EB]'}`}
             onPress={openResetModal}
@@ -190,7 +186,7 @@ useEffect(() => {
         </View>
       </View>
 
-      {/* Bottom Modal */}
+     
           <Modal
             visible={modalVisible}
             transparent = {true}

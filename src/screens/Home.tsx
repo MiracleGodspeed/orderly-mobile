@@ -12,6 +12,10 @@ import { Ionicons, Feather, MaterialIcons, Octicons } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
 import { getStorefrontDetails } from '../api/vendor/vendor.api';
 import { useVendor } from '../../context/VendorContext';
+import { getProducts,deleteProduct  } from '../../src/api/vendor/vendor.api';
+import { Product } from '../../src/api/vendor/vendor.types';
+import Toast from 'react-native-toast-message';
+
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -33,6 +37,12 @@ const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
     const { storeData, checklistItems } = useVendor()
     const [isTrial, setIsTrial] = useState<boolean>(storeData?.storeSubscription?.isTrial || false);
 
+     const [loading, setLoading] = useState(true);
+  
+  const [products, setProducts] = useState<Product[]>([]);
+
+  const [totalCount, setTotalCount] = useState(0);
+
 
 // const fetchTrialStatus = async () => {
 //   try {
@@ -50,8 +60,29 @@ const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
 //   }
 // };
 
+const fetchProducts = async () => {
+    try {
+      setLoading(true);
+      const response = await getProducts();
+      setProducts(response.data);
+      setTotalCount(response.totalCount);
+    } catch (error) {
+      console.error('Error fetching products:', error);
+      Toast.show({
+        type: 'error',
+        text1: 'Error',
+        text2: error instanceof Error ? error.message : 'Failed to fetch products',
+        visibilityTime: 3000,
+        autoHide: true
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
 useFocusEffect(
   React.useCallback(() => {
+    fetchProducts();
     // fetchTrialStatus();
   }, [])
 );
@@ -184,7 +215,7 @@ const closeSetupModal = () => {
                                       <Ionicons name="cube-outline" size={24} color="#1A56DB" />
                                   </View>
                                   <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
-                                      <Text className="text-white text-xs font-semibold">48</Text>
+                                      <Text className="text-white text-xs font-semibold">{totalCount}</Text>
                                   </View>
                               </View>
                               <Text className="text-xs text-[#404040] text-center w-16" >
@@ -324,7 +355,7 @@ const closeSetupModal = () => {
 
                 </ScrollView>
 
-            {/* Progress Prompt Modal */}
+           
                 <Modal
                     isVisible={setupModalOpen}
                     onBackdropPress={closeSetupModal}
@@ -332,7 +363,7 @@ const closeSetupModal = () => {
                     >
                     <View className="bg-white rounded-t-3xl px-5 pt-4 pb-6">
                         
-                        {/* Header */}
+                       
                         <View className="flex-row items-center justify-between mb-4">
                             <View></View>
                         <Text className=" text-[#1F2A37] text-[16px]">Account Setup</Text>
@@ -341,7 +372,6 @@ const closeSetupModal = () => {
                         </TouchableOpacity>
                         </View>
 
-                        {/* Title */}
                         <Text className="text-[24px] font-[400] text-gray-900 mb-2 text-center">
                         Complete Your Store Setup
                         </Text>
@@ -351,7 +381,6 @@ const closeSetupModal = () => {
                         and start accepting orders.
                         </Text>
 
-                        {/* Progress */}
                         <View className="flex-row items-center justify-between mb-2">
                         <Text className="text-xs text-gray-500">Step 1 of 3</Text>
                         <Text className="text-xs text-blue-600 font-medium">
@@ -366,7 +395,7 @@ const closeSetupModal = () => {
                         />
                         </View>
 
-                        {/* Step Card */}
+                       
                         <TouchableOpacity
                         activeOpacity={0.7}
                         className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-3"
@@ -429,7 +458,7 @@ const closeSetupModal = () => {
                     </View>
                 </Modal>
 
-            {/* Trial  Notice  Drawer */}
+          
                 <Modal
               isVisible={isTrial}
               onBackdropPress={() => setIsTrial(false)}

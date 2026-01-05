@@ -91,6 +91,7 @@ export default function OtpVerification({ route, navigation }: Props) {
         text2: 'Please enter all 6 digits.',
         position: 'top',
         visibilityTime: 3000,
+        autoHide: true
       });
       return;
     }
@@ -134,6 +135,7 @@ export default function OtpVerification({ route, navigation }: Props) {
         text2: 'Redirecting...',
         position: 'top',
         visibilityTime: 2000,
+        autoHide: true
       });
 
       navigation.navigate('OtpSuccess');
@@ -153,6 +155,7 @@ export default function OtpVerification({ route, navigation }: Props) {
         text2: errorMessage,
         position: 'top',
         visibilityTime: 4000,
+        autoHide:  true
       });
       
       
@@ -173,6 +176,7 @@ export default function OtpVerification({ route, navigation }: Props) {
       text2: 'A new code has been sent to your email.',
       position: 'top',
       visibilityTime: 3000,
+      autoHide: true
     });
   };
 

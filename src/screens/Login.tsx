@@ -95,6 +95,7 @@ export default function Login() {
           type: 'error',
           text1: 'Login Failed',
           text2: errorMessage,
+          autoHide: true
         });
    } finally {
     setLoading(false);

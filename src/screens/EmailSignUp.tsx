@@ -44,6 +44,7 @@ export default function EmailSignUp() {
       Toast.show({
         type: 'error',
         text1: 'Passwords do not match',
+        autoHide: true
       })
       return;
     }
@@ -62,6 +63,7 @@ export default function EmailSignUp() {
         type: 'success',
         text1: 'OTP sent',
         text2: 'Check your email for the verification code',
+        autoHide:  true
       });
       navigation.navigate('OtpVerification', { email, password });
 
@@ -84,6 +86,7 @@ export default function EmailSignUp() {
       type: 'error',
       text1: 'Sign Up Failed',
       text2: errorMessage,
+      autoHide: true
     });
 
     } finally {

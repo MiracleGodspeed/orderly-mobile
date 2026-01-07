@@ -26,6 +26,11 @@ import ProductsList from '../screens/ProductsList';
 import Orders from '../screens/Orders';
 import OrderDetails from '../screens/OrderDetails';
 import ReportsAnalytics from '../screens/ReportsAnalytics';
+import Profile from 'src/screens/Profile';
+import StoreInformation from 'src/screens/StoreInformation';
+import SubscriptionBilling from 'src/screens/SubscriptionBilling';
+import Security from 'src/screens/Security';
+import PayoutSettings from 'src/screens/PayoutSettings';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -105,6 +110,11 @@ export default function RootNavigator() {
         <Stack.Screen name="Orders" component={Orders} />
         <Stack.Screen name="OrderDetails" component={OrderDetails} />
         <Stack.Screen name="ReportsAnalytics" component={ReportsAnalytics} />
+        <Stack.Screen name="Profile" component={Profile} />
+        <Stack.Screen name="StoreInformation" component={StoreInformation} />
+        <Stack.Screen name="SubscriptionBilling" component={SubscriptionBilling} />
+        <Stack.Screen name="Security" component={Security} />
+        <Stack.Screen name="PayoutSettings" component={PayoutSettings} />
 
 
 

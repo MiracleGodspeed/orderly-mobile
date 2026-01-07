@@ -224,7 +224,7 @@ export default function ProductsList() {
 
        
         <View className="flex-row items-center px-4 py-4 border-b border-gray-200">
-          <View className="flex-1 items-center">
+          <View className="flex-1 items-center border rounded p-3 border-[#2D6EEF]">
             <View className="flex-row items-center mb-1">
               <Text className="text-2xl font-bold text-gray-900 mr-2">{totalCount}</Text>
               <View className="bg-blue-100 p-1.5 rounded-full">
@@ -234,9 +234,9 @@ export default function ProductsList() {
             <Text className="text-xs text-gray-600">Total Products</Text>
           </View>
 
-          <View className="w-px h-10 bg-gray-200" />
+          {/* <View className="w-px h-10 bg-gray-200" /> */}
 
-          <View className="flex-1 items-center">
+          <View className="flex-1 items-center border rounded p-3 border-[#057A55] mx-4">
             <View className="flex-row items-center mb-1">
               <Text className="text-2xl font-bold text-gray-900 mr-2">{activeProductsCount}</Text>
               <View className="bg-green-100 p-1.5 rounded-full">
@@ -246,9 +246,9 @@ export default function ProductsList() {
             <Text className="text-xs text-gray-600">Active Products</Text>
           </View>
 
-          <View className="w-px h-10 bg-gray-200" />
+          {/* <View className="w-px h-10 bg-gray-200" /> */}
 
-          <View className="flex-1 items-center">
+          <View className="flex-1 items-center border rounded p-3 border-[#E17100]">
             <View className="flex-row items-center mb-1">
               <Text className="text-2xl font-bold text-gray-900 mr-2">{lowStockCount}</Text>
               <View className="p-1.5 rounded-full">

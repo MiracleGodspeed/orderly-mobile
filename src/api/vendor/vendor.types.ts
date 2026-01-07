@@ -113,3 +113,45 @@ export interface CreateProductPayload {
 export interface UpdateProductPayload extends CreateProductPayload {
   id: string; 
 }
+
+
+export type CatalogItem = {
+  id: string;
+  name: string;
+  price: number;
+  image: string;
+  color: string;
+  size: string;
+  quantity: number;
+};
+
+export type Order = {
+  id: string;
+  orderNumber: string;
+  status: 'success' | 'pending' | 'failed';
+  buyerName: string;
+  buyerEmail: string;
+  buyerPhone: string;
+  buyerBackupPhone: string;
+  fulfillmentType: 'pick-up' | 'delivery';
+  deliveryAddress: string;
+  deliveryCharge: number;
+  state: string;
+  lga: string;
+  totalPrice: number;
+  amountPaid: number;
+  paidAt: string;
+  createdAt: string;
+  catalogItems: CatalogItem[];
+};
+
+export type PaginatedOrdersResponse = {
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  code: string;
+  message: string;
+  data: Order[];
+};
+

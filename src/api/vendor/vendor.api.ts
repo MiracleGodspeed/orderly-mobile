@@ -7,7 +7,18 @@ import {
   GetProductsResponse,
   CreateProductPayload,
   UpdateProductPayload,
+  PaginatedOrdersResponse,
 } from "./vendor.types";
+
+type GetOrdersParams = {
+  pageIndex?: number;
+  pageSize?: number;
+  search?: string;
+  datefrom?: string;
+  dateto?: string;
+};
+
+
 
 
 export const getCategories = async () => {
@@ -226,4 +237,15 @@ export const deleteProduct = async (productId: string): Promise<any> => {
   }
 
   return response.data;
+};
+
+export const getPaidOrders = async (
+  params?: GetOrdersParams
+): Promise<PaginatedOrdersResponse> => {
+  const res = await apiClient.get<PaginatedOrdersResponse>(
+    '/order-requests/get-paid-catalog-items',
+    { params }
+  );
+
+  return res.data;
 };

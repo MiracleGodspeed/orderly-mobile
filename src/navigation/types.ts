@@ -42,5 +42,13 @@ export type RootStackParamList = {
   };
 
     ReportsAnalytics: undefined;
+    StoreInformation: undefined;
+  PersonalDetails: undefined;
+  PayoutSettings: undefined;
+  SubscriptionBilling: undefined;
+  Security: undefined;
+  Notifications: undefined;
+  HelpSupport: undefined;
+  LegalPolicies: undefined;
 
 };

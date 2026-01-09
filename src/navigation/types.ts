@@ -41,8 +41,8 @@ export type RootStackParamList = {
     order: Order;
   };
 
-    ReportsAnalytics: undefined;
-    StoreInformation: undefined;
+  ReportsAnalytics: undefined;
+  StoreInformation: undefined;
   PersonalDetails: undefined;
   PayoutSettings: undefined;
   SubscriptionBilling: undefined;
@@ -50,5 +50,7 @@ export type RootStackParamList = {
   Notifications: undefined;
   HelpSupport: undefined;
   LegalPolicies: undefined;
+  NotificationProfile: undefined;
+  LocationManagement: undefined;
 
 };

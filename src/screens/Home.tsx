@@ -14,7 +14,11 @@ import { getStorefrontDetails } from '../api/vendor/vendor.api';
 import { useVendor } from '../../context/VendorContext';
 import { getProducts,deleteProduct  } from '../../src/api/vendor/vendor.api';
 import { Product } from '../../src/api/vendor/vendor.types';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
+import { getPaidOrders } from "../api/vendor/vendor.api";
+import { Order } from "../api/vendor/vendor.types";
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 
 
@@ -25,6 +29,9 @@ const CARD_WIDTH = width - 32;
 
 
 export default function Home() {
+   const toast = useToast();
+   const currentSlideRef = useRef(0);
+
     const navigation = useNavigation<ScreenNavigationProp>();
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('home');
@@ -41,7 +48,10 @@ const [daysRemaining, setDaysRemaining] = useState<number | null>(null);
   
   const [products, setProducts] = useState<Product[]>([]);
 
-  const [totalCount, setTotalCount] = useState(0);
+  const [totalProductCount, setTotalProductCount] = useState(0);
+  const [totalOrderCount, setTotalOrderCount] = useState(0);
+  const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(2);
+  const [completedSteps, setCompletedSteps] = useState<string[]>([]);
 
 
 // const fetchTrialStatus = async () => {
@@ -65,24 +75,38 @@ const fetchProducts = async () => {
       setLoading(true);
       const response = await getProducts();
       setProducts(response.data);
-      setTotalCount(response.totalCount);
+      setTotalProductCount(response.totalCount);
     } catch (error) {
       console.error('Error fetching products:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: error instanceof Error ? error.message : 'Failed to fetch products',
-        visibilityTime: 3000,
-        autoHide: true
-      });
+     toast.show(error instanceof Error ? error.message : 'Failed to fetch products', { type: 'danger' });
+
+      
     } finally {
       setLoading(false);
     }
   };
 
+  const fetchOrders = async () => {
+      try {
+        setLoading(true);
+        const res = await getPaidOrders({
+          pageIndex: 1,
+          pageSize: 20,
+        });
+  
+        setTotalOrderCount(res.totalCount);
+      } catch (error) {
+        console.error("Failed to fetch orders", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+  
+
 useFocusEffect(
   React.useCallback(() => {
     fetchProducts();
+    fetchOrders()
     // fetchTrialStatus();
   }, [])
 );
@@ -123,18 +147,21 @@ const closeSetupModal = () => {
     }
   ];
 
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const nextSlide = (currentSlide + 1) % slides.length;
-      setCurrentSlide(nextSlide);
-      scrollViewRef.current?.scrollTo({
-        x: nextSlide * CARD_WIDTH,
-        animated: true,
-      });
-    }, 4000);
-    
-    return () => clearInterval(timer);
-  }, [currentSlide]);
+ useEffect(() => {
+  const timer = setInterval(() => {
+    const nextSlide = (currentSlideRef.current + 1) % slides.length;
+    currentSlideRef.current = nextSlide;  // Update ref
+    setCurrentSlide(nextSlide);           // Update state for indicators
+
+    scrollViewRef.current?.scrollTo({
+      x: nextSlide * CARD_WIDTH,
+      animated: true,
+    });
+  }, 4000); // 4 seconds per slide
+
+  return () => clearInterval(timer); // clean up interval
+}, []); 
+
 
   const goToStep = (screen: keyof RootStackParamList) => {
   setSetupModalOpen(false);
@@ -145,10 +172,25 @@ const closeSetupModal = () => {
     const progressPercentage = Math.floor((completedCount / checklistItems.length) * 100);
 
     // console.log(checklistItems, "checklistItems")
+
+    const markStepCompleted = async (step: string) => {
+        setCompletedSteps(prev => {
+            const updated = prev.includes(step) ? prev : [...prev, step];
+            AsyncStorage.setItem('store_setup_steps', JSON.stringify(updated));
+            return updated;
+        });
+    };
+
+const handleMomentumScrollEnd = (event: any) => {
+  const slideIndex = Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH);
+  currentSlideRef.current = slideIndex; // keep ref in sync
+  setCurrentSlide(slideIndex);          // update indicator
+};
+
   return (
       <SafeAreaView className="flex-1 bg-[#f4f4f5]" >
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-         <Header onMenuClick={() => setMenuOpen(true)} />
+         <Header onMenuClick={() => setMenuOpen(true)} unreadCount={unreadNotificationsCount} />
             <MenuOverlay isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
                 <ScrollView className='flex-1' showsVerticalScrollIndicator={false}  contentContainerStyle={{ paddingBottom: 80 }}  >
               <StoreSetupProgress progress={progressPercentage == 0 ? 25 : progressPercentage} onContinue={openSetupModal} />
@@ -182,13 +224,13 @@ const closeSetupModal = () => {
                             
                             <View className="items-center">
                                 <Octicons name="stack" size={24} color="#9CA3AF" />
-                                <Text className="text-2xl font-bold text-gray-800 mt-1 mb-1">48</Text>
+                                <Text className="text-2xl font-bold text-gray-800 mt-1 mb-1">{totalProductCount}</Text>
                                 <Text className="text-[12px] text-gray-500">Stocks</Text>
                             </View>
                             
                             <View className="items-center">
                                 <Ionicons name="cart-outline" size={24} color="#9CA3AF"  />
-                                <Text className="text-2xl font-bold text-gray-800 mb-1">6</Text>
+                                <Text className="text-2xl font-bold text-gray-800 mb-1">{totalOrderCount}</Text>
                                 <Text className="text-[12px] text-gray-500">Orders</Text>
                             </View>
                         </View>
@@ -215,7 +257,7 @@ const closeSetupModal = () => {
                                       <Ionicons name="cube-outline" size={24} color="#1A56DB" />
                                   </View>
                                   <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
-                                      <Text className="text-white text-xs font-semibold">{totalCount}</Text>
+                                      <Text className="text-white text-xs font-semibold">{totalProductCount}</Text>
                                   </View>
                               </View>
                               <Text className="text-xs text-[#404040] text-center w-16" >
@@ -223,13 +265,13 @@ const closeSetupModal = () => {
                               </Text>
                           </TouchableOpacity>
 
-                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                          <TouchableOpacity className="items-center" activeOpacity={0.7} onPress={() => navigation.navigate('Orders')}>
                               <View className="relative">
                                   <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
                                       <Ionicons name="cart-outline" size={24} color="#1A56DB" />
                                   </View>
                                   <View className="absolute -top-1 -right-1 bg-red-500 px-1.5 py-0.5 rounded-full min-w-[20px] items-center">
-                                      <Text className="text-white text-xs font-semibold">6</Text>
+                                      <Text className="text-white text-xs font-semibold">{totalOrderCount}</Text>
                                   </View>
                               </View>
                               <Text className="text-xs text-[#404040] text-center w-16">
@@ -271,7 +313,7 @@ const closeSetupModal = () => {
                               </Text>
                           </TouchableOpacity>
 
-                          <TouchableOpacity className="items-center" activeOpacity={0.7}>
+                          <TouchableOpacity className="items-center" activeOpacity={0.7} onPress={() => navigation.navigate('LocationManagement')}>
                               <View className="w-[60px] h-[60px] bg-blue-50 rounded-xl items-center justify-center mb-2">
                                   <Ionicons name="car-outline" size={24} color="#1A56DB" />
                               </View>
@@ -291,177 +333,237 @@ const closeSetupModal = () => {
                       </View>
                         </View>
                     </View>
-                    <View className="px-4 mb-5">
-                        <ScrollView
-                            ref={scrollViewRef}
-                            horizontal
-                            pagingEnabled
-                            showsHorizontalScrollIndicator={false}
-                            onMomentumScrollEnd={(event) => {
-                            const slideIndex = Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH);
-                            setCurrentSlide(slideIndex);
-                            }}
-                        >
-                            {slides.map((slide, index) => (
-                            <View 
-                                key={index}
-                                className="p-6 rounded-2xl flex-row items-center"
-                                style={{ 
-                                width: CARD_WIDTH,
-                                backgroundColor: "#fff"
-                                }}
-                            >
-                                <View className="flex-1">
-                                    <View className='flex-row'>
-                                        <View className="w-20 h-20 mb-4 rounded-xl overflow-hidden">
-                                            <Image 
-                                                source={slide.image}
-                                                className="w-[50] h-[50]"
-                                                resizeMode="cover"
-                                            />
-                                        </View>
-                                        <View>
-                                            <Text className="text-[#1F2A37] font-[400] text-[16px] mb-2">{slide.title}</Text>
-                                            <Text className="text-[#6B7280] text-[12px]  mb-4">{slide.subtitle}</Text>
-                                        </View>
+                   <View className="px-4 mb-5">
+  <ScrollView
+    ref={scrollViewRef}
+    horizontal
+    pagingEnabled
+    showsHorizontalScrollIndicator={false}
+    onMomentumScrollEnd={handleMomentumScrollEnd}
+  >
+    {slides.map((slide, index) => (
+      <View 
+        key={index}
+        className="p-6 rounded-2xl flex-row items-center"
+        style={{ 
+          width: CARD_WIDTH,
+          backgroundColor: "#fff"
+        }}
+      >
+        <View className="flex-1">
+          <View className="flex-row mb-4 items-center gap-3">
+            <View className="w-20 h-20 rounded-xl overflow-hidden">
+              <Image 
+                source={slide.image}
+                className="w-full h-full"
+                resizeMode="cover"
+              />
+            </View>
+            <View className="flex-1">
+              <Text className="text-[#1F2A37] font-[400] text-[16px] mb-1">{slide.title}</Text>
+              <Text className="text-[#6B7280] text-[12px]">{slide.subtitle}</Text>
+            </View>
+          </View>
 
-                                    </View>
-                                    <TouchableOpacity
-                                        onPress={handleContinueSetup}
-                                        className="bg-[#1A56DB] px-6 py-2.5 rounded-full self-start flex-row items-center gap-2"
-                                        activeOpacity={0.8}
-                                    >
-                                        <Text className="text-white font-semibold text-sm">{slide.buttonText}</Text>
-                                        <Text className="text-white">→</Text>
-                                    </TouchableOpacity>
-                                </View>
-                                
-                            </View>
-                            ))}
-                        </ScrollView>
-                        
-                        <View className="flex-row justify-center gap-1.5 mt-3">
-                            {slides.map((_, index) => (
-                            <View
-                                key={index}
-                                className={`h-1.5 rounded-full ${
-                                index === currentSlide ? 'w-6 bg-blue-600' : 'w-1.5 bg-gray-300'
-                                }`}
-                            />
-                            ))}
-                        </View>
-                    </View>
-                    
+          <TouchableOpacity
+            onPress={handleContinueSetup}
+            className="bg-[#1A56DB] px-6 py-2.5 rounded-full self-start flex-row items-center gap-2"
+            activeOpacity={0.8}
+          >
+            <Text className="text-white font-semibold text-sm">{slide.buttonText}</Text>
+            <Text className="text-white">→</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    ))}
+  </ScrollView>
+
+  <View className="flex-row justify-center gap-1.5 mt-3">
+    {slides.map((_, index) => (
+      <View
+        key={index}
+        className={`h-1.5 rounded-full ${
+          index === currentSlide ? 'w-6 bg-blue-600' : 'w-1.5 bg-gray-300'
+        }`}
+      />
+    ))}
+  </View>
+</View>
 
                 </ScrollView>
 
-           
                 <Modal
-                    isVisible={setupModalOpen}
-                    onBackdropPress={closeSetupModal}
-                    style={{ justifyContent: 'flex-end', margin: 0 }}
-                    >
-                    <View className="bg-white rounded-t-3xl px-5 pt-4 pb-6">
-                        
-                       
-                        <View className="flex-row items-center justify-between mb-4">
-                            <View></View>
-                        <Text className=" text-[#1F2A37] text-[16px]">Account Setup</Text>
-                        <TouchableOpacity onPress={closeSetupModal}>
-                            <Ionicons name="close" size={22} color="#111827" />
-                        </TouchableOpacity>
-                        </View>
+  isVisible={setupModalOpen}
+  onBackdropPress={closeSetupModal}
+  useNativeDriver
+  hideModalContentWhileAnimating={false}
+  animationIn="slideInUp"
+  animationOut="slideOutDown"
+  animationInTiming={200}
+  animationOutTiming={150}
+  backdropTransitionInTiming={0}
+  backdropTransitionOutTiming={0}
+  style={{ justifyContent: 'flex-end', margin: 0 }}
+>
+  <View className="bg-white rounded-t-3xl px-5 pt-4 pb-6">
 
-                        <Text className="text-[24px] font-[400] text-gray-900 mb-2 text-center">
-                        Complete Your Store Setup
-                        </Text>
+    {/* Header */}
+    <View className="flex-row items-center justify-between mb-4">
+      <View />
+      <Text className="text-[#1F2A37] text-[16px]">Account Setup</Text>
+      <TouchableOpacity onPress={closeSetupModal}>
+        <Ionicons name="close" size={22} color="#111827" />
+      </TouchableOpacity>
+    </View>
 
-                        <Text className="text-sm text-gray-500 mb-4">
-                        You're almost there! Finish these steps to get your store ready to sell
-                        and start accepting orders.
-                        </Text>
+    <Text className="text-[24px] font-[400] text-gray-900 mb-2 text-center">
+      Complete Your Store Setup
+    </Text>
 
-                        <View className="flex-row items-center justify-between mb-2">
-                        <Text className="text-xs text-gray-500">Step 1 of 3</Text>
-                        <Text className="text-xs text-blue-600 font-medium">
-                            25% complete
-                        </Text>
-                        </View>
+    <Text className="text-sm text-gray-500 mb-4">
+      You're almost there! Finish these steps to get your store ready to sell
+      and start accepting orders.
+    </Text>
 
-                        <View className="w-full h-1.5 bg-gray-200 rounded-full mb-5">
-                        <View
-                            className="h-1.5 bg-blue-600 rounded-full"
-                            style={{ width: '25%' }}
-                        />
-                        </View>
+    {/* Progress */}
+    <View className="flex-row items-center justify-between mb-2">
+      <Text className="text-xs text-gray-500">
+        Step {completedSteps.length + 1} of 3
+      </Text>
+      <Text className="text-xs text-blue-600 font-medium">
+        {Math.round((completedSteps.length / 3) * 100)}% complete
+      </Text>
+    </View>
 
-                       
-                        <TouchableOpacity
-                        activeOpacity={0.7}
-                        className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-3"
-                        >
-                        <View className="flex-row gap-3 flex-1">
-                            <View className="w-5 h-5 border border-gray-400 rounded-full mt-1" />
-                            <View className="flex-1">
-                            <Text className="text-sm font-medium text-gray-900 mb-1">
-                                Customize Your Storefront
-                            </Text>
-                            <Text className="text-xs text-gray-500">
-                                Add your logo, brand colors, and layout to make your store look
-                                professional and on-brand.
-                            </Text>
-                            </View>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color="#2563EB" />
-                        </TouchableOpacity>
+    <View className="w-full h-1.5 bg-gray-200 rounded-full mb-5">
+      <View
+        className="h-1.5 bg-blue-600 rounded-full"
+        style={{ width: `${(completedSteps.length / 3) * 100}%` }}
+      />
+    </View>
 
-                        <TouchableOpacity
-                        activeOpacity={0.7}
-                        className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-3"
-                        >
-                        <View className="flex-row gap-3 flex-1">
-                            <View className="w-5 h-5 border border-gray-400 rounded-full mt-1" />
-                            <View className="flex-1">
-                            <Text className="text-sm font-medium text-gray-900 mb-1">
-                                Add Your First Product
-                            </Text>
-                            <Text className="text-xs text-gray-500">
-                                Upload product photos, set prices, and organise your inventory so
-                                customers can start shopping.
-                            </Text>
-                            </View>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color="#2563EB" />
-                        </TouchableOpacity>
+    {/* STEP 1 */}
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={() => {
+        markStepCompleted('customize-store');
+        closeSetupModal();
+        navigation.navigate('ManageStore');
+      }}
+      className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-3"
+    >
+      <View className="flex-row gap-3 flex-1">
+        <View
+          className={`w-5 h-5 rounded-full mt-1 items-center justify-center ${
+            completedSteps.includes('customize-store')
+              ? 'bg-blue-600'
+              : 'border border-gray-400'
+          }`}
+        >
+          {completedSteps.includes('customize-store') && (
+            <Ionicons name="checkmark" size={14} color="white" />
+          )}
+        </View>
 
-                        <TouchableOpacity
-                        activeOpacity={0.7}
-                        className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-6"
-                        >
-                        <View className="flex-row gap-3 flex-1">
-                            <View className="w-5 h-5 border border-gray-400 rounded-full mt-1" />
-                            <View className="flex-1">
-                            <Text className="text-sm font-medium text-gray-900 mb-1">
-                                Set Up Your Payment Method
-                            </Text>
-                            <Text className="text-xs text-gray-500">
-                                Connect your bank or payment provider to start receiving payments
-                                securely.
-                            </Text>
-                            </View>
-                        </View>
-                        <Ionicons name="chevron-forward" size={18} color="#2563EB" />
-                        </TouchableOpacity>
+        <View className="flex-1">
+          <Text
+            className={`text-sm font-medium mb-1 ${
+              completedSteps.includes('customize-store')
+                ? 'text-blue-600'
+                : 'text-gray-900'
+            }`}
+          >
+            Customize Your Storefront
+          </Text>
+          <Text className="text-xs text-gray-500">
+            Add your logo, brand colors, and layout to make your store look
+            professional and on-brand.
+          </Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#2563EB" />
+    </TouchableOpacity>
 
-                        
+    {/* STEP 2 */}
+    <TouchableOpacity
+      activeOpacity={0.7}
+      onPress={() => {
+        markStepCompleted('add-product');
+        closeSetupModal();
+        navigation.navigate('ProductsList', {
+          openAddProduct: true,
+        });
+      }}
+      className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-3"
+    >
+      <View className="flex-row gap-3 flex-1">
+        <View
+          className={`w-5 h-5 rounded-full mt-1 items-center justify-center ${
+            completedSteps.includes('add-product')
+              ? 'bg-blue-600'
+              : 'border border-gray-400'
+          }`}
+        >
+          {completedSteps.includes('add-product') && (
+            <Ionicons name="checkmark" size={14} color="white" />
+          )}
+        </View>
 
-                    </View>
+        <View className="flex-1">
+          <Text
+            className={`text-sm font-medium mb-1 ${
+              completedSteps.includes('add-product')
+                ? 'text-blue-600'
+                : 'text-gray-900'
+            }`}
+          >
+            Add Your First Product
+          </Text>
+          <Text className="text-xs text-gray-500">
+            Upload product photos, set prices, and organise your inventory so
+            customers can start shopping.
+          </Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#2563EB" />
+    </TouchableOpacity>
+
+    {/* STEP 3 (placeholder – logic later) */}
+    <TouchableOpacity
+      activeOpacity={0.7}
+      className="flex-row items-start justify-between p-4 border border-gray-200 rounded-xl mb-6"
+    >
+      <View className="flex-row gap-3 flex-1">
+        <View className="w-5 h-5 border border-gray-400 rounded-full mt-1" />
+        <View className="flex-1">
+          <Text className="text-sm font-medium text-gray-900 mb-1">
+            Set Up Your Payment Method
+          </Text>
+          <Text className="text-xs text-gray-500">
+            Connect your bank or payment provider to start receiving payments
+            securely.
+          </Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={18} color="#2563EB" />
+    </TouchableOpacity>
+
+  </View>
                 </Modal>
+
 
           
                 <Modal
-              isVisible={isTrial}
-              onBackdropPress={() => setIsTrial(false)}
+                    isVisible={trialModalVisible}
+                    onBackdropPress={() => setTrialModalVisible(false)}
+                    useNativeDriver
+                    hideModalContentWhileAnimating={false}
+                    animationIn="slideInUp"
+                    animationOut="slideOutDown"
+                    animationInTiming={200}
+                    animationOutTiming={150}
+                    backdropTransitionInTiming={0}
+                    backdropTransitionOutTiming={0}
                     style={{ justifyContent: "flex-end", margin: 0 }}
                     >
                     <View className="bg-white rounded-t-3xl px-5 pt-4 pb-10 py-6">

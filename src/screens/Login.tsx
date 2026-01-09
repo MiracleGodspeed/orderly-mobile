@@ -18,7 +18,8 @@ import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { useVendor } from '../../context/VendorContext';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
 import EyeIcon from '../../assets/icons/eye.svg';
 import EyeOffIcon from '../../assets/icons/eye-off.svg';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
@@ -28,6 +29,8 @@ import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-si
 
 export type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 export default function Login() {
+   const toast = useToast();
+
   const navigation = useNavigation<ScreenNavigationProp>();
   const {login} = useAuth()
   const { fetchVendorData } = useVendor();
@@ -90,13 +93,9 @@ export default function Login() {
          
           errorMessage = String((err as any).message);
         }
+     toast.show( 'Login Failed', { type: 'danger' });
         
-        Toast.show({
-          type: 'error',
-          text1: 'Login Failed',
-          text2: errorMessage,
-          autoHide: true
-        });
+       
    } finally {
     setLoading(false);
    }

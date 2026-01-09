@@ -14,7 +14,8 @@ import { useNavigation } from '@react-navigation/native';
 import {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
 import { SignupRequest } from '../api/auth/auth.types';
 import { signup } from '../api/auth/auth.api';
 import EyeIcon from '../../assets/icons/eye.svg';
@@ -25,6 +26,7 @@ type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 
 export default function EmailSignUp() {
+   const toast = useToast();
 
     const navigation = useNavigation<ScreenNavigationProp>();
       const [email, setEmail] = useState('');
@@ -41,11 +43,8 @@ export default function EmailSignUp() {
   
   const handleSignup = async () => {
     if(password !== confirmPassword) {
-      Toast.show({
-        type: 'error',
-        text1: 'Passwords do not match',
-        autoHide: true
-      })
+     toast.show( 'Passwords do not match', { type: 'danger' });
+
       return;
     }
     setLoading(true);
@@ -59,12 +58,9 @@ export default function EmailSignUp() {
     try {
       const response = await signup(payload);
        console.log('Signup response:', response);
-       Toast.show({
-        type: 'success',
-        text1: 'OTP sent',
-        text2: 'Check your email for the verification code',
-        autoHide:  true
-      });
+     toast.show( 'Check your email for the verification code', { type: 'normal' });
+
+      
       navigation.navigate('OtpVerification', { email, password });
 
 
@@ -81,14 +77,9 @@ export default function EmailSignUp() {
      
       errorMessage = String((err as any).message);
     }
+     toast.show( 'Sign Up Failed', { type: 'danger' });
     
-    Toast.show({
-      type: 'error',
-      text1: 'Sign Up Failed',
-      text2: errorMessage,
-      autoHide: true
-    });
-
+   
     } finally {
        setLoading(false);
 

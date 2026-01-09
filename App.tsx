@@ -6,7 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect, useState, useCallback } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import RootNavigator from './src/navigation/RootNavigator';
-import Toast from 'react-native-toast-message';
+import { ToastProvider } from 'react-native-toast-notifications';
 import { useFonts } from 'expo-font';
 import { Ionicons, AntDesign, Octicons, MaterialIcons } from '@expo/vector-icons';
 
@@ -42,11 +42,19 @@ export default function App() {
 
   return (
     <SafeAreaProvider>
+       <ToastProvider
+      duration={3000} 
+      offset={50}     
+      swipeEnabled
+      animationType="slide-in"
+      placement="top"
+    >
       <View style={styles.root} onLayout={onLayoutRootView}>
         <StatusBar style="light" backgroundColor="#265CC7" />
         <RootNavigator />
       </View>
-      <Toast />
+       </ToastProvider>
+      
     </SafeAreaProvider>
   );
 }

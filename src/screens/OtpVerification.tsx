@@ -17,7 +17,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { verifyOtp } from '../api/auth/auth.api';
 import { OtpVerificationRequest } from '../api/auth/auth.types';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
 
 type OtpNavigationProp = NativeStackNavigationProp<RootStackParamList, 'OtpVerification'>;
 type OtpRouteProp = RouteProp<RootStackParamList, 'OtpVerification'>;
@@ -28,6 +29,8 @@ interface Props {
 }
 
 export default function OtpVerification({ route, navigation }: Props) {
+     const toast = useToast();
+  
   const { email, password } = route.params;
   const { setAuthData } = useAuth();
   const [otp, setOtp] = useState(['', '', '', '', '', '']);
@@ -85,14 +88,9 @@ export default function OtpVerification({ route, navigation }: Props) {
     const enteredOtp = otp.join('');
 
     if (enteredOtp.length !== 6) {
-      Toast.show({
-        type: 'error',
-        text1: 'Incomplete OTP',
-        text2: 'Please enter all 6 digits.',
-        position: 'top',
-        visibilityTime: 3000,
-        autoHide: true
-      });
+     toast.show( 'Incomplete OTP', { type: 'danger' });
+
+     
       return;
     }
 
@@ -128,15 +126,9 @@ export default function OtpVerification({ route, navigation }: Props) {
         name: fullName ?? undefined,
         storeId,
       });
+     toast.show( 'Verification Successful', { type: 'success' });
 
-      Toast.show({
-        type: 'success',
-        text1: 'Verification Successful',
-        text2: 'Redirecting...',
-        position: 'top',
-        visibilityTime: 2000,
-        autoHide: true
-      });
+     
 
       navigation.navigate('OtpSuccess');
     } catch (error: any) {
@@ -148,15 +140,8 @@ export default function OtpVerification({ route, navigation }: Props) {
         error?.response?.data?.error ||
         error?.message || 
         'Verification failed. Please try again.';
+     toast.show( 'Verification Failed', { type: 'danger' });
 
-      Toast.show({
-        type: 'error',
-        text1: 'Verification Failed',
-        text2: errorMessage,
-        position: 'top',
-        visibilityTime: 4000,
-        autoHide:  true
-      });
       
       
       setOtp(['', '', '', '', '', '']);
@@ -169,15 +154,9 @@ export default function OtpVerification({ route, navigation }: Props) {
   const handleResendOtp = () => {
     setOtp(['', '', '', '', '', '']);
     inputRefs.current[0]?.focus();
+     toast.show( 'OTP Resent', { type: 'warning' });
     
-    Toast.show({
-      type: 'info',
-      text1: 'OTP Resent',
-      text2: 'A new code has been sent to your email.',
-      position: 'top',
-      visibilityTime: 3000,
-      autoHide: true
-    });
+   
   };
 
   const isOtpComplete = otp.every(digit => digit !== '');
@@ -185,7 +164,7 @@ export default function OtpVerification({ route, navigation }: Props) {
   return (
     <SafeAreaView className="flex-1 bg-white">
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <Toast />
+     
       <View className="pt-5 px-6">
         <View className="flex-row items-center justify-center relative">
           <TouchableOpacity

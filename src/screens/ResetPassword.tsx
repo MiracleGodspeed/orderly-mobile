@@ -15,11 +15,14 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function ResetPassword() {
+     const toast = useToast();
+  
   const navigation = useNavigation<ScreenNavigationProp>();
 
   const [currentPassword, setcurrentPassword] = useState('');
@@ -49,15 +52,8 @@ export default function ResetPassword() {
       setIsResetting(false);
       setModalVisible(false);
 
+     toast.show( 'Password updated', { type: 'success' });
     
-      Toast.show({
-        type: 'success',
-        text1: 'Password updated',
-        text2: 'Your password has been successfully updated.',
-        position: 'top',
-        autoHide: true
-      });
-
       
       // setconfirmPassword('');
     }, 5000);
@@ -76,15 +72,9 @@ useEffect(() => {
       setIsResetting(false);
       setModalVisible(false);
 
+     toast.show( 'Password updated', { type: 'success' });
      
-      Toast.show({
-        type: 'success',
-        text1: 'Password updated',
-        text2: 'Your password has been reset successfully.',
-        position: 'bottom',
-        visibilityTime: 3000,
-        autoHide: true
-      });
+      
     }, 5000);
   } else {
    

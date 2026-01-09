@@ -14,7 +14,8 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -28,6 +29,8 @@ interface ActiveSession {
 }
 
 export default function Security() {
+     const toast = useToast();
+  
   const navigation = useNavigation<ScreenNavigationProp>();
 
   // ============ STATE MANAGEMENT ============
@@ -71,11 +74,8 @@ export default function Security() {
       setActiveSessions(mockSessions);
     } catch (error) {
       console.error('Error fetching security data:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to load security settings',
-      });
+     toast.show( 'Failed to load security settings', { type: 'danger' });
+
     } finally {
       setLoading(false);
     }
@@ -102,11 +102,9 @@ export default function Security() {
     //   });
     } catch (error) {
       console.error('Error toggling 2FA:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to update 2FA settings',
-      });
+     toast.show( 'Failed to update 2FA setting', { type: 'danger' });
+
+    
       setTwoFactorEnabled(!value);
     } finally {
       setIsToggling2FA(false);
@@ -115,11 +113,8 @@ export default function Security() {
 
   const handleRevokeSession = (session: ActiveSession) => {
     if (session.isCurrent) {
-      Toast.show({
-        type: 'info',
-        text1: 'Cannot Revoke',
-        text2: 'You cannot revoke your current session',
-      });
+     toast.show( 'You cannot revoke your current session', { type: 'danger' });
+
       return;
     }
 
@@ -144,19 +139,12 @@ export default function Security() {
     try {
      
       setActiveSessions(activeSessions.filter(s => s.id !== sessionId));
+     toast.show( 'You cannot revoke your current session', { type: 'danger' });
 
-      Toast.show({
-        type: 'success',
-        text1: 'Success',
-        text2: 'Session revoked successfully',
-      });
+      
     } catch (error) {
       console.error('Error revoking session:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to revoke session',
-      });
+     
     }
   };
 

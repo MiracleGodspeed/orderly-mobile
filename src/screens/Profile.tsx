@@ -75,7 +75,7 @@ export default function Profile() {
       id: 'notifications',
       icon: 'notifications-none',
       title: 'Notifications',
-      screen: 'Notifications'
+      screen: 'NotificationProfile'
     },
     {
       id: 'help',
@@ -103,7 +103,6 @@ export default function Profile() {
   const handleLogout = async () => {
     try {
       await logout();
-      // Navigation will be handled by auth context
     } catch (error) {
       console.error('Logout error:', error);
     }

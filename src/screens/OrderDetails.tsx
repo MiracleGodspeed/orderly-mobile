@@ -11,6 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation, useRoute, RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useToast } from 'react-native-toast-notifications';
 
 import { RootStackParamList } from "../navigation/types";
 
@@ -69,6 +70,8 @@ const getNextAction = (status: OrderStatus) => {
 };
 
 export default function OrderDetailsScreen() {
+   const toast = useToast();
+
   const navigation = useNavigation<ScreenNavigationProp>();
   const route = useRoute<OrderDetailsRouteProp>();
   const { order } = route.params;
@@ -88,66 +91,109 @@ export default function OrderDetailsScreen() {
       </View>
 
       <ScrollView className="flex-1 px-4">
-        <View className="mb-4">
-          <Text className="text-2xl font-bold text-gray-900 mb-1">
-            {order.orderNumber}
-          </Text>
-          <Text className="text-sm text-gray-500 mb-3">
-            {new Date(order.createdAt).toLocaleString()}
-          </Text>
+       <View className="px-5 py-4">
+    <Text className="text-2xl font-bold text-gray-900 mb-1">
+      {order.orderNumber}
+    </Text>
+    <Text className="text-sm text-gray-500 mb-3">
+      {new Date(order.createdAt).toLocaleString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+      })}
+    </Text>
 
-          <View
-            className={`self-start px-3 py-1 rounded-md ${getStatusColor(status)}`}
-          >
-            <Text className="text-sm font-medium">{status}</Text>
-          </View>
+    <View
+      className={`self-start px-3 py-1.5 rounded-md ${getStatusColor(status)}`}
+    >
+      <Text className="text-xs font-semibold">{status}</Text>
+    </View>
+  </View>
+       {/* Customer Section */}
+  <View className="px-5 py-4 bg-gray-50">
+    <Text className="text-xs text-gray-500 mb-3 uppercase tracking-wide">
+      Customer
+    </Text>
+
+    <View className="bg-white rounded-xl p-4 shadow-sm">
+      <View className="flex-row items-center mb-4">
+        <View className="w-10 h-10 bg-blue-100 rounded-full items-center justify-center mr-3">
+          <Text className="text-blue-600 font-semibold text-base">
+            {order.buyerName.split(' ').map(n => n[0]).join('')}
+          </Text>
         </View>
-
-        <View className="mb-6">
-          <Text className="text-sm text-gray-600 mb-3">Customer</Text>
-          <Text className="text-base font-semibold text-gray-900 mb-3">
+        <View className="flex-1">
+          <Text className="text-base font-semibold text-gray-900">
             {order.buyerName}
           </Text>
-
-          <View className="flex-row items-center mb-2">
-            <MaterialIcons name="email" size={18} color="#6b7280" />
-            <Text className="text-sm text-gray-700 ml-2">{order.buyerEmail}</Text>
-          </View>
-
-          <View className="flex-row items-center">
-            <MaterialIcons name="phone" size={18} color="#6b7280" />
-            <Text className="text-sm text-gray-700 ml-2">{order.buyerPhone}</Text>
+          <View className="flex-row items-center mt-0.5">
+            <MaterialIcons name="location-on" size={14} color="#9ca3af" />
+            <Text className="text-xs text-gray-500 ml-1">
+              242 Main St, New York, NY
+            </Text>
           </View>
         </View>
+      </View>
 
-        <View className="mb-6">
-          <Text className="text-sm text-gray-600 mb-3">Items</Text>
+      <View className="flex-row gap-2">
+        <Pressable className="flex-1 flex-row items-center justify-center py-2.5 px-3 border border-gray-200 rounded-lg">
+          <MaterialIcons name="phone" size={16} color="#374151" />
+          <Text className="text-sm text-gray-700 ml-1.5 font-medium">
+            Call Customer
+          </Text>
+        </Pressable>
 
-          {order.catalogItems.map((item: any) => (
-            <View key={item.id} className="flex-row items-center mb-4">
-              <View className="w-12 h-12 bg-gray-100 rounded-lg mr-3 overflow-hidden">
-                <Image
-                  source={{ uri: item.image }}
-                  className="w-full h-full"
-                  resizeMode="cover"
-                />
-              </View>
+        <Pressable className="flex-1 flex-row items-center justify-center py-2.5 px-3 border border-gray-200 rounded-lg">
+          <MaterialIcons name="chat" size={16} color="#10b981" />
+          <Text className="text-sm text-gray-700 ml-1.5 font-medium">
+            WhatsApp
+          </Text>
+        </Pressable>
+      </View>
 
-              <View className="flex-1">
-                <Text className="text-base text-gray-900 mb-1">{item.name}</Text>
-                <Text className="text-sm text-gray-500">Qty: {item.quantity}</Text>
-              </View>
+      <View className="flex-row items-center mt-3 pt-3 border-t border-gray-100">
+        <MaterialIcons name="email" size={16} color="#6b7280" />
+        <Text className="text-sm text-gray-600 ml-2">
+          {order.buyerEmail}
+        </Text>
+      </View>
+    </View>
+  </View>
 
-              <Text className="text-base font-semibold text-gray-900">
-                ₦{Number(item.price).toLocaleString(undefined, {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </Text>
-            </View>
-          ))}
+  <View className="px-5 py-4">
+    <Text className="text-xs text-gray-500 mb-3 uppercase tracking-wide">
+      Items
+    </Text>
+
+    {order.catalogItems.map((item: any) => (
+      <View key={item.id} className="flex-row items-center mb-4">
+        <View className="w-14 h-14 bg-gray-100 rounded-xl mr-3 overflow-hidden">
+          <Image
+            source={{ uri: item.image }}
+            className="w-full h-full"
+            resizeMode="cover"
+          />
         </View>
 
+        <View className="flex-1">
+          <Text className="text-sm font-medium text-gray-900 mb-1">
+            {item.name}
+          </Text>
+          <Text className="text-xs text-gray-500">Qty: {item.quantity}</Text>
+        </View>
+
+        <Text className="text-base font-semibold text-gray-900">
+          ₦{Number(item.price).toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          })}
+        </Text>
+      </View>
+    ))}
+  </View>
         <View className="mb-6">
           <Text className="text-sm text-gray-600 mb-3">Payment</Text>
 

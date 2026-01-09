@@ -12,7 +12,8 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -35,6 +36,8 @@ interface PaymentHistory {
 }
 
 export default function SubscriptionBilling() {
+     const toast = useToast();
+  
   const navigation = useNavigation<ScreenNavigationProp>();
 
   const [loading, setLoading] = useState(true);
@@ -94,11 +97,9 @@ export default function SubscriptionBilling() {
       setPaymentHistory(mockPayments);
     } catch (error) {
       console.error('Error fetching subscription:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to load subscription data',
-      });
+     toast.show( 'Failed to load subscription data', { type: 'danger' });
+
+     
     } finally {
       setLoading(false);
     }
@@ -129,13 +130,8 @@ export default function SubscriptionBilling() {
   };
 
   const handleViewFullHistory = () => {
-    // Navigate to full payment history screen
-    Toast.show({
-      type: 'info',
-      text1: 'Coming Soon',
-      text2: 'Full history view will be available soon',
-      autoHide: true,
-    });
+
+  
   };
 
   const getStatusColor = (status: string) => {

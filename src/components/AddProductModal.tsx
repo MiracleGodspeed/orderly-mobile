@@ -7,7 +7,8 @@ import {
   ScrollView,
   Image,
   Platform,
-  ActivityIndicator
+  ActivityIndicator,
+
 } from "react-native";
 import { useState, useEffect } from "react";
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
@@ -15,9 +16,11 @@ import * as ImagePicker from "expo-image-picker";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { createProduct, updateProduct } from '../../src/api/vendor/vendor.api';
 import { CreateProductPayload, Product } from '../../src/api/vendor/vendor.types';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
 import ColorPicker, { Panel1, HueSlider } from 'reanimated-color-picker';
 import { runOnJS } from 'react-native-reanimated';
+import KeyboardScreen from "./KeyboardScreen";
 
 interface Props {
   visible: boolean;
@@ -34,6 +37,7 @@ export default function AddProductModal({
   productData,
   onProductAdded 
 }: Props) {
+   const toast = useToast();
   
   const [productImages, setProductImages] = useState<string[]>([]);
   const [productName, setProductName] = useState('');
@@ -115,12 +119,12 @@ export default function AddProductModal({
     if (hasPermission === false) return;
     
     if (productImages.length >= 2) {
-      Toast.show({
-        type: 'info',
-        text1: 'Maximum images reached',
-        text2: 'You can only upload up to 2 images',
-        autoHide: true
-      });
+      // Toast.show({
+      //   type: 'info',
+      //   text1: 'Maximum images reached',
+      //   text2: 'You can only upload up to 2 images',
+      //   autoHide: true
+      // });
       return;
     }
 
@@ -145,12 +149,12 @@ export default function AddProductModal({
     if (currentSize.trim() === '') return;
     
     if (sizes.includes(currentSize.trim().toUpperCase())) {
-      Toast.show({
-        type: 'info',
-        text1: 'Duplicate size',
-        text2: 'This size has already been added',
-        autoHide: true
-      });
+      // Toast.show({
+      //   type: 'info',
+      //   text1: 'Duplicate size',
+      //   text2: 'This size has already been added',
+      //   autoHide: true
+      // });
       return;
     }
     
@@ -170,12 +174,12 @@ export default function AddProductModal({
 
   const addColor = () => {
     if (colors.some(c => c.hex === selectedColor)) {
-      Toast.show({
-        type: 'info',
-        text1: 'Duplicate color',
-        text2: 'This color has already been added',
-        autoHide: true
-      });
+      // Toast.show({
+      //   type: 'info',
+      //   text1: 'Duplicate color',
+      //   text2: 'This color has already been added',
+      //   autoHide: true
+      // });
       return;
     }
     
@@ -268,13 +272,13 @@ export default function AddProductModal({
   
   const handleSave = async () => {
     if (!validateForm()) {
-      Toast.show({
-        type: 'error',
-        text1: 'Validation Error',
-        text2: 'Please fill in all required fields',
-        visibilityTime: 2000,
-        autoHide: true
-      });
+      // Toast.show({
+      //   type: 'error',
+      //   text1: 'Validation Error',
+      //   text2: 'Please fill in all required fields',
+      //   visibilityTime: 2000,
+      //   autoHide: true
+      // });
       return;
     }
 
@@ -321,22 +325,22 @@ export default function AddProductModal({
 
       if (mode === 'edit' && productData?.id) {console.log(productData?.id)
         await updateProduct(productData.id, payload);
-        Toast.show({
-          type: 'success',
-          text1: 'Success',
-          text2: 'Product updated successfully!',
-          visibilityTime: 3000,
-          autoHide: true
-        });
+        // Toast.show({
+        //   type: 'success',
+        //   text1: 'Success',
+        //   text2: 'Product updated successfully!',
+        //   visibilityTime: 3000,
+        //   autoHide: true
+        // });
       } else {
         await createProduct(payload);
-        Toast.show({
-          type: 'success',
-          text1: 'Success',
-          text2: 'Product added successfully!',
-          visibilityTime: 3000,
-          autoHide: true
-        });
+        // Toast.show({
+        //   type: 'success',
+        //   text1: 'Success',
+        //   text2: 'Product added successfully!',
+        //   visibilityTime: 3000,
+        //   autoHide: true
+        // });
       }
 
       resetForm();
@@ -347,12 +351,12 @@ export default function AddProductModal({
       }
     } catch (error) {
       console.error('Error saving product:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: error instanceof Error ? error.message : `Failed to ${mode === 'edit' ? 'update' : 'add'} product`,
-        autoHide:  true
-      });
+      // Toast.show({
+      //   type: 'error',
+      //   text1: 'Error',
+      //   text2: error instanceof Error ? error.message : `Failed to ${mode === 'edit' ? 'update' : 'add'} product`,
+      //   autoHide:  true
+      // });
     } finally {
       setLoading(false);
     }
@@ -365,6 +369,9 @@ export default function AddProductModal({
       presentationStyle="pageSheet"
     >
       <SafeAreaView className="flex-1 bg-white">
+        <KeyboardScreen
+   
+  >
         <View className="flex-1">
          
           <View className="px-4 py-4 border-b border-gray-200">
@@ -747,6 +754,7 @@ export default function AddProductModal({
             </Pressable>
           </View>
         </View>
+        </KeyboardScreen>
       </SafeAreaView>
     </Modal>
   );

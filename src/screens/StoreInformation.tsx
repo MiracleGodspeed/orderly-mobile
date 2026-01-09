@@ -13,12 +13,14 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useVendor } from '../../context/VendorContext';
-import Toast from 'react-native-toast-message';
+import { useToast } from 'react-native-toast-notifications';
+
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function StoreInformation() {
+     const toast = useToast();
+  
   const navigation = useNavigation<ScreenNavigationProp>();
   const { vendor, updateVendorData } = useVendor();
 
@@ -94,11 +96,9 @@ export default function StoreInformation() {
       setHasChanges(false);
     } catch (error) {
       console.error('Error saving store information:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to save changes. Please try again.',
-      });
+     toast.show( 'Failed to save changes. Please try again.', { type: 'danger' });
+
+     
     } finally {
       setIsSaving(false);
     }

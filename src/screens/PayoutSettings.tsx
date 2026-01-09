@@ -14,7 +14,6 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import Toast from 'react-native-toast-message';
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -65,11 +64,7 @@ export default function PayoutSettings() {
       setBankAccount(mockAccount);
     } catch (error) {
       console.error('Error fetching bank account:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to load bank account details',
-      });
+      
     } finally {
       setLoading(false);
     }
@@ -101,20 +96,11 @@ export default function PayoutSettings() {
         });
       }
 
-      Toast.show({
-        type: 'success',
-        text1: 'Success',
-        text2: 'Bank account details updated',
-      });
+     
 
       setShowEditModal(false);
     } catch (error) {
-      console.error('Error updating bank account:', error);
-      Toast.show({
-        type: 'error',
-        text1: 'Error',
-        text2: 'Failed to update bank account',
-      });
+     
     } finally {
       setSaving(false);
     }

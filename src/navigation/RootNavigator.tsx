@@ -31,6 +31,12 @@ import StoreInformation from 'src/screens/StoreInformation';
 import SubscriptionBilling from 'src/screens/SubscriptionBilling';
 import Security from 'src/screens/Security';
 import PayoutSettings from 'src/screens/PayoutSettings';
+import PersonalDetails from 'src/screens/PersonalDetails';
+import NotificationProfile from 'src/screens/NotificationProfile';
+import HelpSupport from 'src/screens/HelpSupport';
+import LegalPolicies from 'src/screens/LegalPolicies';
+import Notifications from 'src/screens/Notifications';
+import LocationManagement from 'src/screens/LocationManagement';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -115,10 +121,13 @@ export default function RootNavigator() {
         <Stack.Screen name="SubscriptionBilling" component={SubscriptionBilling} />
         <Stack.Screen name="Security" component={Security} />
         <Stack.Screen name="PayoutSettings" component={PayoutSettings} />
-
-
-
+        <Stack.Screen name="PersonalDetails" component={PersonalDetails} />
+        <Stack.Screen name="NotificationProfile" component={NotificationProfile} />
+        <Stack.Screen name="HelpSupport" component={HelpSupport} />
+        <Stack.Screen name="LegalPolicies" component={LegalPolicies} />
+        <Stack.Screen name="Notifications" component={Notifications} />
         <Stack.Screen name="Login" component={Login} />
+        <Stack.Screen name="LocationManagement" component={LocationManagement} />
       </Stack.Navigator>
     </NavigationContainer>
     </AppProviders>

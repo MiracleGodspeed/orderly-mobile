@@ -22,7 +22,7 @@ export default function StoreInformation() {
      const toast = useToast();
   
   const navigation = useNavigation<ScreenNavigationProp>();
-  const { vendor, updateVendorData } = useVendor();
+  // const { vendor, updateVendorData } = useVendor();
 
   // ============ STATE MANAGEMENT ============
   // Local state for form fields - syncs with vendor context
@@ -34,20 +34,18 @@ export default function StoreInformation() {
   const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  // ============ POPULATE FIELDS FROM VENDOR CONTEXT ============
-  // When component mounts or vendor data changes, populate the form
+ 
   useEffect(() => {
-    if (vendor) {
-      setStoreName(vendor.storeName || '');
-      setStoreUrl(vendor.storeUrl || '');
-      setBusinessCategory(vendor.businessCategory || '');
-      setContactEmail(vendor.email || '');
-      setBusinessAddress(vendor.businessAddress || '');
-    }
-  }, [vendor]);
+   
+      setStoreName( '');
+      setStoreUrl('');
+      setBusinessCategory('');
+      setContactEmail( '');
+      setBusinessAddress( '');
+    
+  }, []);
 
-  // ============ TRACK CHANGES ============
-  // Marks that user has made edits (for auto-save indication)
+ 
   const handleFieldChange = (field: string, value: string) => {
     setHasChanges(true);
     
@@ -70,8 +68,7 @@ export default function StoreInformation() {
     }
   };
 
-  // ============ AUTO-SAVE ON BLUR ============
-  // Saves data when user finishes editing a field
+ 
   const handleFieldBlur = async () => {
     if (!hasChanges) return;
 
@@ -87,11 +84,7 @@ export default function StoreInformation() {
         businessAddress
       };
 
-      // Call API to update vendor information
-      // await updateVendorData(updatedData);
-
-      // Show success message silently (or you can skip this)
-      // Changes are auto-saved, so no need for intrusive toast
+      
 
       setHasChanges(false);
     } catch (error) {
@@ -104,11 +97,9 @@ export default function StoreInformation() {
     }
   };
 
-  // ============ SAVE ON SCREEN LEAVE ============
-  // Auto-saves when user navigates away from screen
+  
   useEffect(() => {
     return () => {
-      // Cleanup: save any pending changes when leaving screen
       if (hasChanges) {
         handleFieldBlur();
       }
@@ -119,14 +110,12 @@ export default function StoreInformation() {
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      {/* ============ HEADER ============ */}
       <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
         <Pressable className="mr-3" onPress={() => navigation.goBack()}>
           <MaterialIcons name="arrow-back" size={24} color="#000" />
         </Pressable>
         <Text className="text-lg font-medium text-gray-900">Store Information</Text>
         
-        {/* Loading indicator when saving */}
         {isSaving && (
           <View className="ml-auto">
             <ActivityIndicator size="small" color="#3b82f6" />
@@ -135,7 +124,6 @@ export default function StoreInformation() {
       </View>
 
       <ScrollView className="flex-1 px-4 pt-6">
-        {/* ============ STORE NAME FIELD ============ */}
         <View className="mb-6">
           <Text className="text-sm font-medium text-gray-900 mb-2">
             Store Name
@@ -150,7 +138,6 @@ export default function StoreInformation() {
           />
         </View>
 
-        {/* ============ STORE URL FIELD ============ */}
         <View className="mb-6">
           <Text className="text-sm font-medium text-gray-900 mb-2">
             Store URL
@@ -170,7 +157,6 @@ export default function StoreInformation() {
           </View>
         </View>
 
-        {/* ============ BUSINESS CATEGORY FIELD ============ */}
         <View className="mb-6">
           <Text className="text-sm font-medium text-gray-900 mb-2">
             Business Category
@@ -185,7 +171,6 @@ export default function StoreInformation() {
           />
         </View>
 
-        {/* ============ CONTACT EMAIL FIELD ============ */}
         <View className="mb-6">
           <Text className="text-sm font-medium text-gray-900 mb-2">
             Contact Email
@@ -202,7 +187,6 @@ export default function StoreInformation() {
           />
         </View>
 
-        {/* ============ BUSINESS ADDRESS FIELD ============ */}
         <View className="mb-6">
           <Text className="text-sm font-medium text-gray-900 mb-2">
             Business Address
@@ -220,7 +204,6 @@ export default function StoreInformation() {
           />
         </View>
 
-        {/* ============ AUTO-SAVE INFO MESSAGE ============ */}
         <View className="py-6">
           <Text className="text-center text-sm text-gray-500">
             Changes are saved automatically when you leave this screen.

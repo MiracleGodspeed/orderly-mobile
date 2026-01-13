@@ -72,7 +72,6 @@ export default function SignupScreen({ navigation }: any) {
         className="flex-1"
         contentContainerStyle={{ flexGrow: 1 }}
       >
-        {/* Header with back button */}
         <View className="px-6 pt-6 pb-4 flex-row items-center">
           <TouchableOpacity 
             className="mr-4"
@@ -89,9 +88,7 @@ export default function SignupScreen({ navigation }: any) {
           Set up your store management account
         </Text>
 
-        {/* Form */}
         <View className="px-6">
-          {/* Name Input */}
           <View className="mb-4">
             <Text className="text-gray-700 font-medium mb-2">
               Full Name
@@ -107,7 +104,6 @@ export default function SignupScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* Email Input */}
           <View className="mb-4">
             <Text className="text-gray-700 font-medium mb-2">
               Email Address
@@ -125,7 +121,6 @@ export default function SignupScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* Password Input */}
           <View className="mb-4">
             <Text className="text-gray-700 font-medium mb-2">
               Password
@@ -142,7 +137,6 @@ export default function SignupScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* Confirm Password */}
           <View className="mb-6">
             <Text className="text-gray-700 font-medium mb-2">
               Confirm Password
@@ -159,7 +153,6 @@ export default function SignupScreen({ navigation }: any) {
             </View>
           </View>
 
-          {/* Terms Agreement */}
           <TouchableOpacity 
             className="flex-row items-start mb-8"
             onPress={() => setAgreeTerms(!agreeTerms)}
@@ -181,7 +174,6 @@ export default function SignupScreen({ navigation }: any) {
             </View>
           </TouchableOpacity>
 
-          {/* Sign Up Button */}
           <TouchableOpacity 
             className={`py-4 rounded-xl items-center mb-6 ${agreeTerms ? 'bg-primary' : 'bg-gray-300'}`}
             onPress={handleSignup}
@@ -192,7 +184,6 @@ export default function SignupScreen({ navigation }: any) {
             </Text>
           </TouchableOpacity>
 
-          {/* Already have account */}
           <View className="flex-row justify-center items-center mb-10">
             <Text className="text-gray-600">Already have an account? </Text>
             <TouchableOpacity onPress={() => navigation.navigate('Login')}>
@@ -201,7 +192,6 @@ export default function SignupScreen({ navigation }: any) {
           </View>
         </View>
 
-        {/* Store Type (Optional) */}
         <View className="px-6 mb-10">
           <Text className="text-gray-700 font-medium mb-4">
             What type of store do you have?

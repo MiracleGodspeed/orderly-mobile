@@ -27,7 +27,7 @@ interface PersonalInfo {
 
 export default function PersonalDetails() {
   const navigation = useNavigation<ScreenNavigationProp>();
-  const { vendor } = useVendor();
+  // const { vendor } = useVendor();
 
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -49,10 +49,10 @@ export default function PersonalDetails() {
 
       
       const mockData: PersonalInfo = {
-        firstName: vendor?.firstName || 'Sarah',
-        lastName: vendor?.lastName || 'Johnson',
-        phoneNumber: vendor?.phoneNumber || '+1 (555) 123-4567',
-        jobTitle: vendor?.jobTitle || 'Owner'
+        firstName:  'Sarah',
+        lastName:  'Johnson',
+        phoneNumber:  '+1 (555) 123-4567',
+        jobTitle:  'Owner'
       };
 
       setFirstName(mockData.firstName);

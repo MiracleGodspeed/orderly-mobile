@@ -155,3 +155,80 @@ export type PaginatedOrdersResponse = {
   data: Order[];
 };
 
+export interface SubscriptionPlan {
+  id: number;
+  name: string;
+  description: string;
+  extraInfo: string;
+  features: string;
+  requestLimitPerMonth: number | null;
+  yearlyPecentageDiscount: number;
+  quarterlyPecentageDiscount: number | null;
+  catalogItemLimit: number | null;
+  price: number;
+  isPopular: boolean;
+  badge: string | null;
+  buttonText: string;
+  buttonStyle: string;
+  createdAt: string;
+  lastUpdated: string | null;
+  isActive: boolean;
+  isDeleted: boolean;
+}
+
+export interface SubscriptionHistory {
+  subscriptionPlanId: number;
+  subscriptionPlan: SubscriptionPlan;
+  startDate: string;
+  expiryDate: string;
+  subscriptionDuration: number;
+  durationUnit: string;
+  status: string;
+  usedRequestCount: number | null;
+  hasCustomDomain: boolean;
+  isTrialPeriod: boolean;
+  daysRemaining: number;
+  gracePeriodInDays: number;
+  isActive: boolean;
+  amountPaid: number;
+  paymentReference: string;
+  paymentGateway: string | null;
+  paidAt: string | null;
+  createdAt: string;
+  planFeatures: string[];
+}
+
+export interface SubscriptionHistoryParams {
+  pageIndex?: number;
+  pageSize?: number;
+  search?: string;
+  totalCount?: number;
+  totalPages?: number;
+}
+
+export interface SubscriptionHistoryResponse {
+  message: string;
+  code: string;
+  data: SubscriptionHistory[];
+}
+
+export interface ApiSubscriptionPlan {
+  id: number;
+  name: string;
+  description: string;
+  extraInfo: string;
+  price: number;
+  features: string[];
+  isPopular: boolean;
+  isActive: boolean;
+  badge: string | null;
+  buttonText: string;
+  buttonStyle: string;
+}
+
+export interface GetPlansResponse {
+  message: string;
+  code: string;
+  data: ApiSubscriptionPlan[];
+}
+

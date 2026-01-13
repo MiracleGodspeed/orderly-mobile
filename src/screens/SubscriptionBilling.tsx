@@ -4,138 +4,89 @@ import {
   Pressable, 
   ScrollView, 
   StatusBar,
-  ActivityIndicator
+  RefreshControl
 } from "react-native";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useToast } from 'react-native-toast-notifications';
+import SkeletonPlaceholder from "react-native-skeleton-placeholder";
+import SubscriptionFlowModal from "src/components/SubscriptionFlowModal";
 
+import { getSubscriptionHistory } from "../api/vendor/vendor.api"; 
+import { SubscriptionHistory } from "../api/vendor/vendor.types";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-interface SubscriptionData {
-  plan: string;
-  status: string;
-  trialDaysLeft: number;
-  amount: number;
-  billingCycle: string;
-  features: string[];
-  nextRenewal: string;
-}
 
-interface PaymentHistory {
-  id: string;
-  date: string;
-  invoiceNumber: string;
-  amount: number;
-  status: 'Paid' | 'Pending' | 'Failed';
-}
+const SubscriptionSkeleton = () => (
+  <SkeletonPlaceholder borderRadius={12} backgroundColor="#e1e9ee" highlightColor="#f2f8fc">
+    <View style={{ paddingHorizontal: 16 }}>
+      <View style={{ flexDirection: 'row', marginTop: 16 }}>
+        <View style={{ flex: 1, height: 80, marginRight: 8, borderRadius: 12 }} />
+        <View style={{ flex: 1, height: 80, marginHorizontal: 4, borderRadius: 12 }} />
+        <View style={{ flex: 1, height: 80, marginLeft: 8, borderRadius: 12 }} />
+      </View>
+
+      <View style={{ marginTop: 24, height: 280, borderRadius: 20 }} />
+
+      <View style={{ marginTop: 24, padding: 16, backgroundColor: 'white', borderRadius: 20 }}>
+        <View style={{ width: 120, height: 20, marginBottom: 20 }} />
+        {[1, 2, 3].map((_, i) => (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 20 }}>
+            <View style={{ width: 40, height: 40, borderRadius: 8, marginRight: 12 }} />
+            <View style={{ flex: 1 }}>
+              <View style={{ width: '50%', height: 14, marginBottom: 6 }} />
+              <View style={{ width: '30%', height: 10 }} />
+            </View>
+            <View style={{ width: 60, height: 24, borderRadius: 12 }} />
+          </View>
+        ))}
+      </View>
+    </View>
+  </SkeletonPlaceholder>
+);
 
 export default function SubscriptionBilling() {
-     const toast = useToast();
-  
+  const toast = useToast();
   const navigation = useNavigation<ScreenNavigationProp>();
 
   const [loading, setLoading] = useState(true);
-  const [subscription, setSubscription] = useState<SubscriptionData | null>(null);
-  const [paymentHistory, setPaymentHistory] = useState<PaymentHistory[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [history, setHistory] = useState<SubscriptionHistory[]>([]);
+  const [flowOpen, setFlowOpen] = useState(false);
+
+  const currentSub = history.length > 0 ? history[0] : null;
+
+  const fetchSubscriptionData = async (isRefreshing = false) => {
+    try {
+      if (!isRefreshing) setLoading(true);
+      const data = await getSubscriptionHistory({ pageIndex: 1, pageSize: 20 });
+      setHistory(data);
+    } catch (error: any) {
+      console.error('Error fetching subscription:', error);
+      toast.show(error.message || 'Failed to load subscription data', { type: 'danger' });
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     fetchSubscriptionData();
   }, []);
 
-  const fetchSubscriptionData = async () => {
-    try {
-      setLoading(true);
-
-      
-      const mockSubscription: SubscriptionData = {
-        plan: 'Pro',
-        status: 'Active',
-        trialDaysLeft: 12,
-        amount: 29000,
-        billingCycle: 'monthly',
-        features: [
-          'Unlimited Products',
-          'Advanced Analytics & Reports',
-          'Priority 24/7 Support',
-          '0% Transaction Fees',
-          'Custom Domain Connection'
-        ],
-        nextRenewal: 'January 29, 2026'
-      };
-
-      const mockPayments: PaymentHistory[] = [
-        {
-          id: '1',
-          date: 'Dec 29, 2025',
-          invoiceNumber: '#INV-2025-012',
-          amount: 29000,
-          status: 'Paid'
-        },
-        {
-          id: '2',
-          date: 'Nov 29, 2025',
-          invoiceNumber: '#INV-2025-011',
-          amount: 29000,
-          status: 'Paid'
-        },
-        {
-          id: '3',
-          date: 'Oct 29, 2025',
-          invoiceNumber: '#INV-2025-010',
-          amount: 29000,
-          status: 'Paid'
-        }
-      ];
-
-      setSubscription(mockSubscription);
-      setPaymentHistory(mockPayments);
-    } catch (error) {
-      console.error('Error fetching subscription:', error);
-     toast.show( 'Failed to load subscription data', { type: 'danger' });
-
-     
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleRenewSubscription = async () => {
-    // try {
-    //   Toast.show({
-    //     type: 'info',
-    //     text1: 'Coming Soon',
-    //     text2: 'Subscription renewal will be available soon',
-    //   });
-    // } catch (error) {
-    //   console.error('Error renewing subscription:', error);
-    // }
-  };
-
-  const handleDownloadAll = async () => {
-    // try {
-    //   Toast.show({
-    //     type: 'info',
-    //     text1: 'Coming Soon',
-    //     text2: 'Download feature will be available soon',
-    //   });
-    // } catch (error) {
-    //   console.error('Error downloading invoices:', error);
-    // }
-  };
-
-  const handleViewFullHistory = () => {
-
-  
-  };
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    fetchSubscriptionData(true);
+  }, []);
 
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
+      case 'success':
       case 'paid':
         return 'bg-green-100 text-green-700';
       case 'pending':
@@ -147,16 +98,23 @@ export default function SubscriptionBilling() {
     }
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#3b82f6" />
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "N/A";
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  };
+
+  const formatShortDate = (dateString: string) => {
+    if (!dateString) return "N/A";
+    return new Date(dateString).toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
@@ -169,134 +127,130 @@ export default function SubscriptionBilling() {
         <Text className="text-lg font-medium text-gray-900">Subscription</Text>
       </View>
 
-      <ScrollView className="flex-1">
-        <View className="flex-row px-4 pt-4 pb-2">
-          <View className="flex-1 bg-white rounded-xl p-4 mr-2 shadow-sm">
-            <Text className="text-xs text-gray-500 mb-1">PLAN</Text>
-            <Text className="text-xl font-bold text-teal-600">
-              {subscription?.plan}
-            </Text>
-          </View>
+      <ScrollView 
+        className="flex-1"
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} color="#3b82f6" />
+        }
+      >
+        {loading ? (
+          <SubscriptionSkeleton />
+        ) : (
+          <>
+            <View className="flex-row px-4 pt-4 pb-2">
+              <View className="flex-1 bg-white rounded-xl p-4 mr-2 shadow-sm border border-gray-100">
+                <Text className="text-[10px] text-gray-400 mb-1 font-bold uppercase">Plan</Text>
+                <Text className="text-lg font-bold text-teal-600" numberOfLines={1}>
+                  {currentSub?.subscriptionPlan.name || 'None'}
+                </Text>
+              </View>
 
-          <View className="flex-1 bg-white rounded-xl p-4 mx-1 shadow-sm">
-            <Text className="text-xs text-gray-500 mb-1">STATUS</Text>
-            <Text className="text-xl font-bold text-green-600">
-              {subscription?.status}
-            </Text>
-          </View>
+              <View className="flex-1 bg-white rounded-xl p-4 mx-1 shadow-sm border border-gray-100">
+                <Text className="text-[10px] text-gray-400 mb-1 font-bold uppercase">Status</Text>
+                <Text className={`text-lg font-bold ${currentSub?.isActive ? 'text-green-600' : 'text-red-500'}`}>
+                  {currentSub?.isActive ? 'Active' : 'Expired'}
+                </Text>
+              </View>
 
-          <View className="flex-1 bg-white rounded-xl p-4 ml-2 shadow-sm">
-            <Text className="text-xs text-gray-500 mb-1">TRIAL</Text>
-            <Text className="text-xl font-bold text-orange-500">
-              {subscription?.trialDaysLeft} Days
-            </Text>
-          </View>
-        </View>
-
-        <View className="mx-4 mt-4 mb-4 bg-white rounded-2xl p-6 shadow-sm">
-          <View className="flex-row items-center justify-between mb-4">
-            <View>
-              <Text className="text-2xl font-bold text-gray-900">
-                {subscription?.plan} Plan
-              </Text>
-              <Text className="text-sm text-gray-500">
-                Billed {subscription?.billingCycle}
-              </Text>
+              <View className="flex-1 bg-white rounded-xl p-4 ml-2 shadow-sm border border-gray-100">
+                <Text className="text-[10px] text-gray-400 mb-1 font-bold uppercase">Remaining</Text>
+                <Text className="text-lg font-bold text-orange-500">
+                  {currentSub?.daysRemaining ?? 0} Days
+                </Text>
+              </View>
             </View>
-            <View className="items-end">
-              <Text className="text-2xl font-bold text-gray-900">
-                ₦{subscription?.amount.toLocaleString()}.00
-              </Text>
-              <Text className="text-sm text-gray-500">per month</Text>
-            </View>
-          </View>
 
-          <View className="mb-6">
-            <Text className="text-xs font-semibold text-gray-500 mb-3">
-              INCLUDED FEATURES
-            </Text>
-            {subscription?.features.map((feature, index) => (
-              <View key={index} className="flex-row items-start mb-3">
-                <MaterialIcons 
-                  name="check" 
-                  size={20} 
-                  color="#3b82f6" 
-                  style={{ marginRight: 8 }}
-                />
-                <Text className="flex-1 text-gray-700">{feature}</Text>
-              </View>
-            ))}
-          </View>
-
-          <Pressable
-            onPress={handleRenewSubscription}
-            className="bg-blue-600 rounded-xl py-4 items-center mb-3"
-          >
-            <Text className="text-white font-semibold text-base">
-              Renew Subscription
-            </Text>
-          </Pressable>
-
-          <Text className="text-center text-sm text-gray-500">
-            Next auto-renewal: {subscription?.nextRenewal}
-          </Text>
-        </View>
-
-        <View className="mx-4 mb-6 bg-white rounded-2xl p-6 shadow-sm">
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-base font-bold text-gray-900">
-              PAYMENT HISTORY
-            </Text>
-            <Pressable onPress={handleDownloadAll}>
-              <Text className="text-blue-600 font-medium text-sm">
-                Download All
-              </Text>
-            </Pressable>
-          </View>
-
-          {paymentHistory.map((payment, index) => (
-            <View 
-              key={payment.id}
-              className={`flex-row items-center py-4 ${
-                index !== paymentHistory.length - 1 ? 'border-b border-gray-100' : ''
-              }`}
-            >
-              <View className="w-10 h-10 bg-gray-100 rounded-lg items-center justify-center mr-3">
-                <MaterialIcons name="description" size={20} color="#6b7280" />
-              </View>
-
-              <View className="flex-1">
-                <Text className="text-base font-medium text-gray-900 mb-1">
-                  {payment.date}
-                </Text>
-                <Text className="text-sm text-gray-500">
-                  {payment.invoiceNumber}
-                </Text>
-              </View>
-
-              <View className="items-end">
-                <Text className="text-base font-bold text-gray-900 mb-1">
-                  ₦{payment.amount.toLocaleString()}.00
-                </Text>
-                <View className={`px-3 py-1 rounded-full ${getStatusColor(payment.status)}`}>
-                  <Text className="text-xs font-medium">
-                    {payment.status}
+            <View className="mx-4 mt-4 mb-4 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <View className="flex-row items-center justify-between mb-4">
+                <View>
+                  <Text className="text-2xl font-bold text-gray-900">
+                    {currentSub?.subscriptionPlan.name || 'No Active Plan'}
+                  </Text>
+                  <Text className="text-sm text-gray-500 capitalize">
+                    Billed {currentSub?.durationUnit || 'periodically'}
                   </Text>
                 </View>
+                <View className="items-end">
+                  <Text className="text-2xl font-bold text-gray-900">
+                    ₦{(currentSub?.amountPaid ?? 0).toLocaleString()}
+                  </Text>
+                  <Text className="text-sm text-gray-500">total</Text>
+                </View>
               </View>
-            </View>
-          ))}
 
-          <Pressable 
-            onPress={handleViewFullHistory}
-            className="mt-4 pt-4 border-t border-gray-100"
-          >
-            <Text className="text-center text-blue-600 font-medium">
-              View Full History
-            </Text>
-          </Pressable>
-        </View>
+              <View className="mb-6">
+                <Text className="text-xs font-semibold text-gray-500 mb-3 uppercase tracking-widest">
+                  Plan Features
+                </Text>
+                {currentSub?.planFeatures.map((feature, index) => (
+                  <View key={index} className="flex-row items-start mb-3">
+                    <MaterialIcons name="check-circle" size={18} color="#3b82f6" style={{ marginRight: 8, marginTop: 2 }} />
+                    <Text className="flex-1 text-gray-700">{feature}</Text>
+                  </View>
+                ))}
+              </View>
+
+              <Pressable
+                onPress={() => setFlowOpen(true)}
+                className="bg-blue-600 rounded-xl py-4 items-center mb-3 active:opacity-80"
+              >
+                <Text className="text-white font-semibold text-base">
+                  Renew Subscription
+                </Text>
+              </Pressable>
+
+              <Text className="text-center text-xs text-gray-400 font-medium">
+                Expires on: {formatDate(currentSub?.expiryDate || '')}
+              </Text>
+            </View>
+
+            <View className="mx-4 mb-10 bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+              <Text className="text-base font-bold text-gray-900 mb-4">
+                PAYMENT HISTORY
+              </Text>
+
+              {history.length > 0 ? (
+                history.map((item, index) => (
+                  <View 
+                    key={item.paymentReference + index}
+                    className={`flex-row items-center py-4 ${
+                      index !== history.length - 1 ? 'border-b border-gray-50' : ''
+                    }`}
+                  >
+                    <View className="w-10 h-10 bg-blue-50 rounded-lg items-center justify-center mr-3">
+                      <MaterialIcons name="receipt-long" size={20} color="#3b82f6" />
+                    </View>
+
+                    <View className="flex-1">
+                      <Text className="text-sm font-semibold text-gray-900">
+                        {formatShortDate(item.createdAt)}
+                      </Text>
+                    </View>
+
+                    <View className="items-end">
+                      <Text className="text-sm font-bold text-gray-900 mb-1">
+                        ₦{item.amountPaid.toLocaleString()}
+                      </Text>
+                      <View className={`px-2 py-0.5 rounded-full ${getStatusColor(item.status)}`}>
+                        <Text className="text-[10px] font-bold uppercase">
+                          {item.status === 'success' ? 'Paid' : item.status}
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                ))
+              ) : (
+                <Text className="text-center text-gray-400 py-6 italic">No transactions found</Text>
+              )}
+            </View>
+          </>
+        )}
       </ScrollView>
+
+      <SubscriptionFlowModal
+        visible={flowOpen}
+        onClose={() => setFlowOpen(false)}
+      />
     </SafeAreaView>
   );
 }

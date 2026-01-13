@@ -8,6 +8,8 @@ import {
   CreateProductPayload,
   UpdateProductPayload,
   PaginatedOrdersResponse,
+  SubscriptionHistoryResponse, SubscriptionHistoryParams, SubscriptionHistory,
+  GetPlansResponse, ApiSubscriptionPlan,
 } from "./vendor.types";
 
 type GetOrdersParams = {
@@ -248,4 +250,36 @@ export const getPaidOrders = async (
   );
 
   return res.data;
+};
+
+export const getSubscriptionHistory = async (params: SubscriptionHistoryParams): Promise<SubscriptionHistory[]> => {
+  const response = await apiClient.get<SubscriptionHistoryResponse>(
+    "/vendor-subscription/history",
+    {
+      params,
+      validateStatus: () => true, 
+    }
+  );
+
+  // Consistent with your getCategories pattern
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to fetch subscription history");
+  }
+
+  return response.data.data;
+};
+
+export const getAvailablePlans = async (): Promise<ApiSubscriptionPlan[]> => {
+  const response = await apiClient.get<GetPlansResponse>(
+    "/SubscriptionPlan/plans",
+    {
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to fetch plans");
+  }
+
+  return response.data.data;
 };

@@ -13,7 +13,7 @@ import {
 import { useState, useEffect } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation } from '@react-navigation/native'; 
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import AddProductModal from "../components/AddProductModal";
@@ -53,16 +53,16 @@ const [discountValue, setDiscountValue] = useState('');
   const fetchProducts = async (force = false) => {
     try {
       setLoading(true);
-      if (!force) {
-      const cached = await AsyncStorage.getItem('products_cache');
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        setProducts(parsed.data);
-        setTotalCount(parsed.totalCount);
-        setLoading(false);
-        return;
-      }
-    }
+    //   if (!force) {
+    //   const cached = await AsyncStorage.getItem('products_cache');
+    //   if (cached) {
+    //     const parsed = JSON.parse(cached);
+    //     setProducts(parsed.data);
+    //     setTotalCount(parsed.totalCount);
+    //     setLoading(false);
+    //     return;
+    //   }
+    // }
       const response = await getProducts();
       setProducts(response.data);
       setTotalCount(response.totalCount);
@@ -156,129 +156,160 @@ const [discountValue, setDiscountValue] = useState('');
   return (
     <SafeAreaView className="bg-gray-50 flex-1" edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
-      <ScrollView className="flex-1">
-        <View className="bg-white px-4 py-4 mb-4">
-          <View className="flex-row items-center justify-between mb-4">
-            <Pressable onPress={() => navigation.goBack()}>
-              <MaterialIcons name="arrow-back" size={28} color="#1f2937" />
-            </Pressable>
-            {/* <Text className="text-xl font-semibold text-gray-900">Ogboski Ventures</Text> */}
-            <View className="w-7" />
-          </View>
+      
+      {/* Header */}
+      <View className="px-5 py-4 bg-white border-b border-gray-100 flex-row items-center justify-between sticky top-0 z-10">
+        <View className="flex-row items-center">
+          <Pressable onPress={() => navigation.goBack()} className="mr-4 p-2 -ml-2 rounded-full active:bg-gray-100">
+            <MaterialIcons name="arrow-back" size={24} color="#111827" />
+          </Pressable>
+          <Text className="text-xl font-bold text-gray-900">Products</Text>
+        </View>
+        <View className="flex-row gap-3">
+             <Pressable onPress={openFeeModal} className="p-2 rounded-full bg-gray-50 border border-gray-200">
+                 <MaterialIcons name="settings" size={20} color="#374151" />
+             </Pressable>
+        </View>
+      </View>
+
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        {/* Stats Overview */}
+        <View className="flex-row px-5 py-5 gap-3">
+           <View className="flex-1 bg-blue-600 rounded-xl p-3 shadow-sm">
+              <View className="flex-row justify-between items-start mb-3">
+                 <View className="bg-blue-500/30 p-1.5 rounded-lg">
+                    <Ionicons name="cube-outline" size={16} color="white" />
+                 </View>
+              </View>
+              <Text className="text-2xl font-bold text-white mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{totalCount}</Text>
+              <Text className="text-blue-100 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Total</Text>
+           </View>
+
+           <View className="flex-1 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+              <View className="flex-row justify-between items-start mb-3">
+                 <View className="bg-green-100 p-1.5 rounded-lg">
+                    <Ionicons name="radio-button-on" size={16} color="#16a34a" />
+                 </View>
+              </View>
+              <Text className="text-2xl font-bold text-gray-900 mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{activeProductsCount}</Text>
+              <Text className="text-gray-500 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Active</Text>
+           </View>
+
+           <View className="flex-1 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+              <View className="flex-row justify-between items-start mb-3">
+                 <View className="bg-gray-100 p-1.5 rounded-lg">
+                    <Ionicons name="pause-circle-outline" size={16} color="#4b5563" />
+                 </View>
+              </View>
+              <Text className="text-2xl font-bold text-gray-900 mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{inactiveCount}</Text>
+              <Text className="text-gray-500 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Drafts</Text>
+           </View>
         </View>
 
-        <View className="px-4">
-          <View className="bg-[#194eb8] rounded-2xl p-6 mb-6 shadow-lg">
-            <View className="flex-row items-center">
-              <View className="w-16 h-16 bg-blue-500/30 rounded-2xl items-center justify-center mr-4">
-                <Ionicons name="bag-outline" size={32} color="#fff" />
-              </View>
-              <View className="flex-1">
-                <Text className="text-white text-2xl font-bold mb-1">Product Management</Text>
-                <Text className="text-blue-100 text-sm">Manage your products</Text>
-              </View>
+        <View className="px-5">
+            {/* Action Bar & Search */}
+            <View className="flex-row gap-3 mb-6">
+                <View className="flex-1 flex-row items-center bg-white border border-gray-200 rounded-xl px-4 h-12 shadow-sm">
+                    <Ionicons name="search-outline" size={20} color="#9ca3af" />
+                    <TextInput
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                        className="flex-1 ml-3 text-base text-gray-900 h-full"
+                        placeholder="Search products..."
+                        placeholderTextColor="#9ca3af"
+                    />
+                </View>
+                 <Pressable 
+                    className="w-12 h-12 bg-white border border-gray-200 rounded-xl items-center justify-center shadow-sm"
+                    onPress={() => setApplyDiscountModalOpen(true)}
+                 >
+                    <MaterialIcons name="local-offer" size={20} color="#374151" />
+                 </Pressable>
             </View>
-          </View>
-
-          <View className="bg-white rounded-2xl p-5 mb-6 shadow-sm flex-row justify-between">
-            <View className="flex-1 items-center">
-              <View className="w-10 h-10 bg-[#4660ed] rounded-xl items-center justify-center mb-3">
-                <Ionicons name="cube-outline" size={24} color="white" />
-              </View>
-              <Text className="text-2xl font-bold text-gray-900 mb-1">{totalCount}</Text>
-              <Text className="text-xs text-gray-500 uppercase tracking-wide">Total</Text>
-            </View>
-
-            <View className="flex-1 items-center">
-              <View className="w-10 h-10 bg-[#23ad62] rounded-xl items-center justify-center mb-3">
-                <Ionicons name="star-outline" size={24} color="white" />
-              </View>
-              <Text className="text-2xl font-bold text-gray-900 mb-1">{activeProductsCount}</Text>
-              <Text className="text-xs text-gray-500 uppercase tracking-wide">Active</Text>
-            </View>
-
-            <View className="flex-1 items-center">
-              <View className="w-10 h-10 bg-[#747b88] rounded-xl items-center justify-center mb-3">
-                <AntDesign name="exclamation-circle" size={24} color="white" />
-              </View>
-              <Text className="text-2xl font-bold text-gray-900 mb-1">{inactiveCount}</Text>
-              <Text className="text-xs text-gray-500 uppercase tracking-wide">Inactive</Text>
-            </View>
-          </View>
-
-          <View className="flex-row gap-3 mb-6">
-            <Pressable className="flex-1 bg-yellow-400 rounded-xl p-3 flex-row items-center justify-center" onPress={openFeeModal}>
-              <MaterialIcons name="settings" size={16} color="#000" />
-              <Text className="text-gray-900 font-semibold text-sm ml-2">Configure Fees</Text>
-            </Pressable>
-
-            <Pressable className="bg-blue-600 rounded-xl px-5 flex-row items-center justify-center" onPress={() => setApplyDiscountModalOpen(true)}>
-              <Text className="text-white font-semibold text-base mr-2">Apply Discount</Text>
-            </Pressable>
-
-            <Pressable className="bg-blue-600 rounded-xl py-3.5 px-5 flex-row items-center justify-center" onPress={() => setShowAddProductModal(true)}>
-              <MaterialIcons name="add" size={20} color="#fff" />
-              <Text className="text-white font-semibold text-base ml-1">Add</Text>
-            </Pressable>
-          </View>
-
-          <View className="mb-4">
-            <View className="flex-row items-center bg-white rounded-xl px-4 py-3 shadow-sm">
-              <MaterialIcons name="search" size={22} color="#9ca3af" />
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                className="flex-1 ml-3 text-base text-gray-900"
-                placeholder="search products..."
-                placeholderTextColor="#9ca3af"
-              />
-            </View>
-          </View>
 
           {filteredProducts.length === 0 ? (
-            <View className="flex-1 justify-center items-center py-20">
-              <Ionicons name="cube-outline" size={64} color="#9ca3af" />
-              <Text className="text-gray-500 text-lg mt-4">No products found</Text>
-              <Text className="text-gray-400 text-sm mt-2">Add your first product to get started</Text>
+            <View className="items-center py-20 px-6">
+               <View className="w-20 h-20 bg-gray-100 rounded-full items-center justify-center mb-4">
+                  <Ionicons name="cube-outline" size={40} color="#9ca3af" />
+               </View>
+              <Text className="text-gray-900 text-lg font-semibold mb-2">No products found</Text>
+              <Text className="text-gray-500 text-center text-sm max-w-xs">
+                {searchQuery ? "Try adjusting your search terms" : "Start building your inventory by adding your first product"}
+              </Text>
             </View>
           ) : (
-            <View className="flex-row flex-wrap justify-between pb-6">
+            <View className="flex-row flex-wrap justify-between pb-32 px-1">
               {filteredProducts.map((product) => {
                 const stockInfo = getStockDisplay(product);
+                const isLowStock = product.stock < 10;
+                
                 return (
-                  <Pressable key={product.id} className="w-[48%] mb-4" onPress={() => handleProductClick(product)}>
-                    <View className="bg-white rounded-xl overflow-hidden shadow-sm px-2 py-2 card border border-gray-200">
-                      <View className="absolute top-4 left-3 z-10 bg-red-500 rounded-full px-3 py-1">
-                        <Text className="text-white text-xs font-semibold">New</Text>
-                      </View>
-                      <View className="bg-gray-100 aspect-square mt-1 rounded-2xl">
+                  <Pressable 
+                    key={product.id} 
+                    className="w-[48%] bg-white rounded-3xl mb-4 shadow-sm active:scale-[0.98] transition-transform overflow-hidden"
+                    onPress={() => handleProductClick(product)}
+                    style={{
+                      shadowColor: "#9ca3af",
+                      shadowOffset: { width: 0, height: 4 },
+                      shadowOpacity: 0.1,
+                      shadowRadius: 12,
+                      elevation: 4,
+                    }}
+                  >
+                    {/* Image Section - Prominent Top */}
+                    <View className="h-44 bg-gray-50 relative">
                         {product.image ? (
-                          <Image source={{ uri: product.image }} className="w-full h-full rounded-xl" resizeMode="cover" />
+                          <Image source={{ uri: product.image }} className="w-full h-full" resizeMode="cover" />
                         ) : (
-                          <View className="w-full h-full justify-center items-center">
-                            <Ionicons name="image-outline" size={48} color="#9ca3af" />
+                          <View className="w-full h-full items-center justify-center bg-gray-50">
+                            <Ionicons name="image-outline" size={32} color="#e5e7eb" />
                           </View>
                         )}
-                      </View>
-                      <View className="p-3">
-                        <View className="flex-row items-center mb-2">
-                          {[1, 2, 3, 4, 5].map((star) => (
-                            <MaterialIcons key={star} name="star-outline" size={14} color="#d1d5db" />
-                          ))}
-                          <Text className="text-gray-400 text-xs ml-1">(0)</Text>
-                        </View>
-                        <Text className="text-gray-900 font-semibold text-base mb-1" numberOfLines={1}>
-                          {product.title}
-                        </Text>
-                        {product.description && (
-                          <Text className="text-gray-500 text-xs mb-2" numberOfLines={1}>
-                            • {product.description}
-                          </Text>
+                        
+                        {/* Status Badge Overlay */}
+                         {product.status !== 1 && (
+                            <View className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full shadow-sm">
+                                <Text className="text-gray-900 text-[10px] font-bold tracking-wider uppercase">Draft</Text>
+                            </View>
                         )}
-                        <Text className="text-gray-900 font-bold text-lg">
-                          ₦{product.price.toLocaleString()}
-                        </Text>
-                      </View>
+
+                         {/* More Options Overlay */}
+                         <View className="absolute top-3 right-3">
+                            <View className="bg-white/90 w-8 h-8 rounded-full items-center justify-center shadow-sm backdrop-blur-md">
+                                <MaterialIcons name="more-horiz" size={18} color="#1f2937" />
+                            </View>
+                         </View>
+                    </View>
+                    
+                    {/* Content Section */}
+                    <View className="p-3.5">
+                         <Text className="text-gray-900 font-bold text-[15px] leading-snug mb-1.5 h-10" numberOfLines={2}>
+                            {product.title}
+                         </Text>
+                         
+                         <View className="flex-row items-baseline gap-2 mb-3">
+                             <Text className="text-gray-900 font-extrabold text-lg">
+                                ₦{product.price.toLocaleString()}
+                             </Text>
+                             <Text className="text-gray-400 text-xs line-through font-medium decoration-gray-400">
+                                ₦34,000
+                             </Text>
+                         </View>
+
+                         <View className="flex-row items-center justify-between border-t border-gray-50 pt-3">
+                             <View className={`px-2 py-1 rounded-md flex-row items-center gap-1.5 ${isLowStock ? 'bg-red-50' : 'bg-gray-100'}`}>
+                                <View className={`w-1.5 h-1.5 rounded-full ${isLowStock ? 'bg-red-500' : 'bg-gray-500'}`} />
+                                <Text className={`text-[10px] font-bold ${isLowStock ? 'text-red-600' : 'text-gray-600'}`}>
+                                    {product.stock} left
+                                </Text>
+                             </View>
+                             
+                             {/* Mini Stats */}
+                             <View className="flex-row items-center gap-1 opacity-60">
+                                <Ionicons name="eye-outline" size={14} color="#6b7280" />
+                                <Text className="text-[10px] text-gray-600 font-medium">0</Text>
+                             </View>
+                         </View>
                     </View>
                   </Pressable>
                 );
@@ -287,6 +318,16 @@ const [discountValue, setDiscountValue] = useState('');
           )}
         </View>
       </ScrollView>
+
+      {/* Floating Action Button */}
+      <View className="absolute bottom-8 right-6">
+          <Pressable 
+            onPress={() => setShowAddProductModal(true)}
+            className="bg-blue-600 w-14 h-14 rounded-full shadow-lg shadow-blue-500/40 items-center justify-center"
+          >
+              <MaterialIcons name="add" size={30} color="white" />
+          </Pressable>
+      </View>
 
       <AddProductModal
         visible={showAddProductModal}
@@ -304,175 +345,115 @@ const [discountValue, setDiscountValue] = useState('');
         onDelete={handleDeleteProduct}
       />
 
+      {/* Fee Modal - Simplified Design */}
       <Modal
         visible={configureFeeModalOpen}
         animationType="slide"
         transparent
         onRequestClose={closeFeeModal}
       >
-        <View style={{ flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.4)' }}>
-          <View style={{
-            backgroundColor: 'white',
-            borderTopLeftRadius: 24,
-            borderTopRightRadius: 24,
-            paddingHorizontal: 20,
-            paddingTop: 20,
-            paddingBottom: 32,
-            maxHeight: '90%',
-          }}>
-            {/* Header */}
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
-              <TouchableOpacity onPress={closeFeeModal} style={{ padding: 10 }}>
-                <MaterialIcons name="close" size={24} color="#6b7280" />
-              </TouchableOpacity>
-              <Text style={{ fontSize: 18, fontWeight: '600', color: '#111827' }}>
-                Transaction Fee Configuration
-              </Text>
-              <View style={{ width: 24 }} />
+        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={closeFeeModal}>
+            <Pressable 
+                onPress={e => e.stopPropagation()}
+                style={{
+                    marginTop: 'auto',
+                    backgroundColor: 'white',
+                    borderTopLeftRadius: 28,
+                    borderTopRightRadius: 28,
+                    padding: 24,
+                    maxHeight: '85%',
+                }}
+            >
+            <View className="items-center mb-6">
+                 <View className="w-12 h-1.5 bg-gray-200 rounded-full mb-6" />
+                 <Text className="text-xl font-bold text-gray-900 text-center">Fee Configuration</Text>
+                 <Text className="text-gray-500 text-center mt-2 px-4">
+                    Choose who covers the transaction fee for orders
+                 </Text>
             </View>
 
-            {/* Description */}
-            <View style={{ marginBottom: 20 }}>
-              <Text style={{ color: '#4b5563', fontSize: 14, marginBottom: 4 }}>
-                This is the small processing fee charged whenever a customer pays for an order.
-              </Text>
-              <Text style={{ color: '#4b5563', fontSize: 14 }}>
-                Choose who will bear this transaction cost — you or your customer
-              </Text>
-            </View>
-
-            {/* Options */}
-            <ScrollView style={{ marginBottom: 20 }}>
+            <ScrollView className="mb-6">
               {['vendor', 'customer', 'included'].map((option) => {
                 const labels: Record<string, string> = {
                   vendor: 'Vendor (Me)',
                   customer: 'Customer',
-                  included: 'Included in Product Price',
+                  included: 'Product Price',
                 };
                 const descriptions: Record<string, string> = {
-                  vendor: 'Fees are deducted from your earnings.',
-                  customer: "Fees are added to the customer's total.",
-                  included: 'The charge is added into the product price.',
+                  vendor: 'Deducted from your earnings',
+                  customer: "Added to customer's total",
+                  included: 'Inclusive in product price',
                 };
                 const selected = selectedFeeOption === option;
 
                 return (
-                  <TouchableOpacity
+                  <Pressable
                     key={option}
-                    activeOpacity={0.7}
                     onPress={() => setSelectedFeeOption(option as 'vendor' | 'customer' | 'included')}
-                    style={{
-                      borderRadius: 16,
-                      padding: 16,
-                      marginBottom: 12,
-                      borderWidth: selected ? 2 : 1,
-                      borderColor: selected ? '#2563eb' : '#d1d5db',
-                      backgroundColor: selected ? '#eff6ff' : 'white',
-                    }}
+                    className={`flex-row items-center p-4 rounded-xl mb-3 border ${selected ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}
                   >
-                    <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-                      <View style={{
-                        width: 20,
-                        height: 20,
-                        borderRadius: 10,
-                        marginRight: 12,
-                        borderWidth: 2,
-                        borderColor: selected ? '#2563eb' : '#d1d5db',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                      }}>
-                        {selected && (
-                          <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: '#2563eb' }} />
-                        )}
-                      </View>
-                      <View style={{ flex: 1 }}>
-                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
-                          <Text style={{ fontSize: 16, fontWeight: '600', color: '#111827' }}>{labels[option]}</Text>
-                          {selected && (
-                            <View style={{ backgroundColor: '#2563eb', paddingHorizontal: 8, paddingVertical: 2, borderRadius: 12 }}>
-                              <Text style={{ color: 'white', fontSize: 12, fontWeight: '600' }}>SELECTED</Text>
-                            </View>
-                          )}
-                        </View>
-                        <Text style={{ fontSize: 14, color: '#6b7280' }}>{descriptions[option]}</Text>
-                      </View>
-                    </View>
-                  </TouchableOpacity>
+                     <View className={`w-5 h-5 rounded-full border-2 mr-4 items-center justify-center ${selected ? 'border-blue-600' : 'border-gray-300'}`}>
+                        {selected && <View className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
+                     </View>
+                     <View>
+                        <Text className={`font-semibold text-base ${selected ? 'text-blue-900' : 'text-gray-900'}`}>{labels[option]}</Text>
+                        <Text className="text-gray-500 text-sm">{descriptions[option]}</Text>
+                     </View>
+                  </Pressable>
                 );
               })}
             </ScrollView>
 
-            {/* Buttons */}
-            <View style={{ gap: 12 }}>
-              <Pressable
-                style={{ backgroundColor: '#facc15', paddingVertical: 16, borderRadius: 16, alignItems: 'center' }}
+            <Pressable
+                className="bg-blue-600 py-4 rounded-xl items-center shadow-md shadow-blue-500/20"
                 onPress={handleSaveFeeConfiguration}
               >
-                <Text style={{ fontSize: 16, fontWeight: '700', color: '#111827' }}>Save Configuration</Text>
+                <Text className="text-white font-bold text-lg">Save Changes</Text>
               </Pressable>
-
-              <Pressable onPress={closeFeeModal} style={{ alignItems: 'center' }}>
-                <Text style={{ fontSize: 16, fontWeight: '500', color: '#6b7280' }}>Cancel</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
+      {/* Discount Modal - Simplified */}
       <Modal
-  visible={applyDiscountModalOpen}
-  transparent
-  animationType="fade"
-  onRequestClose={() => setApplyDiscountModalOpen(false)}
->
-  <View style={{ flex:1, backgroundColor:'rgba(0,0,0,0.4)', justifyContent:'center', alignItems:'center' }}>
-    <View style={{ width:'85%', backgroundColor:'white', borderRadius:20, padding:20 }}>
-      <View style={{ flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom:20 }}>
-        <Text style={{ fontSize:18, fontWeight:'600', color:'#111827' }}>Apply Discount to All Products</Text>
-        <TouchableOpacity onPress={() => setApplyDiscountModalOpen(false)} style={{ padding:5 }}>
-          <MaterialIcons name="close" size={24} color="#6b7280" />
-        </TouchableOpacity>
-      </View>
-
-      <Text style={{ fontSize:14, color:'#4b5563', marginBottom:10 }}>
-        Enter a percentage between 1 and 90
-      </Text>
-
-      <View style={{ flexDirection:'row', alignItems:'center', marginBottom:20 }}>
-        <TextInput
-          value={discountValue}
-          onChangeText={setDiscountValue}
-          placeholder="Discount (%)"
-          keyboardType="numeric"
-          style={{
-            flex:1,
-            borderWidth:1,
-            borderColor:'#d1d5db',
-            borderRadius:12,
-            paddingHorizontal:12,
-            paddingVertical:8,
-            fontSize:16
-          }}
-        />
-        <Pressable
-          onPress={() => {
-            console.log('Apply discount:', discountValue);
-            setApplyDiscountModalOpen(false);
-          }}
-          style={{
-            marginLeft:10,
-            backgroundColor:'#2563eb',
-            paddingHorizontal:16,
-            paddingVertical:10,
-            borderRadius:12
-          }}
-        >
-          <Text style={{ color:'white', fontWeight:'600' }}>Apply</Text>
-        </Pressable>
-      </View>
-    </View>
-  </View>
-</Modal>
+        visible={applyDiscountModalOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setApplyDiscountModalOpen(false)}
+      >
+         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }} onPress={() => setApplyDiscountModalOpen(false)}>
+            <Pressable onPress={e => e.stopPropagation()} className="bg-white rounded-3xl p-6 shadow-xl">
+                 <View className="flex-row justify-between items-center mb-6">
+                    <Text className="text-xl font-bold text-gray-900">Apply Discount</Text>
+                    <Pressable onPress={() => setApplyDiscountModalOpen(false)} className="bg-gray-100 p-2 rounded-full">
+                        <MaterialIcons name="close" size={20} color="#6b7280" />
+                    </Pressable>
+                 </View>
+                 
+                 <Text className="text-gray-500 mb-4">Enter percentage discount (1-90%) to apply to all products.</Text>
+                 
+                 <View className="flex-row gap-3">
+                    <TextInput
+                        value={discountValue}
+                        onChangeText={setDiscountValue}
+                        placeholder="%"
+                        keyboardType="numeric"
+                        className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-lg font-medium text-gray-900"
+                        autoFocus
+                    />
+                    <Pressable
+                        onPress={() => {
+                            console.log('Apply discount:', discountValue);
+                            setApplyDiscountModalOpen(false);
+                        }}
+                        className="bg-blue-600 px-6 justify-center rounded-xl"
+                    >
+                        <Text className="text-white font-bold">Apply</Text>
+                    </Pressable>
+                 </View>
+            </Pressable>
+         </Pressable>
+      </Modal>
 
     </SafeAreaView>
   );

@@ -184,209 +184,199 @@ export default function Orders() {
     <SafeAreaView className="bg-gray-50 flex-1" edges={["top"]}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
 
-      <ScrollView className="flex-1">
-        <View className="bg-white px-4 py-4 mb-4">
-          <View className="flex-row items-center justify-between mb-4">
-            <Pressable onPress={() => navigation.goBack()}>
-              <MaterialIcons name="arrow-back" size={28} color="#1f2937" />
-            </Pressable>
-            
-            <View className="w-7" />
-          </View>
+      {/* Header */}
+      <View className="px-5 py-4 bg-white border-b border-gray-100 flex-row items-center justify-between sticky top-0 z-10">
+        <View className="flex-row items-center">
+          <Pressable onPress={() => navigation.goBack()} className="mr-4 p-2 -ml-2 rounded-full active:bg-gray-100">
+            <MaterialIcons name="arrow-back" size={24} color="#111827" />
+          </Pressable>
+          <Text className="text-xl font-bold text-gray-900">Orders</Text>
+        </View>
+        <View className="w-8" />
+      </View>
+
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        
+        {/* Stats Overview - Fixed Grid */}
+        <View className="flex-row px-5 py-5 gap-3">
+           <View className="flex-1 bg-blue-600 rounded-xl p-3 shadow-sm">
+              <View className="flex-row justify-between items-start mb-3">
+                 <View className="bg-blue-500/30 p-1.5 rounded-lg">
+                    <Ionicons name="receipt-outline" size={16} color="white" />
+                 </View>
+              </View>
+              <Text className="text-2xl font-bold text-white mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{totalOrders}</Text>
+              <Text className="text-blue-100 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Total</Text>
+           </View>
+
+           <View className="flex-1 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+              <View className="flex-row justify-between items-start mb-3">
+                 <View className="bg-green-100 p-1.5 rounded-lg">
+                    <Ionicons name="checkmark-circle-outline" size={16} color="#16a34a" />
+                 </View>
+              </View>
+              <Text className="text-2xl font-bold text-gray-900 mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{activeOrders}</Text>
+              <Text className="text-gray-500 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Active</Text>
+           </View>
+
+           <View className="flex-1 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+              <View className="flex-row justify-between items-start mb-3">
+                 <View className="bg-orange-100 p-1.5 rounded-lg">
+                    <Ionicons name="time-outline" size={16} color="#ea580c" />
+                 </View>
+              </View>
+              <Text className="text-2xl font-bold text-gray-900 mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{pendingOrders}</Text>
+              <Text className="text-gray-500 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Pending</Text>
+           </View>
         </View>
 
-        <View className="px-4">
-          <View className="bg-[#194eb8] rounded-2xl p-6 mb-6 shadow-lg">
-            <View className="flex-row items-center">
-              <View className="w-16 h-16 bg-blue-500/30 rounded-2xl items-center justify-center mr-4">
-                <Ionicons name="receipt-outline" size={32} color="#fff" />
-              </View>
-              <View className="flex-1">
-                <Text className="text-white text-2xl font-bold mb-1">
-                  Order Management
-                </Text>
-                <Text className="text-blue-100 text-sm">
-                  Track and manage orders
-                </Text>
-              </View>
+        <View className="px-5">
+            {/* Search Bar */}
+            <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-4 h-12 shadow-sm mb-6">
+                <Ionicons name="search-outline" size={20} color="#9ca3af" />
+                <TextInput
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                    className="flex-1 ml-3 text-base text-gray-900 h-full"
+                    placeholder="Search orders..."
+                    placeholderTextColor="#9ca3af"
+                />
             </View>
-          </View>
 
-          <View className="bg-white rounded-2xl p-5 mb-6 shadow-sm">
-            <View className="flex-row justify-between">
-              <View className="flex-1 items-center">
-                <View className="w-14 h-14 bg-blue-100 rounded-xl items-center justify-center mb-3">
-                  <Ionicons name="cube-outline" size={24} color="#2563eb" />
-                </View>
-                <Text className="text-2xl font-bold text-gray-900 mb-1">
-                  {totalOrders}
-                </Text>
-                <Text className="text-xs text-gray-500 uppercase tracking-wide">
-                  Total
-                </Text>
-              </View>
-
-              <View className="flex-1 items-center">
-                <View className="w-14 h-14 bg-green-100 rounded-xl items-center justify-center mb-3">
-                  <Ionicons
-                    name="checkmark-circle-outline"
-                    size={24}
-                    color="#16a34a"
-                  />
-                </View>
-                <Text className="text-2xl font-bold text-gray-900 mb-1">
-                  {activeOrders}
-                </Text>
-                <Text className="text-xs text-gray-500 uppercase tracking-wide">
-                  Active
-                </Text>
-              </View>
-
-              <View className="flex-1 items-center">
-                <View className="w-14 h-14 bg-orange-100 rounded-xl items-center justify-center mb-3">
-                  <Ionicons name="time-outline" size={24} color="#ea580c" />
-                </View>
-                <Text className="text-2xl font-bold text-gray-900 mb-1">
-                  {pendingOrders}
-                </Text>
-                <Text className="text-xs text-gray-500 uppercase tracking-wide">
-                  Pending
-                </Text>
-              </View>
-            </View>
-          </View>
-
-          <View className="mb-4">
-            <View className="flex-row items-center bg-white rounded-xl px-4 py-3 shadow-sm">
-              <MaterialIcons name="search" size={22} color="#9ca3af" />
-              <TextInput
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-                className="flex-1 ml-3 text-base text-gray-900"
-                placeholder="search orders..."
-                placeholderTextColor="#9ca3af"
-              />
-            </View>
-          </View>
-
-          <View className="mb-4">
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {[
-                { key: "all", label: "All" },
-                { key: "pending", label: "Pending" },
-                { key: "paid", label: "Paid" },
-              ].map((filter) => (
-                <Pressable
-                  key={filter.key}
-                  onPress={() => setActiveFilter(filter.key as FilterType)}
-                  className={`px-5 py-2.5 rounded-xl mr-2 ${
-                    activeFilter === filter.key
-                      ? "bg-blue-600"
-                      : "bg-white border border-gray-200"
-                  }`}
-                >
-                  <Text
-                    className={`font-semibold text-sm ${
-                      activeFilter === filter.key
-                        ? "text-white"
-                        : "text-gray-700"
-                    }`}
-                  >
-                    {filter.label}
-                  </Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </View>
-
-          <ScrollView className="flex-1 px-4">
-            {loading && <ActivityIndicator size="large" className="mt-10" />}
-
-            {!loading &&
-              Object.entries(groupedOrders).map(([dateGroup, groupOrders]) => (
-                <View key={dateGroup} className="mb-6">
-                  <Text className="text-sm text-gray-500 font-medium mt-4 mb-3">
-                    {dateGroup}
-                  </Text>
-
-                  {groupOrders.map((order) => {
-                    const status = mapStatus(order.status);
-                    const initials = getInitials(order.buyerName);
-                    const avatarColor = getAvatarColor(order.buyerName);
-
+            {/* Filter Tabs */}
+            <View className="mb-6">
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {[
+                    { key: "all", label: "All" },
+                    { key: "pending", label: "Pending" },
+                    { key: "paid", label: "Paid" },
+                ].map((filter) => {
+                    const isActive = activeFilter === filter.key;
                     return (
-                      <Pressable
-                        key={order.id}
-                        onPress={() =>
-                          navigation.navigate("OrderDetails", { order })
-                        }
-                        className="bg-white rounded-xl p-4 mb-3 border border-gray-200"
-                      >
-                        <View className="flex-row items-center">
-                          <View
-                            className="w-12 h-12 rounded-full items-center justify-center mr-3"
-                            style={{ backgroundColor: avatarColor }}
-                          >
-                            <Text className="text-white font-bold text-base">
-                              {initials}
-                            </Text>
-                          </View>
-
-                          <View className="flex-1 flex-row justify-between items-center">
-                            <View>
-                              <Text className="font-semibold text-gray-900 text-base">
-                                {order.buyerName}
-                              </Text>
-                              <View className="flex-row items-center mt-1">
-                                <View
-                                  className={`px-2 py-1 rounded-full ${getStatusColor(
-                                    status
-                                  )}`}
-                                >
-                                  <Text
-                                    className={`text-xs font-medium ${
-                                      getStatusColor(status).includes("text-")
-                                        ? getStatusColor(status)
-                                            .split(" ")
-                                            .find((c) => c.startsWith("text-"))
-                                        : "text-gray-700"
-                                    }`}
-                                  >
-                                    {status}
-                                  </Text>
-                                </View>
-                              </View>
-                            </View>
-
-                            <View className="items-end">
-                              <Text className="font-bold text-gray-900 text-base">
-                                ₦
-                                {order.totalPrice
-                                  .toFixed(2)
-                                  .toLocaleString()}
-                              </Text>
-                              <Text className="text-sm text-gray-500 mt-1">
-                                {order.orderNumber}
-                              </Text>
-                            </View>
-                          </View>
-                        </View>
-                      </Pressable>
+                        <Pressable
+                        key={filter.key}
+                        onPress={() => setActiveFilter(filter.key as FilterType)}
+                        className={`px-5 py-2 rounded-full border ${
+                            isActive
+                            ? "bg-gray-900 border-gray-900"
+                            : "bg-white border-gray-200"
+                        }`}
+                        >
+                        <Text
+                            className={`font-semibold text-sm ${
+                            isActive
+                                ? "text-white"
+                                : "text-gray-600"
+                            }`}
+                        >
+                            {filter.label}
+                        </Text>
+                        </Pressable>
                     );
-                  })}
-                </View>
-              ))}
+                })}
+                </ScrollView>
+            </View>
 
-            {!loading && filteredOrders.length === 0 && (
-              <View className="items-center py-12">
-                <MaterialIcons name="receipt-long" size={64} color="#d1d5db" />
-                <Text className="text-gray-500 mt-4">No orders found</Text>
+            {/* Orders List */}
+            {loading ? (
+                 <View className="items-center py-20">
+                    <ActivityIndicator size="large" color="#2563eb" />
+                </View>
+            ) : filteredOrders.length === 0 ? (
+                <View className="items-center py-20 px-6">
+                    <View className="w-20 h-20 bg-gray-100 rounded-full items-center justify-center mb-4">
+                        <Ionicons name="receipt-outline" size={40} color="#9ca3af" />
+                    </View>
+                    <Text className="text-gray-900 text-lg font-semibold mb-2">No orders found</Text>
+                    <Text className="text-gray-500 text-center text-sm max-w-xs">
+                        {searchQuery ? "Try adjusting your search terms" : "Orders will appear here once customers start buying"}
+                    </Text>
+                </View>
+            ) : (
+              <View className="pb-20">
+                {Object.entries(groupedOrders).map(([dateGroup, groupOrders]) => (
+                    <View key={dateGroup} className="mb-6">
+                    <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 pl-1">
+                        {dateGroup}
+                    </Text>
+
+                    {groupOrders.map((order) => {
+                        const status = mapStatus(order.status);
+                        const initials = getInitials(order.buyerName);
+                        const avatarColor = getAvatarColor(order.buyerName);
+
+                        return (
+                        <Pressable
+                            key={order.id}
+                            onPress={() =>
+                            navigation.navigate("OrderDetails", { order })
+                            }
+                            className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100 active:scale-[0.99] transition-transform"
+                             style={{
+                                shadowColor: "#000",
+                                shadowOffset: { width: 0, height: 2 },
+                                shadowOpacity: 0.04,
+                                shadowRadius: 8,
+                                elevation: 2,
+                            }}
+                        >
+                            <View className="flex-row justify-between mb-4">
+                                <View className="flex-row items-center gap-3">
+                                    <View
+                                        className="w-10 h-10 rounded-full items-center justify-center shadow-inner"
+                                        style={{ backgroundColor: avatarColor }}
+                                    >
+                                        <Text className="text-white font-bold text-sm">
+                                        {initials}
+                                        </Text>
+                                    </View>
+                                    <View>
+                                        <Text className="font-bold text-gray-900 text-base">
+                                            {order.buyerName}
+                                        </Text>
+                                        <Text className="text-gray-400 text-xs font-medium">
+                                            #{order.orderNumber}
+                                        </Text>
+                                    </View>
+                                </View>
+                                <View
+                                    className={`px-3 py-1 rounded-full self-start ${getStatusColor(
+                                        status
+                                    )}`}
+                                    >
+                                    <Text
+                                        className={`text-xs font-bold ${
+                                        getStatusColor(status).includes("text-")
+                                            ? getStatusColor(status)
+                                                .split(" ")
+                                                .find((c) => c.startsWith("text-"))
+                                            : "text-gray-700"
+                                        }`}
+                                    >
+                                        {status}
+                                    </Text>
+                                </View>
+                            </View>
+
+                            <View className="border-t border-gray-50 pt-3 flex-row justify-between items-center">
+                                <View className="flex-row items-center gap-1.5">
+                                    <Ionicons name="time-outline" size={14} color="#9ca3af" />
+                                    <Text className="text-gray-400 text-xs font-medium">
+                                        {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </Text>
+                                </View>
+                                <Text className="font-extrabold text-gray-900 text-lg">
+                                    ₦{order.totalPrice.toLocaleString()}
+                                </Text>
+                            </View>
+                        </Pressable>
+                        );
+                    })}
+                    </View>
+                ))}
               </View>
             )}
-          </ScrollView>
         </View>
-
-        <View className="h-6" />
       </ScrollView>
     </SafeAreaView>
   );

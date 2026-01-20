@@ -51,6 +51,12 @@ export interface GetStorefrontDetailsResponse {
   data: StoreData;
 }
 
+export interface UpdateStorefrontSettingsResponse {
+  message: string;
+  code: string;
+  data: boolean;
+}
+
 export interface Product {
   id: string;
   storeId: string;
@@ -106,12 +112,12 @@ export interface CreateProductPayload {
   sku?: string;
   colourOptions?: string[];
   sizeOptions?: string[];
-  imageFile1?: any; 
+  imageFile1?: any;
   imageFile2?: any;
 }
 
 export interface UpdateProductPayload extends CreateProductPayload {
-  id: string; 
+  id: string;
 }
 
 
@@ -232,3 +238,38 @@ export interface GetPlansResponse {
   data: ApiSubscriptionPlan[];
 }
 
+
+export interface SalesData {
+  totalRevenue: number;
+  totalOrders: number;
+  totalCustomers: number;
+  bestSellingProducts: any | null;
+  topCustomers: any | null;
+}
+
+export interface GrowthData {
+  totalRevenue: number;
+  isInactive: boolean;
+}
+
+export interface GrowthTrendData {
+  today: GrowthData;
+  yesterday: GrowthData;
+  currentWeek: GrowthData;
+  lastWeek: GrowthData;
+  currentMonth: GrowthData;
+  lastMonth: GrowthData;
+  currentYear: GrowthData;
+  lastYear: GrowthData;
+}
+
+export interface StorePerformanceReportData {
+  sales: SalesData;
+  growthTrend: GrowthTrendData;
+}
+
+export interface StorePerformanceReportResponse {
+  message: string;
+  code: string;
+  data: StorePerformanceReportData;
+}

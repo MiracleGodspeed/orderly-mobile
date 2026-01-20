@@ -7,7 +7,7 @@
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "newArchEnabled": false,
-   "splash": {
+    "splash": {
       "backgroundColor": "#265CC7"
     },
     "ios": {
@@ -49,7 +49,8 @@
           "photosPermission": "We need access to your photos so you can upload banner images for your store.",
           "cameraPermission": "We need camera access so you can take photos for your store."
         }
-      ]
+      ],
+      "@react-native-community/datetimepicker"
     ]
   }
 }

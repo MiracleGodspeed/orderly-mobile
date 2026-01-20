@@ -37,6 +37,7 @@ import HelpSupport from 'src/screens/HelpSupport';
 import LegalPolicies from 'src/screens/LegalPolicies';
 import Notifications from 'src/screens/Notifications';
 import LocationManagement from 'src/screens/LocationManagement';
+import SubscriptionFlowScreen from 'src/screens/SubscriptionFlowScreen';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -128,6 +129,11 @@ export default function RootNavigator() {
         <Stack.Screen name="Notifications" component={Notifications} />
         <Stack.Screen name="Login" component={Login} />
         <Stack.Screen name="LocationManagement" component={LocationManagement} />
+        <Stack.Screen 
+  name="SubscriptionFlow" 
+  component={SubscriptionFlowScreen} 
+  // options={{ presentation: 'modal', headerShown: false }} 
+/>
       </Stack.Navigator>
     </NavigationContainer>
     </AppProviders>

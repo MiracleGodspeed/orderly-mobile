@@ -1,5 +1,9 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
-import { getStorefrontDetails } from "../src/api/vendor/vendor.api";
+import { getStorefrontDetails, updateStorefrontSettings } from "../src/api/vendor/vendor.api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Image } from "react-native";
+
+const STORE_DATA_CACHE = "store_data_cache";
 
 interface VendorContextType {
   businessName: string;
@@ -12,34 +16,37 @@ interface VendorContextType {
   toggleCategory: (categoryId: number) => void;
   resetVendorData: () => void;
   fetchVendorData: () => Promise<void>;
+  updateVendorSettings: (updates: Partial<StoreData>) => Promise<void>;
   checklistItems: ChecklistItem[];
+  loading: boolean;
 }
 
 export interface ChecklistItem {
   id: string;
   title: string;
   description: string;
-  // icon: React.ComponentType<any>;
   completed: boolean;
   isPrimary?: boolean;
   route?: string
 }
+
 export interface StoreData {
+  storeId: string;
   storeName: string;
-  phone: string;
+  phone: string | null;
   email: string;
-  address: string;
+  address: string | null;
   logoUrl: string | null;
   accountName?: string | null;
   accountNumber?: string;
-  discountOnAllProducts?: string;
-  bank: string;
+  discountOnAllProducts?: string | null;
+  bank: string | null;
   feeBearer: 'vendor' | 'customer' | 'included';
   primaryColor: string | null;
   secondaryColor: string | null;
   accentColor: string | null;
   storeFrontJson: StoreFrontJson;
-  vendor_locations: VendorLocation[];
+  vendor_locations: VendorLocation[] | null;
   vendor_delivery_charges?: VendorDelivery[] | null;
   vendor_custom_locations?: VendorCustomLocations[] | null;
   newestCatalogItems?: Product[] | null;
@@ -48,33 +55,36 @@ export interface StoreData {
   slugUrl: string | null;
   isVerified: boolean;
   isEmailVerified: boolean;
-  workingDaysHours?: WorkingHours[];
+  workingDaysHours?: WorkingHours[] | null;
   transferDirectlyToVendor: boolean;
   isServiceBased: boolean;
   templateId: string;
   isPublished: boolean;
-  promoBanner: string
-  savedPaymentMethod: PaymentMethod
+  promoBanner: string | null;
+  savedPaymentMethod: PaymentMethod | null;
 }
+
 export interface PaymentMethod {
   last4: string;
   expMonth?: string;
   expYear?: string;
   accountName?: string;
 }
+
 interface VendorOnboardProgress {
   addedFirstProduct: boolean,
   managedStoreFront: boolean,
   updatedPersonsalProfile: boolean,
 }
+
 interface StoreSubscription {
   daysRemaining: number;
   gracePeriodInDays: number;
   isTrial: boolean
 }
+
 export interface Product {
   id: string;
-  // name: string;
   title?: string | null;
   category: string;
   price: number;
@@ -96,17 +106,19 @@ export interface Product {
   features: string[];
   createdAt?: string | null;
 }
+
 export interface HeroItem {
   title: string;
   subTitle: string;
   slideImage: string | null;
 }
+
 export interface StoreFrontJson {
   heroArr: HeroItem[];
   aboutTitle: string;
   aboutBody: string;
   contactSection: string;
-  faq: string | null;
+  faq?: string | null;
 }
 
 export interface WorkingHours {
@@ -116,50 +128,16 @@ export interface WorkingHours {
   closeTime: string;
 }
 
-export interface SubscriptionPlan {
-  id: number;
-  name: string;
-  description?: string | null;
-  extraInfo?: string | null;
-  features?: string | null;
-  requestLimitPerMonth?: number | null;
-  yearlyPecentageDiscount?: number | null; // default 15
-  quarterlyPecentageDiscount?: number | null;
-  catalogItemLimit?: number | null;
-  price: number;
-  isPopular: boolean;
-  badge?: string | null;
-  buttonText?: string | null;
-  buttonStyle?: string | null;
-}
-
-
-export interface VendorSubscription {
-  subscriptionPlanId: number;
-  subscriptionPlan: SubscriptionPlan;
-  startDate?: string | null; // ISO date string
-  expiryDate?: string | null;
-  subscriptionDuration?: number | null;
-  durationUnit?: string | null; // "months", "weeks", "days", "hours"
-  status: string; // "pending", "success", "failed"
-  usedRequestCount?: number | null;
-  hasCustomDomain: boolean;
-  isTrialPeriod: boolean;
-  daysRemaining: number;
-  gracePeriodInDays: number;
-  isActive: boolean;
-  amountPaid?: number | null;
-  paymentReference?: string | null;
-  paymentGateway?: string | null; // e.g., "Paystack"
-  paidAt?: string | null;
-  createdAt?: string | null;
-  planFeatures?: string[] | null;
-}
-
 export interface VendorLocation {
   localGovernmentIds: string[];
   stateId: string
 }
+
+export interface VendorDelivery {
+  localGovernmentId: string;
+  charge: number
+}
+
 export interface VendorCustomLocations {
   name: string;
   deliveryCharge: string,
@@ -167,33 +145,6 @@ export interface VendorCustomLocations {
   stateId: string,
 }
 
-export interface DashboardDataResponse {
-  sales: SalesData;
-  // growthTrend: GrowthTrend;
-}
-
-export interface SalesData {
-  totalRevenue: number;
-  totalOrders: number;
-  totalCustomers: number;
-  // bestSellingProducts: BestSellingProduct[];
-}
-
-interface VendorData {
-  token: string;
-  userId: string;
-  fullName: string;
-  storeName: string | null;
-  storeId: string;
-  phoneNumber: string | null;
-  email: string;
-  role: number;
-  userStatus: number;
-}
-export interface VendorDelivery {
-  localGovernmentId: string;
-  charge: number
-}
 const VendorContext = createContext<VendorContextType | undefined>(undefined);
 
 export const VendorProvider = ({ children }: { children: ReactNode }) => {
@@ -201,27 +152,47 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
   const [description, setDescription] = useState("");
   const [isServiceBased, setIsServiceBased] = useState<boolean | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
-  const [storeData, setStoreData] = useState<StoreData>({} as StoreData);
+  const [storeData, setStoreData] = useState<StoreData | null>(null);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
+  const [loading, setLoading] = useState(false);
 
+  const processResponseData = (data: any): StoreData => {
+    const processed = { ...data };
+    if (processed.storeFrontJson && typeof processed.storeFrontJson === 'string') {
+      try {
+        processed.storeFrontJson = JSON.parse(processed.storeFrontJson);
+      } catch (e) {
+        console.error("Failed to parse storeFrontJson:", e);
+      }
+    }
+    return processed;
+  };
 
   const fetchVendorData = async () => {
+    setLoading(true);
     try {
       const response = await getStorefrontDetails();
-      // console.log(response, "storeData")
-      // console.log(response?.vendorOnboardProgressResponse, "vendorOnboardProgressResponse")
-      setStoreData(response)
       if (response) {
-        setBusinessName(response.storeName || "");
-        setIsServiceBased(response.isServiceBased);
-        setChecklistItems(
-          [
+        const processedData = processResponseData(response);
+        setStoreData(processedData);
+
+        // Cache data
+        AsyncStorage.setItem(STORE_DATA_CACHE, JSON.stringify(processedData)).catch(err =>
+          console.error("AsyncStorage save error:", err)
+        );
+
+        // Pre-fill local fields
+        setBusinessName(processedData.storeName || "");
+        setIsServiceBased(processedData.isServiceBased);
+
+        // Checklist logic
+        if (processedData.vendorOnboardProgressResponse) {
+          setChecklistItems([
             {
               id: 'customize-store',
               title: 'Customize your storefront',
               description: 'Add your logo, hero image, and tell customers about your business',
-              // icon: null,
-              completed: response?.vendorOnboardProgressResponse?.managedStoreFront,
+              completed: processedData.vendorOnboardProgressResponse.managedStoreFront,
               isPrimary: true,
               route: "/vendor/manage-storefront"
             },
@@ -229,28 +200,72 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
               id: 'add-product',
               title: 'Add your first product',
               description: 'Upload product photos, set prices, and create your first listing',
-              // icon: FiPackage,
-              completed: response?.vendorOnboardProgressResponse?.addedFirstProduct,
+              completed: processedData.vendorOnboardProgressResponse.addedFirstProduct,
               route: "/vendor/catalogs2"
             },
             {
               id: 'setup-payment',
               title: 'Setup payment method',
               description: 'Connect your bank account or payment processor to receive payments',
-              // icon: FiCreditCard,
-              completed: response?.vendorOnboardProgressResponse?.updatedPersonsalProfile
+              completed: processedData.vendorOnboardProgressResponse.updatedPersonsalProfile
             }
-          ]
-        )
+          ]);
+        }
       }
     } catch (error) {
       console.error("Error fetching vendor data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateVendorSettings = async (updates: Partial<StoreData>) => {
+    if (!storeData) return;
+    setLoading(true);
+
+    try {
+      const updatedData = { ...storeData, ...updates };
+
+      // Send to API (some backends might need stringified JSON, but let's try object first as it was working)
+      // If the backend fails with object, we can add a check here.
+      const response = await updateStorefrontSettings(updatedData);
+
+      if (response) {
+        setStoreData(updatedData);
+        AsyncStorage.setItem(STORE_DATA_CACHE, JSON.stringify(updatedData)).catch(err =>
+          console.error("AsyncStorage update error:", err)
+        );
+      }
+
+      // Refresh to ensure server sync
+      await fetchVendorData();
+    } catch (error) {
+      console.error("Error updating vendor settings:", error);
+      throw error;
+    } finally {
+      setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchVendorData()
-  }, [])
+    const loadCachedData = async () => {
+      try {
+        const cached = await AsyncStorage.getItem(STORE_DATA_CACHE);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          const processed = processResponseData(parsed);
+          setStoreData(processed);
+          setBusinessName(processed.storeName || "");
+          setIsServiceBased(processed.isServiceBased);
+        }
+      } catch (e) {
+        console.error("Error loading cached data:", e);
+      }
+      fetchVendorData();
+    };
+    loadCachedData();
+  }, []);
+
   const setBusinessInfo = (name: string, desc: string) => {
     setBusinessName(name);
     setDescription(desc);
@@ -273,6 +288,8 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
     setDescription("");
     setIsServiceBased(null);
     setSelectedCategories([]);
+    setStoreData(null);
+    AsyncStorage.removeItem(STORE_DATA_CACHE);
   };
 
   return (
@@ -288,7 +305,9 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
         resetVendorData,
         storeData,
         fetchVendorData,
-        checklistItems
+        updateVendorSettings,
+        checklistItems,
+        loading
       }}
     >
       {children}

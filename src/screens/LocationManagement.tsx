@@ -5,16 +5,17 @@ import {
   ScrollView,
   StatusBar,
   TextInput,
-  TouchableOpacity,
-  Modal
+  Modal,
+  ActivityIndicator
 } from "react-native";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../navigation/types";
+import { useVendor, VendorLocation, VendorDelivery } from "../../context/VendorContext";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -39,6 +40,43 @@ interface DeliveryCharge {
 
 const nigeriaStates: State[] = [
   {
+    id: "lagos",
+    name: "Lagos State",
+    lgas: [
+      { id: "main-land", name: "Mainland", state: "Lagos State" },
+      { id: "island", name: "Island", state: "Lagos State" },
+      { id: "agege", name: "Agege", state: "Lagos State" },
+      { id: "alimosho", name: "Alimosho", state: "Lagos State" },
+      { id: "amuwo-odofin", name: "Amuwo-Odofin", state: "Lagos State" },
+      { id: "apapa", name: "Apapa", state: "Lagos State" },
+      { id: "badagry", name: "Badagry", state: "Lagos State" },
+      { id: "epe", name: "Epe", state: "Lagos State" },
+      { id: "eti-osa", name: "Eti-Osa", state: "Lagos State" },
+      { id: "ibeju-lekki", name: "Ibeju-Lekki", state: "Lagos State" },
+      { id: "ifako-ijaiye", name: "Ifako-Ijaiye", state: "Lagos State" },
+      { id: "ikeja", name: "Ikeja", state: "Lagos State" },
+      { id: "ikorodu", name: "Ikorodu", state: "Lagos State" },
+      { id: "kosofe", name: "Kosofe", state: "Lagos State" },
+      { id: "mushin", name: "Mushin", state: "Lagos State" },
+      { id: "ojo", name: "Ojo", state: "Lagos State" },
+      { id: "oshodi-isolo", name: "Oshodi-Isolo", state: "Lagos State" },
+      { id: "shomolu", name: "Shomolu", state: "Lagos State" },
+      { id: "surulere", name: "Surulere", state: "Lagos State" },
+    ]
+  },
+  {
+    id: "fct",
+    name: "FCT",
+    lgas: [
+      { id: "abaji", name: "Abaji", state: "FCT" },
+      { id: "bwari", name: "Bwari", state: "FCT" },
+      { id: "gwagwalada", name: "Gwagwalada", state: "FCT" },
+      { id: "kuje", name: "Kuje", state: "FCT" },
+      { id: "kwali", name: "Kwali", state: "FCT" },
+      { id: "municipal-area-council", name: "Municipal Area Council", state: "FCT" },
+    ]
+  },
+  {
     id: "abia",
     name: "Abia State",
     lgas: [
@@ -51,46 +89,11 @@ const nigeriaStates: State[] = [
       { id: "isiala-ngwa-south", name: "Isiala Ngwa South", state: "Abia State" },
     ],
   },
-  {
-    id: "adamawa",
-    name: "Adamawa State",
-    lgas: [
-      { id: "demsa", name: "Demsa", state: "Adamawa State" },
-      { id: "fufore", name: "Fufore", state: "Adamawa State" },
-      { id: "ganye", name: "Ganye", state: "Adamawa State" },
-    ],
-  },
-  {
-    id: "akwa-ibom",
-    name: "Akwa Ibom State",
-    lgas: [
-      { id: "abak", name: "Abak", state: "Akwa Ibom State" },
-      { id: "eastern-obolo", name: "Eastern Obolo", state: "Akwa Ibom State" },
-      { id: "eket", name: "Eket", state: "Akwa Ibom State" },
-    ],
-  },
-  {
-    id: "anambra",
-    name: "Anambra State",
-    lgas: [
-      { id: "aguata", name: "Aguata", state: "Anambra State" },
-      { id: "anambra-east", name: "Anambra East", state: "Anambra State" },
-      { id: "anambra-west", name: "Anambra West", state: "Anambra State" },
-    ],
-  },
-  {
-    id: "bauchi",
-    name: "Bauchi State",
-    lgas: [
-      { id: "alkaleri", name: "Alkaleri", state: "Bauchi State" },
-      { id: "bauchi", name: "Bauchi", state: "Bauchi State" },
-      { id: "bogoro", name: "Bogoro", state: "Bauchi State" },
-    ],
-  },
 ];
 
 export default function LocationManagement() {
   const navigation = useNavigation<ScreenNavigationProp>();
+  const { storeData, updateVendorSettings, loading } = useVendor();
 
   const [expandedStates, setExpandedStates] = useState<string[]>([]);
   const [selectedLGAs, setSelectedLGAs] = useState<string[]>([]);
@@ -98,6 +101,54 @@ export default function LocationManagement() {
   const [searchQuery, setSearchQuery] = useState("");
   const [chargeSearchQuery, setChargeSearchQuery] = useState("");
   const [showCustomLocationModal, setShowCustomLocationModal] = useState(false);
+
+  useEffect(() => {
+    if (storeData) {
+      const initialSelectedLGAs: string[] = [];
+      if (storeData.vendor_locations) {
+        storeData.vendor_locations.forEach(loc => {
+          initialSelectedLGAs.push(...loc.localGovernmentIds);
+        });
+      }
+      setSelectedLGAs(initialSelectedLGAs);
+
+      const initialCharges: DeliveryCharge[] = [];
+
+      const findLGAInfo = (lgaId: string) => {
+        for (const state of nigeriaStates) {
+          const lga = state.lgas.find(l => l.id === lgaId);
+          if (lga) return { locationName: lga.name, stateName: state.name };
+        }
+        return { locationName: lgaId, stateName: "Unknown" };
+      };
+
+      if (storeData.vendor_delivery_charges) {
+        storeData.vendor_delivery_charges.forEach(charge => {
+          const info = findLGAInfo(charge.localGovernmentId);
+          initialCharges.push({
+            locationId: charge.localGovernmentId,
+            locationName: info.locationName,
+            stateName: info.stateName,
+            price: charge.charge.toString()
+          });
+        });
+      }
+
+      initialSelectedLGAs.forEach(lgaId => {
+        if (!initialCharges.find(c => c.locationId === lgaId)) {
+          const info = findLGAInfo(lgaId);
+          initialCharges.push({
+            locationId: lgaId,
+            locationName: info.locationName,
+            stateName: info.stateName,
+            price: "1500"
+          });
+        }
+      });
+
+      setDeliveryCharges(initialCharges);
+    }
+  }, [storeData]);
 
 
   const toggleState = (stateId: string) => {
@@ -113,7 +164,6 @@ export default function LocationManagement() {
     const allSelected = stateLGAIds.every((id) => selectedLGAs.includes(id));
 
     if (allSelected) {
-      // Deselect all LGAs in this state
       setSelectedLGAs(selectedLGAs.filter((id) => !stateLGAIds.includes(id)));
       setDeliveryCharges(
         deliveryCharges.filter((charge) => !stateLGAIds.includes(charge.locationId))
@@ -125,12 +175,16 @@ export default function LocationManagement() {
       state.lgas.forEach((lga) => {
         if (!newSelectedLGAs.includes(lga.id)) {
           newSelectedLGAs.push(lga.id);
-          newDeliveryCharges.push({
-            locationId: lga.id,
-            locationName: lga.name,
-            stateName: state.name,
-            price: "1500",
-          });
+          // Check if charge already exists (re-selecting)
+          const existingCharge = newDeliveryCharges.find(c => c.locationId === lga.id);
+          if (!existingCharge) {
+            newDeliveryCharges.push({
+              locationId: lga.id,
+              locationName: lga.name,
+              stateName: state.name,
+              price: "1500",
+            });
+          }
         }
       });
 
@@ -173,9 +227,34 @@ export default function LocationManagement() {
     return state.lgas.filter((lga) => selectedLGAs.includes(lga.id)).length;
   };
 
-  const handleSaveConfiguration = () => {
-    console.log("Saving delivery charges:", deliveryCharges);
-   
+  const handleSaveConfiguration = async () => {
+
+    const newVendorLocations: VendorLocation[] = [];
+
+    nigeriaStates.forEach(state => {
+      const selectedForState = state.lgas.filter(lga => selectedLGAs.includes(lga.id)).map(l => l.id);
+      if (selectedForState.length > 0) {
+        newVendorLocations.push({
+          stateId: state.id,
+          localGovernmentIds: selectedForState
+        });
+      }
+    });
+
+    const newVendorDeliveryCharges: VendorDelivery[] = deliveryCharges.map(c => ({
+      localGovernmentId: c.locationId,
+      charge: parseFloat(c.price) || 0
+    }));
+
+    try {
+      await updateVendorSettings({
+        vendor_locations: newVendorLocations,
+        vendor_delivery_charges: newVendorDeliveryCharges
+      });
+      navigation.goBack();
+    } catch (e) {
+      console.error("Failed to save location settings", e);
+    }
   };
 
   const filteredStates = nigeriaStates.filter((state) =>
@@ -198,19 +277,17 @@ export default function LocationManagement() {
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
 
       <ScrollView className="flex-1">
-        {/* Header */}
         <View className="bg-white px-4 py-4 mb-4">
           <View className="flex-row items-center justify-between mb-4">
             <Pressable onPress={() => navigation.goBack()}>
               <MaterialIcons name="arrow-back" size={28} color="#1f2937" />
             </Pressable>
-            
+
             {/* <View className="w-7" /> */}
           </View>
         </View>
 
         <View className="px-4">
-          {/* Location Management Card */}
           <View className="bg-[#194eb8] rounded-2xl p-6 mb-6 shadow-lg">
             <View className="flex-row items-center">
               <View className="w-16 h-16 bg-blue-500/30 rounded-2xl items-center justify-center mr-4">
@@ -298,11 +375,10 @@ export default function LocationManagement() {
                           className="mr-3"
                         >
                           <View
-                            className={`w-5 h-5 rounded border-2 items-center justify-center ${
-                              isStateFullySelected
-                                ? "bg-[#2563eb] border-[2563eb]"
-                                : "bg-transparent border-[d1d5db]"
-                            }`}
+                            className={`w-5 h-5 rounded border-2 items-center justify-center ${isStateFullySelected
+                              ? "bg-blue-600 border-blue-600"
+                              : "bg-transparent border-gray-300"
+                              }`}
                           >
                             {isStateFullySelected && (
                               <MaterialIcons name="check" size={14} color="#fff" />
@@ -337,11 +413,10 @@ export default function LocationManagement() {
                               className="flex-row items-center py-2.5"
                             >
                               <View
-                                className={`w-5 h-5 rounded border-2 items-center justify-center mr-3 ${
-                                  isSelected
-                                    ? "bg-blue-600 border-blue-600"
-                                    : "border-gray-300"
-                                }`}
+                                className={`w-5 h-5 rounded border-2 items-center justify-center mr-3 ${isSelected
+                                  ? "bg-blue-600 border-blue-600"
+                                  : "border-gray-300"
+                                  }`}
                               >
                                 {isSelected && (
                                   <MaterialIcons name="check" size={14} color="#fff" />
@@ -352,13 +427,13 @@ export default function LocationManagement() {
                           );
                         })}
 
-                       <Pressable
-                        onPress={() => setShowCustomLocationModal(true)}
-                        className="mt-2 mb-2"
+                        <Pressable
+                          onPress={() => setShowCustomLocationModal(true)}
+                          className="mt-2 mb-2"
                         >
-                        <Text className="text-purple-600 text-sm font-medium">
+                          <Text className="text-purple-600 text-sm font-medium">
                             + Add custom location
-                        </Text>
+                          </Text>
                         </Pressable>
 
                       </View>
@@ -427,56 +502,59 @@ export default function LocationManagement() {
               </View>
             )}
 
-            {deliveryCharges.length > 0 && (
-              <Pressable
-                onPress={handleSaveConfiguration}
-                className="bg-blue-600 rounded-xl py-4 items-center mt-4"
-              >
+            <Pressable
+              onPress={handleSaveConfiguration}
+              disabled={loading}
+              className={`rounded-xl py-4 items-center mt-4 ${loading ? 'bg-blue-300' : 'bg-blue-600'}`}
+            >
+              {loading ? (
+                <ActivityIndicator color="white" />
+              ) : (
                 <Text className="text-white font-bold text-base">
                   Save Configuration
                 </Text>
-              </Pressable>
-            )}
+              )}
+            </Pressable>
           </View>
         </View>
 
         <View className="h-6" />
       </ScrollView>
       <Modal
-  transparent
-  animationType="fade"
-  visible={showCustomLocationModal}
-  onRequestClose={() => setShowCustomLocationModal(false)}
->
-  <View className="flex-1 bg-black/40 items-center justify-center px-5">
-    <View className="bg-white w-full rounded-2xl p-5">
-      <Text className="text-lg font-semibold text-gray-900 mb-4">
-        Add Custom Location
-      </Text>
+        transparent
+        animationType="fade"
+        visible={showCustomLocationModal}
+        onRequestClose={() => setShowCustomLocationModal(false)}
+      >
+        <View className="flex-1 bg-black/40 items-center justify-center px-5">
+          <View className="bg-white w-full rounded-2xl p-5">
+            <Text className="text-lg font-semibold text-gray-900 mb-4">
+              Add Custom Location
+            </Text>
 
-      <TextInput
-        placeholder="Location name"
-        className="border border-gray-300 rounded-lg px-4 py-3 mb-3"
-      />
+            <TextInput
+              placeholder="Location name"
+              className="border border-gray-300 rounded-lg px-4 py-3 mb-3"
+            />
 
-      <TextInput
-        placeholder="Delivery charge"
-        keyboardType="numeric"
-        className="border border-gray-300 rounded-lg px-4 py-3 mb-4"
-      />
+            <TextInput
+              placeholder="Delivery charge"
+              keyboardType="numeric"
+              className="border border-gray-300 rounded-lg px-4 py-3 mb-4"
+            />
 
-      <View className="flex-row justify-end gap-3">
-        <Pressable onPress={() => setShowCustomLocationModal(false)}>
-          <Text className="text-gray-500">Cancel</Text>
-        </Pressable>
+            <View className="flex-row justify-end gap-3">
+              <Pressable onPress={() => setShowCustomLocationModal(false)}>
+                <Text className="text-gray-500">Cancel</Text>
+              </Pressable>
 
-        <Pressable className="bg-blue-600 px-4 py-2 rounded-lg">
-          <Text className="text-white font-medium">Add</Text>
-        </Pressable>
-      </View>
-    </View>
-  </View>
-</Modal>
+              <Pressable className="bg-blue-600 px-4 py-2 rounded-lg">
+                <Text className="text-white font-medium">Add</Text>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );

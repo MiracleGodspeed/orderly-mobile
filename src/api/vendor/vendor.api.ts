@@ -4,12 +4,14 @@ import {
   VendorOnboardingRequest,
   VendorOnboardingResponse,
   GetStorefrontDetailsResponse,
+  UpdateStorefrontSettingsResponse,
   GetProductsResponse,
   CreateProductPayload,
   UpdateProductPayload,
   PaginatedOrdersResponse,
   SubscriptionHistoryResponse, SubscriptionHistoryParams, SubscriptionHistory,
   GetPlansResponse, ApiSubscriptionPlan,
+  StorePerformanceReportResponse, StorePerformanceReportData,
 } from "./vendor.types";
 
 type GetOrdersParams = {
@@ -27,7 +29,7 @@ export const getCategories = async () => {
   const response = await apiClient.get<GetCategoriesResponse>(
     "/storefront/get-categories",
     {
-      validateStatus: () => true, 
+      validateStatus: () => true,
     }
   );
 
@@ -68,11 +70,26 @@ export const getStorefrontDetails = async () => {
   // if (response.data.code !== "200") {
   //   console.log(response, "code")
   //   throw new Error(
-  //     response.data.message || "Failed to fetch storefront details"
   //   );
   // }
 
   return response.data.data;
+};
+
+export const updateStorefrontSettings = async (payload: any): Promise<UpdateStorefrontSettingsResponse> => {
+  const response = await apiClient.post<UpdateStorefrontSettingsResponse>(
+    "/storefront/update-store-front-settings",
+    payload,
+    {
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to update storefront settings");
+  }
+
+  return response.data;
 };
 
 export const getProducts = async (): Promise<GetProductsResponse> => {
@@ -231,7 +248,7 @@ export const updateProduct = async (
 export const deleteProduct = async (productId: string): Promise<any> => {
   const response = await apiClient.post(
     `/catalog/delete-item?CatalogItemId=${productId}`,
-    
+
   );
 
   if (response.data?.code !== "200") {
@@ -257,7 +274,7 @@ export const getSubscriptionHistory = async (params: SubscriptionHistoryParams):
     "/vendor-subscription/history",
     {
       params,
-      validateStatus: () => true, 
+      validateStatus: () => true,
     }
   );
 
@@ -269,6 +286,7 @@ export const getSubscriptionHistory = async (params: SubscriptionHistoryParams):
   return response.data.data;
 };
 
+
 export const getAvailablePlans = async (): Promise<ApiSubscriptionPlan[]> => {
   const response = await apiClient.get<GetPlansResponse>(
     "/SubscriptionPlan/plans",
@@ -279,6 +297,22 @@ export const getAvailablePlans = async (): Promise<ApiSubscriptionPlan[]> => {
 
   if (response.data.code !== "200") {
     throw new Error(response.data.message || "Failed to fetch plans");
+  }
+
+  return response.data.data;
+};
+
+export const getStorePerformanceReport = async (durationValue: number = 7): Promise<StorePerformanceReportData> => {
+  const response = await apiClient.get<StorePerformanceReportResponse>(
+    `/reporting/store-performance-report`,
+    {
+      params: { durationValue },
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to fetch performance report");
   }
 
   return response.data.data;

@@ -14,7 +14,6 @@ import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useToast } from 'react-native-toast-notifications';
 import SkeletonPlaceholder from "react-native-skeleton-placeholder";
-import SubscriptionFlowModal from "src/components/SubscriptionFlowModal";
 
 import { getSubscriptionHistory } from "../api/vendor/vendor.api"; 
 import { SubscriptionHistory } from "../api/vendor/vendor.types";
@@ -57,7 +56,6 @@ export default function SubscriptionBilling() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [history, setHistory] = useState<SubscriptionHistory[]>([]);
-  const [flowOpen, setFlowOpen] = useState(false);
 
   const currentSub = history.length > 0 ? history[0] : null;
 
@@ -191,7 +189,9 @@ export default function SubscriptionBilling() {
               </View>
 
               <Pressable
-                onPress={() => setFlowOpen(true)}
+                onPress={() => navigation.navigate('SubscriptionFlow', { 
+   initialPlanName: currentSub?.subscriptionPlan.name 
+})}
                 className="bg-blue-600 rounded-xl py-4 items-center mb-3 active:opacity-80"
               >
                 <Text className="text-white font-semibold text-base">
@@ -247,10 +247,7 @@ export default function SubscriptionBilling() {
         )}
       </ScrollView>
 
-      <SubscriptionFlowModal
-        visible={flowOpen}
-        onClose={() => setFlowOpen(false)}
-      />
+      
     </SafeAreaView>
   );
 }

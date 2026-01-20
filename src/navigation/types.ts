@@ -46,6 +46,7 @@ export type RootStackParamList = {
   PersonalDetails: undefined;
   PayoutSettings: undefined;
   SubscriptionBilling: undefined;
+  SubscriptionFlow: { initialPlanName?: string };
   Security: undefined;
   Notifications: undefined;
   HelpSupport: undefined;

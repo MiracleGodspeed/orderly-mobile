@@ -1,5 +1,5 @@
 import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react"; // Added useMemo
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { ApiSubscriptionPlan } from "../api/vendor/vendor.types";
 import { getAvailablePlans } from "../api/vendor/vendor.api";
@@ -7,58 +7,74 @@ import { getAvailablePlans } from "../api/vendor/vendor.api";
 type BillingCycle = "Monthly" | "Quarterly" | "Yearly";
 
 type Props = {
-  selectedPlan: {
-    name: string;
-    price: number;
-  };
+  selectedPlan: { name: string; price: number };
   billingCycle: BillingCycle;
+  setBillingCycle: (cycle: BillingCycle) => void;
   onContinue: (plan: ApiSubscriptionPlan, cycle: BillingCycle) => void;
   onClose: () => void;
 };
 
 export default function RenewSubscriptionStep({
   selectedPlan: initialPlan,
-  billingCycle: initialCycle,
+  billingCycle,
+  setBillingCycle,
   onContinue,
   onClose,
 }: Props) {
   const [plans, setPlans] = useState<ApiSubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
-  const [billingCycle, setBillingCycle] = useState<BillingCycle>(initialCycle);
-  const [selectedPlan, setSelectedPlan] = useState<ApiSubscriptionPlan | null>(null);
+
+  // 1. Keep state simple
+  const [selectedApiPlan, setSelectedApiPlan] = useState<ApiSubscriptionPlan | null>(null);
 
   useEffect(() => {
+    let isMounted = true;
+    const fetchPlans = async () => {
+      try {
+        setLoading(true);
+        const data = await getAvailablePlans();
+        if (isMounted && data) {
+          setPlans(data);
+          // Find the initial plan OR default to the first one available
+          const current = data.find((p) => p.name === initialPlan.name) || data[0];
+          setSelectedApiPlan(current || null);
+        }
+      } catch (error) {
+        if (isMounted) console.error("Plan Fetch Error:", error);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
     fetchPlans();
-  }, []);
+    return () => { isMounted = false; };
+  }, []); // Only fetch on mount
 
-  const fetchPlans = async () => {
-    try {
-      setLoading(true);
-      const data = await getAvailablePlans();
-      setPlans(data);
-      
-      // Try to find the plan that matches the current user's plan, otherwise pick the first
-      const current = data.find((p) => p.name === initialPlan.name) || data[0];
-      setSelectedPlan(current);
-    } catch (error) {
-      console.error("Error fetching plans:", error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  /**
+   * 2. Calculation outside of JSX to prevent re-render jumps
+   */
+  const calculatedPrices = useMemo(() => {
+    return plans.reduce((acc, plan) => {
+      let price = plan.price;
+      let label = "per month";
 
-  // Helper to calculate price based on cycle
-  const getDisplayPrice = (basePrice: number) => {
-    if (billingCycle === "Quarterly") return basePrice * 3;
-    if (billingCycle === "Yearly") return basePrice * 12;
-    return basePrice;
-  };
+      if (billingCycle === "Quarterly") {
+        price = plan.price * 3;
+        label = "per 3 months";
+      } else if (billingCycle === "Yearly") {
+        price = (plan.price * 12) * 0.9;
+        label = "per year (10% off)";
+      }
+
+      acc[plan.id] = { price, label };
+      return acc;
+    }, {} as Record<string, { price: number; label: string }>);
+  }, [plans, billingCycle]);
 
   if (loading) {
     return (
-      <View className="flex-1 justify-center items-center py-10">
-        <ActivityIndicator size="large" color="#2563eb" />
-        <Text className="mt-2 text-gray-500">Loading plans...</Text>
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 80 }}>
+        <ActivityIndicator size="large" color="#3b82f6" />
+        <Text style={{ marginTop: 8, color: '#6b7280' }}>Loading plans...</Text>
       </View>
     );
   }
@@ -67,105 +83,96 @@ export default function RenewSubscriptionStep({
     <View className="flex-1">
       {/* Header */}
       <View className="flex-row justify-between items-center px-5 pt-4 pb-3">
-        <Text className="text-lg font-semibold text-gray-900">
-          Renew Subscription
-        </Text>
-        <Pressable onPress={onClose}>
+        <Text className="text-lg font-semibold text-gray-900">Renew Subscription</Text>
+        <Pressable onPress={onClose} hitSlop={15}>
           <MaterialIcons name="close" size={24} color="#111827" />
         </Pressable>
       </View>
 
-      <ScrollView className="flex-1 px-5">
-        {/* Billing Cycle Tabs */}
-
-        {/* <View className="flex-row bg-gray-100 rounded-xl p-1 mb-5">
-          {(["Monthly", "Quarterly", "Yearly"] as BillingCycle[]).map((cycle) => (
-            <Pressable
-              key={cycle}
-              onPress={() => setBillingCycle(cycle)}
-              className={`flex-1 py-2.5 rounded-lg ${
-                billingCycle === cycle ? "bg-white shadow-sm" : ""
+      <ScrollView className="flex-1 px-5" showsVerticalScrollIndicator={false}>
+        {/* Billing Cycle Tabs - Refactored to explicit buttons */}
+        <View className="flex-row bg-gray-100 rounded-xl p-1 mb-6">
+          <Pressable
+            onPress={() => setBillingCycle("Monthly")}
+            className={`flex-1 py-2.5 rounded-lg items-center justify-center ${billingCycle === "Monthly" ? "bg-white shadow-sm" : ""
               }`}
-            >
-              <Text
-                className={`text-center text-sm font-medium ${
-                  billingCycle === cycle ? "text-gray-900" : "text-gray-500"
-                }`}
-              >
-                {cycle}
-              </Text>
-            </Pressable>
-          ))}
-        </View> */}
+          >
+            <Text className={`text-center text-sm font-medium ${billingCycle === "Monthly" ? "text-gray-900" : "text-gray-500"
+              }`}>
+              Monthly
+            </Text>
+          </Pressable>
 
+          <Pressable
+            onPress={() => setBillingCycle("Quarterly")}
+            className={`flex-1 py-2.5 rounded-lg items-center justify-center ${billingCycle === "Quarterly" ? "bg-white shadow-sm" : ""
+              }`}
+          >
+            <Text className={`text-center text-sm font-medium ${billingCycle === "Quarterly" ? "text-gray-900" : "text-gray-500"
+              }`}>
+              Quarterly
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setBillingCycle("Yearly")}
+            className={`flex-1 py-2.5 rounded-lg items-center justify-center flex-row ${billingCycle === "Yearly" ? "bg-white shadow-sm" : ""
+              }`}
+          >
+            <Text className={`text-center text-sm font-medium ${billingCycle === "Yearly" ? "text-gray-900" : "text-gray-500"
+              }`}>
+              Yearly
+            </Text>
+            <View className="ml-1 bg-green-100 px-1.5 py-0.5 rounded">
+              <Text className="text-[8px] font-bold text-green-700">-10%</Text>
+            </View>
+          </Pressable>
+        </View>
+
+        {/* Plan Cards */}
         {plans.map((plan) => {
-          const isSelected = selectedPlan?.id === plan.id;
-          const displayPrice = getDisplayPrice(plan.price);
+          const isSelected = selectedApiPlan?.id === plan.id;
+          const { price, label } = calculatedPrices[plan.id] || { price: plan.price, label: "per month" };
 
           return (
             <Pressable
               key={plan.id}
-              onPress={() => setSelectedPlan(plan)}
-              className={`rounded-2xl p-4 mb-5 ${
-                isSelected ? "border-2 border-blue-600" : "border border-gray-200"
-              }`}
-              style={{
-                backgroundColor: isSelected ? "#eff6ff" : "#ffffff",
+              onPress={() => {
+                setSelectedApiPlan(plan);
+                onContinue(plan, billingCycle);
               }}
+              className={`rounded-2xl p-5 mb-5 ${isSelected ? "border-2 border-blue-600 shadow-sm" : "border border-gray-200"
+                }`}
+              style={{ backgroundColor: isSelected ? "#eff6ff" : "#ffffff" }}
             >
               {plan.isPopular && (
-                <View
-                  className="absolute -top-2.5 left-4 bg-blue-600 px-3 py-1 rounded-full"
-                  style={{ zIndex: 10 }}
-                >
-                  <Text className="text-xs text-white font-bold uppercase tracking-wide">
-                    Most Popular
-                  </Text>
+                <View className="absolute -top-2.5 left-5 bg-blue-600 px-3 py-1 rounded-full">
+                  <Text className="text-[10px] text-white font-bold uppercase tracking-wider">Most Popular</Text>
                 </View>
               )}
 
               <View className="flex-row justify-between items-start mb-3">
                 <View className="flex-1">
-                  <Text className="text-xl font-bold text-gray-900 mb-1">
-                    {plan.name}
-                  </Text>
-                  <Text className="text-xs text-gray-500 pr-2">
-                    {plan.description}
-                  </Text>
+                  <Text className="text-xl font-bold text-gray-900 mb-1">{plan.name}</Text>
+                  <Text className="text-xs text-gray-500 pr-4 leading-4">{plan.description}</Text>
                 </View>
-
                 <View className="items-end">
-                  <View className="flex-row items-start">
-                    <Text className="text-2xl font-bold text-gray-900">
-                      ₦{displayPrice.toLocaleString()}
-                    </Text>
-                  </View>
-                  <Text className="text-xs text-gray-500">
-                    per {billingCycle.replace('ly', '').toLowerCase()}
-                  </Text>
-                  
+                  <Text className="text-2xl font-bold text-gray-900">₦{price.toLocaleString()}</Text>
+                  <Text className="text-[10px] text-gray-400 font-medium">{label}</Text>
                   {isSelected && (
                     <View className="mt-2">
-                      <View className="w-6 h-6 rounded-full bg-blue-600 items-center justify-center">
-                        <MaterialIcons name="check" size={16} color="#ffffff" />
-                      </View>
+                      <MaterialIcons name="check-circle" size={24} color="#2563eb" />
                     </View>
                   )}
                 </View>
               </View>
 
-              <View className="mt-2 border-t border-gray-100 pt-3">
-                {plan.features.map((feature, index) => (
-                  <View key={index} className="flex-row items-start mb-2">
-                    <MaterialIcons
-                      name="check"
-                      size={18}
-                      color="#10b981"
-                      style={{ marginRight: 8, marginTop: 2 }}
-                    />
-                    <Text className="text-sm text-gray-700 flex-1">
-                      {feature}
-                    </Text>
+              {/* Features */}
+              <View className="mt-2 border-t border-gray-100 pt-4">
+                {plan.features?.map((feature, index) => (
+                  <View key={index} className="flex-row items-start mb-2.5">
+                    <MaterialIcons name="check" size={18} color="#10b981" style={{ marginRight: 8, marginTop: 1 }} />
+                    <Text className="text-sm text-gray-700 flex-1">{feature}</Text>
                   </View>
                 ))}
               </View>
@@ -174,15 +181,16 @@ export default function RenewSubscriptionStep({
         })}
       </ScrollView>
 
-      <View className="px-5 py-4 border-t border-gray-100 bg-white mb-5">
+      {/* Footer */}
+      <View className="px-5 py-4 border-t border-gray-100 bg-white">
         <Pressable
-          disabled={!selectedPlan}
-          onPress={() => selectedPlan && onContinue(selectedPlan, billingCycle)}
-          className={`rounded-xl py-4 items-center ${!selectedPlan ? 'bg-gray-300' : 'bg-blue-600'}`}
+          disabled={!selectedApiPlan}
+          onPress={() => selectedApiPlan && onContinue(selectedApiPlan, billingCycle)}
+          className={`rounded-xl py-4 items-center ${!selectedApiPlan ? 'bg-gray-300' : 'bg-blue-600'}`}
         >
           <Text className="text-white font-semibold text-base">
-            {selectedPlan 
-              ? `Continue (₦${getDisplayPrice(selectedPlan.price).toLocaleString()})`
+            {selectedApiPlan
+              ? `Continue (₦${(calculatedPrices[selectedApiPlan.id]?.price || 0).toLocaleString()})`
               : "Select a Plan"}
           </Text>
         </Pressable>

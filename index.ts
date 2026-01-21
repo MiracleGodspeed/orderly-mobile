@@ -1,3 +1,11 @@
+import { ReanimatedLogLevel, configureReanimatedLogger } from 'react-native-reanimated';
+
+// Disable strict mode warnings to keep terminal clean
+configureReanimatedLogger({
+  level: ReanimatedLogLevel.warn,
+  strict: false,
+});
+
 import { registerRootComponent } from 'expo';
 
 import App from './App';

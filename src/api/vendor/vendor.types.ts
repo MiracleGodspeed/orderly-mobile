@@ -151,6 +151,14 @@ export type Order = {
   catalogItems: CatalogItem[];
 };
 
+export type GetOrdersParams = {
+  pageIndex?: number;
+  pageSize?: number;
+  search?: string;
+  datefrom?: string;
+  dateto?: string;
+};
+
 export type PaginatedOrdersResponse = {
   pageIndex: number;
   pageSize: number;

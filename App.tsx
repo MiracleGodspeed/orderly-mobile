@@ -8,9 +8,6 @@ import * as SplashScreen from 'expo-splash-screen';
 import RootNavigator from './src/navigation/RootNavigator';
 import { ToastProvider } from 'react-native-toast-notifications';
 import { useFonts } from 'expo-font';
-import { Ionicons, AntDesign, Octicons, MaterialIcons } from '@expo/vector-icons';
-
-
 SplashScreen.preventAutoHideAsync();
 
 export default function App() {

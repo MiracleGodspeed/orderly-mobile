@@ -8,19 +8,13 @@ import {
   GetProductsResponse,
   CreateProductPayload,
   UpdateProductPayload,
-  PaginatedOrdersResponse,
+  PaginatedOrdersResponse, GetOrdersParams,
   SubscriptionHistoryResponse, SubscriptionHistoryParams, SubscriptionHistory,
   GetPlansResponse, ApiSubscriptionPlan,
   StorePerformanceReportResponse, StorePerformanceReportData,
 } from "./vendor.types";
 
-type GetOrdersParams = {
-  pageIndex?: number;
-  pageSize?: number;
-  search?: string;
-  datefrom?: string;
-  dateto?: string;
-};
+
 
 
 
@@ -92,10 +86,19 @@ export const updateStorefrontSettings = async (payload: any): Promise<UpdateStor
   return response.data;
 };
 
-export const getProducts = async (): Promise<GetProductsResponse> => {
+type GetProductsParams = {
+  pageIndex?: number;
+  pageSize?: number;
+  search?: string;
+  categoryId?: number;
+};
+
+export const getProducts = async (params?: GetProductsParams): Promise<GetProductsResponse> => {
+  console.log('getProducts payload:', params);
   const response = await apiClient.get<GetProductsResponse>(
     "/catalog/get-catalog-items-by-store-id",
     {
+      params,
       validateStatus: () => true,
     }
   );
@@ -261,10 +264,21 @@ export const deleteProduct = async (productId: string): Promise<any> => {
 export const getPaidOrders = async (
   params?: GetOrdersParams
 ): Promise<PaginatedOrdersResponse> => {
+  console.log('getPaidOrders payload:', params);
   const res = await apiClient.get<PaginatedOrdersResponse>(
     '/order-requests/get-paid-catalog-items',
-    { params }
+    { 
+      params,
+      validateStatus: () => true 
+    }
   );
+
+  console.log('getPaidOrders response:', {
+    count: res.data.data?.length,
+    totalCount: res.data.totalCount,
+    totalPages: res.data.totalPages,
+    pageIndex: res.data.pageIndex
+  });
 
   return res.data;
 };

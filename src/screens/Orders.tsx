@@ -104,6 +104,7 @@ const getAvatarColor = (name: string): string => {
 
 const PAGE_SIZE = 10;
 
+
 export default function Orders() {
   const navigation = useNavigation<ScreenNavigationProp>();
 
@@ -135,19 +136,19 @@ export default function Orders() {
         setLoading(true);
       }
 
+
+
       const res = await getPaidOrders({
         pageIndex,
         pageSize: PAGE_SIZE,
         search: search.trim() || undefined,
       });
 
-      setOrders(res.data);
+      const items = res.data.length > PAGE_SIZE ? res.data.slice(0, PAGE_SIZE) : res.data;
+      setOrders(items);
       setTotalCount(res.totalCount);
       
-      // Calculate totalPages fallback
-      const calculatedPages = res.totalPages > 0 
-        ? res.totalPages 
-        : Math.ceil(res.totalCount / PAGE_SIZE);
+      const calculatedPages = Math.ceil(res.totalCount / PAGE_SIZE);
       
       setTotalPages(calculatedPages);
       setCurrentPage(pageIndex);
@@ -204,10 +205,10 @@ export default function Orders() {
     }, {} as Record<string, Order[]>);
   }, [filteredOrders]);
 
-  const totalOrders = orders.length;
+  const totalOrders = totalCount;
   const activeOrders = orders.filter(
     (o) => mapStatus(o.status) !== "Completed"
-  ).length;
+  ).length; 
   const pendingOrders = orders.filter(
     (o) => mapStatus(o.status) === "Pending"
   ).length;

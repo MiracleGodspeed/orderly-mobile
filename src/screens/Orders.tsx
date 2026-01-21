@@ -293,7 +293,11 @@ export default function Orders() {
 
             {/* Filter Tabs */}
             <View className="mb-6">
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false} 
+                    contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', gap: 8 }}
+                >
                 {[
                     { key: "all", label: "All" },
                     { key: "pending", label: "Pending" },
@@ -413,7 +417,7 @@ export default function Orders() {
                                         {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                                     </Text>
                                 </View>
-                                <Text className="font-extrabold text-gray-900 text-lg">
+                                <Text className="font-bold text-gray-900 text-lg">
                                     ₦{order.totalPrice.toLocaleString()}
                                 </Text>
                             </View>

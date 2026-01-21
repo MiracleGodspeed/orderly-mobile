@@ -52,7 +52,7 @@ export default function ProductsList() {
   const [applyDiscountModalOpen, setApplyDiscountModalOpen] = useState(false);
   const [discountValue, setDiscountValue] = useState('');
   
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchProducts = async (pageIndex: number = 1, search: string = '', isSearching: boolean = false) => {
     try {
@@ -190,24 +190,6 @@ export default function ProductsList() {
   const activeProductsCount = products.filter(p => p.status === 1).length;
   const inactiveCount = products.filter(p => p.status !== 1).length;
 
-  if (loading) {
-    return (
-      <SafeAreaView className="bg-gray-50 flex-1" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
-      <ScrollView className="px-4 pt-6">
-        <SkeletonPlaceholder>
-          <View className="mb-6 bg-gray-200 rounded-2xl h-24 w-full" />
-          <View className="flex-row flex-wrap justify-between">
-            {[1,2,3,4].map((_, i) => (
-              <View key={i} className="w-[48%] mb-4 bg-gray-200 rounded-2xl h-60" />
-            ))}
-          </View>
-        </SkeletonPlaceholder>
-      </ScrollView>
-    </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView className="bg-gray-50 flex-1" edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
@@ -286,7 +268,12 @@ export default function ProductsList() {
                  </Pressable>
             </View>
 
-          {filteredProducts.length === 0 ? (
+          {loading ? (
+            <View className="items-center py-20 px-6">
+               <ActivityIndicator size="large" color="#2563eb" />
+               <Text className="text-gray-400 text-sm mt-4 font-medium">Loading products...</Text>
+            </View>
+          ) : filteredProducts.length === 0 ? (
             <View className="items-center py-20 px-6">
                <View className="w-20 h-20 bg-gray-100 rounded-full items-center justify-center mb-4">
                   <Ionicons name="cube-outline" size={40} color="#9ca3af" />

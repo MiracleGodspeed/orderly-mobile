@@ -155,13 +155,46 @@ export default function Home() {
       <MenuOverlay isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <ScrollView className='flex-1' showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 80 }}>
-        <StoreSetupProgress progress={progressPercentage == 0 ? 25 : progressPercentage} onContinue={openSetupModal} />
+       
+        <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-4 overflow-hidden">
+          {progressPercentage < 100 && (
+            <View className="mb-4">
+              <StoreSetupProgress 
+                progress={progressPercentage == 0 ? 25 : progressPercentage} 
+                onContinue={openSetupModal} 
+              />
+            </View>
+          )}
 
-        <View className="px-10 mt-2 pb-3 flex-row items-center justify-between">
-          <Text className="text-[17px] text-gray-600 font-semibold">{storeData?.storeName || '[store_name]'}</Text>
-          <TouchableOpacity className="p-2" activeOpacity={0.7}>
-            <Ionicons name="share-social-outline" size={20} color="#6B7280" />
-          </TouchableOpacity>
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-3 flex-1">
+              {/* Premium Store Icon */}
+              <View className="w-12 h-12 bg-blue-50 rounded-full items-center justify-center border border-blue-100 shadow-sm">
+                <Ionicons name="storefront" size={22} color="#2563eb" />
+              </View>
+              
+              <View className="flex-1">
+                <Text className="text-[18px] text-gray-900 font-bold leading-tight" numberOfLines={1}>
+                  {storeData?.storeName || 'My Store'}
+                </Text>
+                <View className="flex-row items-center gap-1.5 mt-1">
+                  <View className="flex-row items-center gap-1 bg-green-50 px-1.5 py-0.5 rounded text-xs">
+                    <View className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                    <Text className="text-[10px] text-green-700 font-bold uppercase tracking-wide">Live</Text>
+                  </View>
+                  <Text className="text-gray-300 text-xs">|</Text>
+                  <Text className="text-xs text-blue-600 font-semibold">orderly.app/{storeData?.slugUrl || 'store'}</Text>
+                </View>
+              </View>
+            </View>
+
+            <TouchableOpacity 
+              className="w-10 h-10 bg-gray-50 rounded-full items-center justify-center border border-gray-200 shadow-sm"
+              activeOpacity={0.7}
+            >
+              <Ionicons name="share-social-outline" size={20} color="#374151" />
+            </TouchableOpacity>
+          </View>
         </View>
 
         <View className="mx-4 mb-4 p-6 bg-white rounded-2xl border border-gray-100">

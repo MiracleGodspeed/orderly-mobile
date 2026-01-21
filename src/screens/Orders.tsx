@@ -7,7 +7,7 @@ import {
   TextInput,
   ActivityIndicator,
 } from "react-native";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import { useNavigation } from "@react-navigation/native";
@@ -102,40 +102,84 @@ const getAvatarColor = (name: string): string => {
   return colors[Math.abs(hash) % colors.length];
 };
 
+const PAGE_SIZE = 10;
+
 export default function Orders() {
   const navigation = useNavigation<ScreenNavigationProp>();
 
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+  
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    fetchOrders();
+    fetchOrders(1, "");
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, []);
 
-  const fetchOrders = async () => {
+  const fetchOrders = async (pageIndex: number = 1, search: string = "", isSearching: boolean = false) => {
     try {
-      setLoading(true);
+      if (isSearching) {
+        setSearching(true);
+      } else {
+        setLoading(true);
+      }
+
       const res = await getPaidOrders({
-        pageIndex: 1,
-        pageSize: 20,
+        pageIndex,
+        pageSize: PAGE_SIZE,
+        search: search.trim() || undefined,
       });
 
       setOrders(res.data);
+      setTotalCount(res.totalCount);
+      
+      // Calculate totalPages fallback
+      const calculatedPages = res.totalPages > 0 
+        ? res.totalPages 
+        : Math.ceil(res.totalCount / PAGE_SIZE);
+      
+      setTotalPages(calculatedPages);
+      setCurrentPage(pageIndex);
     } catch (error) {
       console.error("Failed to fetch orders", error);
     } finally {
       setLoading(false);
+      setSearching(false);
+    }
+  };
+
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = setTimeout(() => {
+      setCurrentPage(1);
+      fetchOrders(1, text, true);
+    }, 500);
+  };
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages && page !== currentPage) {
+      fetchOrders(page, searchQuery);
     }
   };
 
   const filteredOrders = useMemo(() => {
     return orders.filter((order) => {
-      const matchesSearch =
-        order.buyerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        order.orderNumber.toLowerCase().includes(searchQuery.toLowerCase());
-
       const uiStatus = mapStatus(order.status);
 
       const matchesFilter =
@@ -147,9 +191,9 @@ export default function Orders() {
           ? uiStatus === "Pending"
           : true;
 
-      return matchesSearch && matchesFilter;
+      return matchesFilter;
     });
-  }, [orders, searchQuery, activeFilter]);
+  }, [orders, activeFilter]);
 
   const groupedOrders = useMemo(() => {
     return filteredOrders.reduce((groups, order) => {
@@ -184,7 +228,6 @@ export default function Orders() {
     <SafeAreaView className="bg-gray-50 flex-1" edges={["top"]}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
 
-      {/* Header */}
       <View className="px-5 py-4 bg-white border-b border-gray-100 flex-row items-center justify-between sticky top-0 z-10">
         <View className="flex-row items-center">
           <Pressable onPress={() => navigation.goBack()} className="mr-4 p-2 -ml-2 rounded-full active:bg-gray-100">
@@ -233,10 +276,14 @@ export default function Orders() {
         <View className="px-5">
             {/* Search Bar */}
             <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-4 h-12 shadow-sm mb-6">
-                <Ionicons name="search-outline" size={20} color="#9ca3af" />
+                {searching ? (
+                    <ActivityIndicator size="small" color="#2563eb" />
+                ) : (
+                    <Ionicons name="search-outline" size={20} color="#9ca3af" />
+                )}
                 <TextInput
                     value={searchQuery}
-                    onChangeText={setSearchQuery}
+                    onChangeText={handleSearchChange}
                     className="flex-1 ml-3 text-base text-gray-900 h-full"
                     placeholder="Search orders..."
                     placeholderTextColor="#9ca3af"
@@ -293,7 +340,7 @@ export default function Orders() {
                     </Text>
                 </View>
             ) : (
-              <View className="pb-20">
+              <View className="pb-32">
                 {Object.entries(groupedOrders).map(([dateGroup, groupOrders]) => (
                     <View key={dateGroup} className="mb-6">
                     <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 pl-1">
@@ -374,6 +421,53 @@ export default function Orders() {
                     })}
                     </View>
                 ))}
+
+                {/* Pagination Component */}
+                {totalPages > 1 && (
+                    <View className="flex-row items-center justify-center py-6 gap-2">
+                        <Pressable 
+                            onPress={() => handlePageChange(currentPage - 1)}
+                            disabled={currentPage === 1}
+                            className={`w-10 h-10 rounded-xl items-center justify-center border ${currentPage === 1 ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'}`}
+                        >
+                            <MaterialIcons name="chevron-left" size={24} color={currentPage === 1 ? "#d1d5db" : "#374151"} />
+                        </Pressable>
+                        
+                        <View className="flex-row items-center gap-2">
+                            {Array.from({ length: totalPages }).map((_, i) => {
+                                const pageNum = i + 1;
+                                const isSelected = pageNum === currentPage;
+                                
+                                if (totalPages > 5) {
+                                    if (pageNum !== 1 && pageNum !== totalPages && Math.abs(pageNum - currentPage) > 1) {
+                                        if (Math.abs(pageNum - currentPage) === 2) {
+                                            return <Text key={`dot-${pageNum}`} className="text-gray-400">...</Text>;
+                                        }
+                                        return null;
+                                    }
+                                }
+
+                                return (
+                                    <Pressable
+                                        key={pageNum}
+                                        onPress={() => handlePageChange(pageNum)}
+                                        className={`w-10 h-10 rounded-xl items-center justify-center border ${isSelected ? 'border-blue-600 bg-blue-600' : 'border-gray-200 bg-white shadow-sm'}`}
+                                    >
+                                        <Text className={`font-bold ${isSelected ? 'text-white' : 'text-gray-700'}`}>{pageNum}</Text>
+                                    </Pressable>
+                                );
+                            })}
+                        </View>
+
+                        <Pressable 
+                            onPress={() => handlePageChange(currentPage + 1)}
+                            disabled={currentPage === totalPages}
+                            className={`w-10 h-10 rounded-xl items-center justify-center border ${currentPage === totalPages ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'}`}
+                        >
+                            <MaterialIcons name="chevron-right" size={24} color={currentPage === totalPages ? "#d1d5db" : "#374151"} />
+                        </Pressable>
+                    </View>
+                )}
               </View>
             )}
         </View>

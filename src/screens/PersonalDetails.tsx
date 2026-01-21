@@ -14,7 +14,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useVendor } from '../../context/VendorContext';
-import KeyboardScreen from "src/components/KeyboardScreen";
+import KeyboardScreen from "../components/KeyboardScreen";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 

@@ -10,7 +10,7 @@ import {
   TouchableOpacity,
   Modal
 } from "react-native";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { useNavigation } from '@react-navigation/native'; 
@@ -27,7 +27,7 @@ import { useToast } from 'react-native-toast-notifications';
 import SkeletonPlaceholder from "react-native-skeleton-placeholder";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-
+const PAGE_SIZE = 8;
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -43,35 +43,59 @@ export default function ProductsList() {
   const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
+  const [searching, setSearching] = useState(false);
   const [totalCount, setTotalCount] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [currentPage, setCurrentPage] = useState(1);
   const [configureFeeModalOpen, setConfigureFeeModalOpen] = useState(false);
   const [selectedFeeOption, setSelectedFeeOption] = useState<'vendor' | 'customer' | 'included'>('customer');
   const [applyDiscountModalOpen, setApplyDiscountModalOpen] = useState(false);
-const [discountValue, setDiscountValue] = useState('');
+  const [discountValue, setDiscountValue] = useState('');
+  
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-
-  const fetchProducts = async (force = false) => {
+  const fetchProducts = async (pageIndex: number = 1, search: string = '', isSearching: boolean = false) => {
     try {
-      setLoading(true);
-    //   if (!force) {
-    //   const cached = await AsyncStorage.getItem('products_cache');
-    //   if (cached) {
-    //     const parsed = JSON.parse(cached);
-    //     setProducts(parsed.data);
-    //     setTotalCount(parsed.totalCount);
-    //     setLoading(false);
-    //     return;
-    //   }
-    // }
-      const response = await getProducts();
-      setProducts(response.data);
+      if (isSearching) {
+        setSearching(true);
+      } else {
+        setLoading(true);
+      }
+      
+      console.log(`fetching products: page=${pageIndex}, search="${search}"`);
+      const response = await getProducts({
+        pageIndex,
+        pageSize: PAGE_SIZE,
+        search: search.trim() || undefined,
+      });
+      
+      console.log('API getProducts response:', {
+        count: response.data.length,
+        totalCount: response.totalCount,
+        totalPages: response.totalPages,
+        pageIndex: response.pageIndex
+      });
+      
+      const items = response.data.length > PAGE_SIZE ? response.data.slice(0, PAGE_SIZE) : response.data;
+      setProducts(items);
       setTotalCount(response.totalCount);
-       await AsyncStorage.setItem('products_cache', JSON.stringify(response))
+      
+      const calculatedPages = response.totalPages > 0 
+        ? response.totalPages 
+        : Math.ceil(response.totalCount / PAGE_SIZE);
+      
+      setTotalPages(calculatedPages);
+      setCurrentPage(pageIndex);
+      
+      if (!search.trim()) {
+        await AsyncStorage.setItem('products_cache', JSON.stringify(response));
+      }
     } catch (error) {
       console.error('Error fetching products:', error);
       toast.show(error instanceof Error ? error.message : 'Failed to fetch products', { type: 'danger' });
     } finally {
       setLoading(false);
+      setSearching(false);
     }
   };
 
@@ -90,13 +114,32 @@ const [discountValue, setDiscountValue] = useState('');
 
     try {
       await deleteProduct(selectedProduct.id);
-       toast.show('Product deleted successfully', { type: 'success' });
+      toast.show('Product deleted successfully', { type: 'success' });
       setShowProductDetailsModal(false);
       setSelectedProduct(null);
-      await fetchProducts();
+      await fetchProducts(currentPage, searchQuery);
     } catch (error) {
       console.error('Error deleting product:', error);
-     toast.show(error instanceof Error ? error.message : 'Failed to delete product', { type: 'danger' });
+      toast.show(error instanceof Error ? error.message : 'Failed to delete product', { type: 'danger' });
+    }
+  };
+
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    searchTimeoutRef.current = setTimeout(() => {
+      setCurrentPage(1);
+      fetchProducts(1, text, true);
+    }, 500);
+  };
+
+  const handlePageChange = (page: number) => {
+    if (page >= 1 && page <= totalPages && page !== currentPage) {
+      fetchProducts(page, searchQuery);
     }
   };
 
@@ -110,16 +153,28 @@ const [discountValue, setDiscountValue] = useState('');
   };
 
   useEffect(() => {
-    fetchProducts();
+    fetchProducts(1, '');
+    
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
   }, []);
 
+  // Filter products by status only (search is handled by API)
   const filteredProducts = products.filter((product) => {
     if (activeFilter === 'active' && product.status !== 1) return false;
     if (activeFilter === 'drafts' && product.status === 1) return false;
-    if (searchQuery.trim()) {
-      return product.title.toLowerCase().includes(searchQuery.toLowerCase());
-    }
     return true;
+  });
+
+  console.log('Rendering ProductsList:', {
+    productsCount: products.length,
+    filteredCount: filteredProducts.length,
+    currentPage,
+    totalPages,
+    totalCount
   });
 
   const getStockDisplay = (product: Product) => {
@@ -210,10 +265,14 @@ const [discountValue, setDiscountValue] = useState('');
             {/* Action Bar & Search */}
             <View className="flex-row gap-3 mb-6">
                 <View className="flex-1 flex-row items-center bg-white border border-gray-200 rounded-xl px-4 h-12 shadow-sm">
-                    <Ionicons name="search-outline" size={20} color="#9ca3af" />
+                    {searching ? (
+                        <ActivityIndicator size="small" color="#3b82f6" />
+                    ) : (
+                        <Ionicons name="search-outline" size={20} color="#9ca3af" />
+                    )}
                     <TextInput
                         value={searchQuery}
-                        onChangeText={setSearchQuery}
+                        onChangeText={handleSearchChange}
                         className="flex-1 ml-3 text-base text-gray-900 h-full"
                         placeholder="Search products..."
                         placeholderTextColor="#9ca3af"
@@ -238,83 +297,131 @@ const [discountValue, setDiscountValue] = useState('');
               </Text>
             </View>
           ) : (
-            <View className="flex-row flex-wrap justify-between pb-32 px-1">
-              {filteredProducts.map((product) => {
-                const stockInfo = getStockDisplay(product);
-                const isLowStock = product.stock < 10;
-                
-                return (
-                  <Pressable 
-                    key={product.id} 
-                    className="w-[48%] bg-white rounded-3xl mb-4 shadow-sm active:scale-[0.98] transition-transform overflow-hidden"
-                    onPress={() => handleProductClick(product)}
-                    style={{
-                      shadowColor: "#9ca3af",
-                      shadowOffset: { width: 0, height: 4 },
-                      shadowOpacity: 0.1,
-                      shadowRadius: 12,
-                      elevation: 4,
-                    }}
-                  >
-                    {/* Image Section - Prominent Top */}
-                    <View className="h-44 bg-gray-50 relative">
-                        {product.image ? (
-                          <Image source={{ uri: product.image }} className="w-full h-full" resizeMode="cover" />
-                        ) : (
-                          <View className="w-full h-full items-center justify-center bg-gray-50">
-                            <Ionicons name="image-outline" size={32} color="#e5e7eb" />
-                          </View>
-                        )}
-                        
-                        {/* Status Badge Overlay */}
-                         {product.status !== 1 && (
-                            <View className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full shadow-sm">
-                                <Text className="text-gray-900 text-[10px] font-bold tracking-wider uppercase">Draft</Text>
+            <>
+              <View className="flex-row flex-wrap justify-between px-1">
+                {filteredProducts.slice(0, PAGE_SIZE).map((product) => {
+                  const isLowStock = product.stock < 10;
+                  
+                  return (
+                    <Pressable 
+                      key={product.id} 
+                      className="w-[48%] bg-white rounded-3xl mb-4 shadow-sm active:scale-[0.98] transition-transform overflow-hidden"
+                      onPress={() => handleProductClick(product)}
+                      style={{
+                        shadowColor: "#9ca3af",
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 4,
+                      }}
+                    >
+                      {/* Image Section - Prominent Top */}
+                      <View className="h-44 bg-gray-50 relative">
+                          {product.image ? (
+                            <Image source={{ uri: product.image }} className="w-full h-full" resizeMode="cover" />
+                          ) : (
+                            <View className="w-full h-full items-center justify-center bg-gray-50">
+                              <Ionicons name="image-outline" size={32} color="#e5e7eb" />
                             </View>
-                        )}
+                          )}
+                          
+                          {/* Status Badge Overlay */}
+                           {product.status !== 1 && (
+                              <View className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full shadow-sm">
+                                  <Text className="text-gray-900 text-[10px] font-bold tracking-wider uppercase">Draft</Text>
+                              </View>
+                          )}
 
-                         {/* More Options Overlay */}
-                         <View className="absolute top-3 right-3">
-                            <View className="bg-white/90 w-8 h-8 rounded-full items-center justify-center shadow-sm backdrop-blur-md">
-                                <MaterialIcons name="more-horiz" size={18} color="#1f2937" />
-                            </View>
-                         </View>
-                    </View>
-                    
-                    {/* Content Section */}
-                    <View className="p-3.5">
-                         <Text className="text-gray-900 font-bold text-[15px] leading-snug mb-1.5 h-10" numberOfLines={2}>
-                            {product.title}
-                         </Text>
-                         
-                         <View className="flex-row items-baseline gap-2 mb-3">
-                             <Text className="text-gray-900 font-extrabold text-lg">
-                                ₦{product.price.toLocaleString()}
-                             </Text>
-                             <Text className="text-gray-400 text-xs line-through font-medium decoration-gray-400">
-                                ₦34,000
-                             </Text>
-                         </View>
+                           {/* More Options Overlay */}
+                           <View className="absolute top-3 right-3">
+                              <View className="bg-white/90 w-8 h-8 rounded-full items-center justify-center shadow-sm backdrop-blur-md">
+                                  <MaterialIcons name="more-horiz" size={18} color="#1f2937" />
+                              </View>
+                           </View>
+                      </View>
+                      
+                      {/* Content Section */}
+                      <View className="p-3.5">
+                           <Text className="text-gray-900 font-bold text-[15px] leading-snug mb-1.5 h-10" numberOfLines={2}>
+                              {product.title}
+                           </Text>
+                           
+                           <View className="flex-row items-baseline gap-2 mb-3">
+                               <Text className="text-gray-900 font-extrabold text-lg">
+                                  ₦{product.price.toLocaleString()}
+                               </Text>
+                               <Text className="text-gray-400 text-xs line-through font-medium decoration-gray-400">
+                                  ₦34,000
+                               </Text>
+                           </View>
 
-                         <View className="flex-row items-center justify-between border-t border-gray-50 pt-3">
-                             <View className={`px-2 py-1 rounded-md flex-row items-center gap-1.5 ${isLowStock ? 'bg-red-50' : 'bg-gray-100'}`}>
-                                <View className={`w-1.5 h-1.5 rounded-full ${isLowStock ? 'bg-red-500' : 'bg-gray-500'}`} />
-                                <Text className={`text-[10px] font-bold ${isLowStock ? 'text-red-600' : 'text-gray-600'}`}>
-                                    {product.stock} left
-                                </Text>
-                             </View>
-                             
-                             {/* Mini Stats */}
-                             <View className="flex-row items-center gap-1 opacity-60">
-                                <Ionicons name="eye-outline" size={14} color="#6b7280" />
-                                <Text className="text-[10px] text-gray-600 font-medium">0</Text>
-                             </View>
-                         </View>
-                    </View>
-                  </Pressable>
-                );
-              })}
-            </View>
+                           <View className="flex-row items-center justify-between border-t border-gray-50 pt-3">
+                               <View className={`px-2 py-1 rounded-md flex-row items-center gap-1.5 ${isLowStock ? 'bg-red-50' : 'bg-gray-100'}`}>
+                                  <View className={`w-1.5 h-1.5 rounded-full ${isLowStock ? 'bg-red-500' : 'bg-gray-500'}`} />
+                                  <Text className={`text-[10px] font-bold ${isLowStock ? 'text-red-600' : 'text-gray-600'}`}>
+                                      {product.stock} left
+                                  </Text>
+                               </View>
+                               
+                               {/* Mini Stats */}
+                               <View className="flex-row items-center gap-1 opacity-60">
+                                  <Ionicons name="eye-outline" size={14} color="#6b7280" />
+                                  <Text className="text-[10px] text-gray-600 font-medium">0</Text>
+                               </View>
+                           </View>
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </View>
+
+              {/* Pagination Component */}
+              {totalPages > 1 && (
+                  <View className="flex-row items-center justify-center py-6 gap-2 pb-32">
+                      <Pressable 
+                          onPress={() => handlePageChange(currentPage - 1)}
+                          disabled={currentPage === 1}
+                          className={`w-10 h-10 rounded-xl items-center justify-center border ${currentPage === 1 ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'}`}
+                      >
+                          <MaterialIcons name="chevron-left" size={24} color={currentPage === 1 ? "#d1d5db" : "#374151"} />
+                      </Pressable>
+                      
+                      <View className="flex-row items-center gap-2">
+                          {Array.from({ length: totalPages }).map((_, i) => {
+                              const pageNum = i + 1;
+                              const isSelected = pageNum === currentPage;
+                              
+                              if (totalPages > 5) {
+                                  if (pageNum !== 1 && pageNum !== totalPages && Math.abs(pageNum - currentPage) > 1) {
+                                      if (Math.abs(pageNum - currentPage) === 2) {
+                                          return <Text key={`dot-${pageNum}`} className="text-gray-400">...</Text>;
+                                      }
+                                      return null;
+                                  }
+                              }
+
+                              return (
+                                  <Pressable
+                                      key={pageNum}
+                                      onPress={() => handlePageChange(pageNum)}
+                                      className={`w-10 h-10 rounded-xl items-center justify-center border ${isSelected ? 'border-blue-600 bg-blue-600' : 'border-gray-200 bg-white shadow-sm'}`}
+                                  >
+                                      <Text className={`font-bold ${isSelected ? 'text-white' : 'text-gray-700'}`}>{pageNum}</Text>
+                                  </Pressable>
+                              );
+                          })}
+                      </View>
+
+                      <Pressable 
+                          onPress={() => handlePageChange(currentPage + 1)}
+                          disabled={currentPage === totalPages}
+                          className={`w-10 h-10 rounded-xl items-center justify-center border ${currentPage === totalPages ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'}`}
+                      >
+                          <MaterialIcons name="chevron-right" size={24} color={currentPage === totalPages ? "#d1d5db" : "#374151"} />
+                      </Pressable>
+                  </View>
+              )}
+            </>
           )}
         </View>
       </ScrollView>

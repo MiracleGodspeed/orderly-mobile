@@ -12,6 +12,7 @@ import {
   SubscriptionHistoryResponse, SubscriptionHistoryParams, SubscriptionHistory,
   GetPlansResponse, ApiSubscriptionPlan,
   StorePerformanceReportResponse, StorePerformanceReportData,
+  Bank, GetBanksResponse, ValidateAccountResponse, ValidateAccountData,
 } from "./vendor.types";
 
 
@@ -267,9 +268,9 @@ export const getPaidOrders = async (
   console.log('getPaidOrders payload:', params);
   const res = await apiClient.get<PaginatedOrdersResponse>(
     '/order-requests/get-paid-catalog-items',
-    { 
+    {
       params,
-      validateStatus: () => true 
+      validateStatus: () => true
     }
   );
 
@@ -316,17 +317,77 @@ export const getAvailablePlans = async (): Promise<ApiSubscriptionPlan[]> => {
   return response.data.data;
 };
 
-export const getStorePerformanceReport = async (durationValue: number = 7): Promise<StorePerformanceReportData> => {
+export const getStorePerformanceReport = async (
+  durationValue?: number,
+  datefrom?: string,
+  dateto?: string
+): Promise<StorePerformanceReportData> => {
   const response = await apiClient.get<StorePerformanceReportResponse>(
     `/reporting/store-performance-report`,
     {
-      params: { durationValue },
+      params: {
+        durationValue,
+        datefrom,
+        dateto
+      },
       validateStatus: () => true,
     }
   );
 
   if (response.data.code !== "200") {
     throw new Error(response.data.message || "Failed to fetch performance report");
+  }
+  return response.data.data;
+};
+
+export const getBanks = async (): Promise<Bank[]> => {
+  try {
+    const response = await apiClient.get<GetBanksResponse>(
+      "/payment/get-banks",
+      {
+        validateStatus: () => true,
+      }
+    );
+
+    console.log('getBanks response:', response.data);
+
+    if (response?.data?.code === "200") {
+      return response.data.data;
+    }
+
+    if (Array.isArray(response?.data)) {
+      return response.data;
+    }
+
+    if (response?.status === 404) {
+      const retryResponse = await apiClient.get<GetBanksResponse>(
+        "/payment/banks",
+        {
+          validateStatus: () => true,
+        }
+      );
+      if (retryResponse?.data?.code === "200") return retryResponse.data.data;
+      if (Array.isArray(retryResponse?.data)) return retryResponse.data;
+    }
+
+    throw new Error(response?.data?.message || `Failed to fetch banks (Code: ${response?.data?.code})`);
+  } catch (error: any) {
+    console.error('getBanks top level error:', error);
+    throw error;
+  }
+};
+
+export const validateAccount = async (bankCode: string, accountNumber: string): Promise<ValidateAccountData> => {
+  const response = await apiClient.get<ValidateAccountResponse>(
+    "/payment/validate-account",
+    {
+      params: { bankCode, accountNumber },
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to validate account");
   }
 
   return response.data.data;

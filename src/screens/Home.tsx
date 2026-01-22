@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, ScrollView, StatusBar, TouchableOpacity, Text, Dimensions, Image, FlatList } from 'react-native';
+import { View, ScrollView, StatusBar, TouchableOpacity, Text, Dimensions, Image, FlatList, Platform } from 'react-native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -10,9 +11,9 @@ import MenuOverlay from '../components/MenuOverlay';
 import StoreSetupProgress from '../components/StoreSetupProgress';
 import { Ionicons, Feather, MaterialIcons, Octicons } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
-import { getStorefrontDetails, getProducts, getPaidOrders } from '../api/vendor/vendor.api';
+import { getStorefrontDetails, getProducts, getPaidOrders, getStorePerformanceReport } from '../api/vendor/vendor.api';
 import { useVendor } from '../../context/VendorContext';
-import { Product, Order } from '../api/vendor/vendor.types';
+import { Product, Order, StorePerformanceReportData } from '../api/vendor/vendor.types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -40,6 +41,18 @@ export default function Home() {
   const [totalOrderCount, setTotalOrderCount] = useState(0);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState(2);
   const [completedSteps, setCompletedSteps] = useState<string[]>([]);
+
+  const [durationModalVisible, setDurationModalVisible] = useState(false);
+  const [selectedDuration, setSelectedDuration] = useState<number | undefined>(30);
+  const [durationLabel, setDurationLabel] = useState('Sales this month');
+  const [performanceData, setPerformanceData] = useState<StorePerformanceReportData | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  const [customDateModalVisible, setCustomDateModalVisible] = useState(false);
+  const [dateFrom, setDateFrom] = useState<Date>(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+  const [dateTo, setDateTo] = useState<Date>(new Date());
+  const [showFromPicker, setShowFromPicker] = useState(false);
+  const [showToPicker, setShowToPicker] = useState(false);
 
   const fetchProducts = async () => {
     try {
@@ -69,11 +82,28 @@ export default function Home() {
     }
   };
 
+  const fetchHomeStats = async (duration?: number, from?: string, to?: string) => {
+    try {
+      setStatsLoading(true);
+      const data = await getStorePerformanceReport(duration, from, to);
+      setPerformanceData(data);
+    } catch (error) {
+      console.error('Error fetching performance stats:', error);
+    } finally {
+      setStatsLoading(false);
+    }
+  };
+
   useFocusEffect(
     React.useCallback(() => {
       fetchProducts();
       fetchOrders();
-    }, [])
+      if (selectedDuration !== undefined) {
+        fetchHomeStats(selectedDuration);
+      } else {
+        fetchHomeStats(undefined, dateFrom.toISOString(), dateTo.toISOString());
+      }
+    }, [selectedDuration])
   );
 
   const openSetupModal = () => {
@@ -155,13 +185,13 @@ export default function Home() {
       <MenuOverlay isOpen={menuOpen} onClose={() => setMenuOpen(false)} />
 
       <ScrollView className='flex-1' showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 80 }}>
-       
+
         <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl shadow-sm border border-gray-100 p-4 overflow-hidden">
           {progressPercentage < 100 && (
             <View className="mb-4">
-              <StoreSetupProgress 
-                progress={progressPercentage == 0 ? 25 : progressPercentage} 
-                onContinue={openSetupModal} 
+              <StoreSetupProgress
+                progress={progressPercentage == 0 ? 25 : progressPercentage}
+                onContinue={openSetupModal}
               />
             </View>
           )}
@@ -172,7 +202,7 @@ export default function Home() {
               <View className="w-12 h-12 bg-blue-50 rounded-full items-center justify-center border border-blue-100 shadow-sm">
                 <Ionicons name="storefront" size={22} color="#2563eb" />
               </View>
-              
+
               <View className="flex-1">
                 <Text className="text-[18px] text-gray-900 font-bold leading-tight" numberOfLines={1}>
                   {storeData?.storeName || 'My Store'}
@@ -188,7 +218,7 @@ export default function Home() {
               </View>
             </View>
 
-            <TouchableOpacity 
+            <TouchableOpacity
               className="w-10 h-10 bg-gray-50 rounded-full items-center justify-center border border-gray-200 shadow-sm"
               activeOpacity={0.7}
             >
@@ -198,34 +228,43 @@ export default function Home() {
         </View>
 
         <View className="mx-4 mb-4 p-6 bg-white rounded-2xl border border-gray-100">
-          <Text className="text-base font-medium text-gray-700 mb-4">Store Overview</Text>
+          <View className="flex-row items-center justify-between mb-4">
+            <Text className="text-base font-medium text-gray-700">Store Overview</Text>
+            {statsLoading && <Text className="text-xs text-blue-500">Updating...</Text>}
+          </View>
 
-          <TouchableOpacity className="flex-row items-center justify-center gap-2 mb-4" activeOpacity={0.7}>
-            <Text className="text-[16px] text-gray-600 font-[400]">Sales this month</Text>
-            <Feather name="chevron-down" size={15} color="black" />
+          <TouchableOpacity
+            className="flex-row items-center justify-center gap-2 mb-4"
+            activeOpacity={0.7}
+            onPress={() => setDurationModalVisible(true)}
+          >
+            <Text className="text-[16px] text-gray-600 font-[400]">{durationLabel}</Text>
+            <Feather name="chevron-down" size={15} color="#6B7280" />
           </TouchableOpacity>
 
           <Text className="text-4xl font-[600] text-gray-800 mb-6 text-center mt-3">
-            0.00
+            ₦{performanceData?.sales?.totalRevenue?.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) || '0.00'}
           </Text>
 
           <View className="flex-row justify-between">
             <View className="items-center">
               <MaterialIcons name="storefront" size={24} color="#9CA3AF" />
-              <Text className="text-[24px] font-[500] text-gray-800 mt-1 mb-1">122</Text>
-              <Text className="text-[12px] text-gray-500">Visits</Text>
+              <Text className="text-[20px] font-[500] text-gray-800 mt-1 mb-1">
+                122
+              </Text>
+              <Text className="text-[11px] text-gray-500 uppercase font-medium">Visits</Text>
             </View>
 
             <View className="items-center">
               <Octicons name="stack" size={24} color="#9CA3AF" />
-              <Text className="text-2xl font-bold text-gray-800 mt-1 mb-1">{totalProductCount}</Text>
-              <Text className="text-[12px] text-gray-500">Stocks</Text>
+              <Text className="text-[20px] font-[500] text-gray-800 mt-1 mb-1">{totalProductCount}</Text>
+              <Text className="text-[11px] text-gray-500 uppercase font-medium">Stocks</Text>
             </View>
 
             <View className="items-center">
               <Ionicons name="cart-outline" size={24} color="#9CA3AF" />
-              <Text className="text-2xl font-bold text-gray-800 mb-1">{totalOrderCount}</Text>
-              <Text className="text-[12px] text-gray-500">Orders</Text>
+              <Text className="text-[20px] font-[500] text-gray-800 mt-1 mb-1">{totalOrderCount}</Text>
+              <Text className="text-[11px] text-gray-500 uppercase font-medium">Orders</Text>
             </View>
           </View>
         </View>
@@ -608,6 +647,177 @@ export default function Home() {
           </Text>
 
         </View>
+      </Modal>
+
+      <Modal
+        isVisible={durationModalVisible}
+        onBackdropPress={() => setDurationModalVisible(false)}
+        useNativeDriver
+        animationIn="slideInUp"
+        animationOut="slideOutDown"
+        style={{ justifyContent: 'flex-end', margin: 0 }}
+      >
+        <View className="bg-white rounded-t-3xl px-5 pt-4 pb-10">
+          <View className="flex-row items-center justify-between mb-6">
+            <View className="w-10" />
+            <Text className="text-lg font-bold text-gray-900">Select Duration</Text>
+            <TouchableOpacity onPress={() => setDurationModalVisible(false)} className="w-10 items-end">
+              <Ionicons name="close" size={24} color="#374151" />
+            </TouchableOpacity>
+          </View>
+
+          {[
+            { label: 'Last 7 days', value: 7 },
+            { label: 'Last 30 days', value: 30 },
+            { label: 'Last 90 days', value: 90 },
+            { label: 'Last year', value: 365 },
+            { label: 'Custom', value: undefined as any },
+          ].map((option) => (
+            <TouchableOpacity
+              key={option.label}
+              onPress={() => {
+                if (option.label === 'Custom') {
+                  setDurationModalVisible(false);
+                  setTimeout(() => setCustomDateModalVisible(true), 500);
+                } else {
+                  setSelectedDuration(option.value);
+                  setDurationLabel(option.label);
+                  setDurationModalVisible(false);
+                }
+              }}
+              className={`flex-row items-center justify-between p-4 rounded-xl mb-2 ${(selectedDuration === option.value && option.label !== 'Custom') || (selectedDuration === undefined && option.label === 'Custom')
+                ? 'bg-blue-50 border border-blue-100' : 'bg-gray-50'
+                }`}
+            >
+              <Text className={`text-base ${(selectedDuration === option.value && option.label !== 'Custom') || (selectedDuration === undefined && option.label === 'Custom') ? 'text-blue-600 font-bold' : 'text-gray-700'}`}>
+                {option.label}
+              </Text>
+              {((selectedDuration === option.value && option.label !== 'Custom') || (selectedDuration === undefined && option.label === 'Custom')) && <Ionicons name="checkmark-circle" size={20} color="#2563eb" />}
+            </TouchableOpacity>
+          ))}
+        </View>
+      </Modal>
+
+      <Modal
+        isVisible={customDateModalVisible}
+        onBackdropPress={() => setCustomDateModalVisible(false)}
+        useNativeDriver
+        animationIn="slideInUp"
+        animationOut="slideOutDown"
+        style={{ justifyContent: 'flex-end', margin: 0 }}
+      >
+        <View className="bg-white rounded-t-3xl px-5 pt-4 pb-10">
+          <View className="flex-row items-center justify-between mb-6">
+            <TouchableOpacity onPress={() => {
+              setCustomDateModalVisible(false);
+              setTimeout(() => setDurationModalVisible(true), 500);
+            }}>
+              <Ionicons name="arrow-back" size={24} color="#374151" />
+            </TouchableOpacity>
+            <Text className="text-lg font-bold text-gray-900">Custom Range</Text>
+            <TouchableOpacity onPress={() => setCustomDateModalVisible(false)} className="w-10 items-end">
+              <Ionicons name="close" size={24} color="#374151" />
+            </TouchableOpacity>
+          </View>
+
+          <View className="flex-row gap-4 mb-8">
+            <TouchableOpacity
+              onPress={() => setShowFromPicker(true)}
+              className="flex-1 bg-gray-50 p-4 rounded-xl border border-gray-200"
+            >
+              <Text className="text-xs text-gray-500 mb-1">From</Text>
+              <Text className="text-base text-gray-900 font-medium">{dateFrom.toLocaleDateString()}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={() => setShowToPicker(true)}
+              className="flex-1 bg-gray-50 p-4 rounded-xl border border-gray-200"
+            >
+              <Text className="text-xs text-gray-500 mb-1">To</Text>
+              <Text className="text-base text-gray-900 font-medium">{dateTo.toLocaleDateString()}</Text>
+            </TouchableOpacity>
+          </View>
+
+          <TouchableOpacity
+            onPress={() => {
+              setSelectedDuration(undefined);
+              setDurationLabel(`${dateFrom.toLocaleDateString()} - ${dateTo.toLocaleDateString()}`);
+              setCustomDateModalVisible(false);
+              fetchHomeStats(undefined, dateFrom.toISOString(), dateTo.toISOString());
+            }}
+            className="bg-blue-600 py-4 rounded-xl items-center"
+          >
+            <Text className="text-white font-bold text-base">Apply Range</Text>
+          </TouchableOpacity>
+        </View>
+
+        {showFromPicker && (
+          Platform.OS === 'ios' ? (
+            <View className="absolute bottom-0 w-full bg-white border-t border-gray-200 pb-8 rounded-t-2xl shadow-2xl z-50">
+              <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-100 bg-gray-50 rounded-t-2xl">
+                <Text className="text-gray-500 font-medium">Select Start Date</Text>
+                <TouchableOpacity onPress={() => setShowFromPicker(false)}>
+                  <Text className="text-blue-600 font-bold text-base">Done</Text>
+                </TouchableOpacity>
+              </View>
+              <View className="items-center justify-center py-4 bg-white">
+                <DateTimePicker
+                  value={dateFrom}
+                  mode="date"
+                  display="spinner"
+                  onChange={(event, date) => {
+                    if (date) setDateFrom(date);
+                  }}
+                  textColor="black"
+                />
+              </View>
+            </View>
+          ) : (
+            <DateTimePicker
+              value={dateFrom}
+              mode="date"
+              display="default"
+              onChange={(event, date) => {
+                setShowFromPicker(false);
+                if (date) setDateFrom(date);
+              }}
+            />
+          )
+        )}
+
+        {showToPicker && (
+          Platform.OS === 'ios' ? (
+            <View className="absolute bottom-0 w-full bg-white border-t border-gray-200 pb-8 rounded-t-2xl shadow-2xl z-50">
+              <View className="flex-row justify-between items-center px-4 py-3 border-b border-gray-100 bg-gray-50 rounded-t-2xl">
+                <Text className="text-gray-500 font-medium">Select End Date</Text>
+                <TouchableOpacity onPress={() => setShowToPicker(false)}>
+                  <Text className="text-blue-600 font-bold text-base">Done</Text>
+                </TouchableOpacity>
+              </View>
+              <View className="items-center justify-center py-4 bg-white">
+                <DateTimePicker
+                  value={dateTo}
+                  mode="date"
+                  display="spinner"
+                  onChange={(event, date) => {
+                    if (date) setDateTo(date);
+                  }}
+                  textColor="black"
+                />
+              </View>
+            </View>
+          ) : (
+            <DateTimePicker
+              value={dateTo}
+              mode="date"
+              display="default"
+              onChange={(event, date) => {
+                setShowToPicker(false);
+                if (date) setDateTo(date);
+              }}
+            />
+          )
+        )}
       </Modal>
 
       <BottomNav />

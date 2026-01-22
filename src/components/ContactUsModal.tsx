@@ -16,7 +16,7 @@ import BusinessHoursModal from "./BusinessHoursModal";
 interface Props {
   visible: boolean;
   onClose: () => void;
-  initialContact?: string; // Kept for interface compatibility but largely unused now as we pull from storeData
+  initialContact?: string; 
 }
 
 export default function ContactUsSectionModal({ visible, onClose }: Props) {
@@ -75,7 +75,6 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
 
           <ScrollView className="flex-1 px-4 pt-6">
 
-            {/* Contact Number */}
             <Text className="text-sm text-gray-700 mb-2">WhatsApp Number</Text>
             <TextInput
               value={contactNumber}
@@ -85,13 +84,11 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
               keyboardType="phone-pad"
             />
 
-            {/* Email Address - Read Only */}
             <Text className="text-sm text-gray-700 mb-2">Email Address</Text>
             <View className="border border-gray-200 bg-gray-100 rounded-lg px-3 py-3 mb-4">
               <Text className="text-base text-gray-500">{email}</Text>
             </View>
 
-            {/* Business Address */}
             <Text className="text-sm text-gray-700 mb-2">Business Address</Text>
             <TextInput
               value={businessAddress}
@@ -102,11 +99,10 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
               textAlignVertical="top"
             />
 
-            {/* Business Hours Section */}
             <View className="mt-2">
               <View className="flex-row items-center justify-between mb-2">
                 <View className="flex-row items-center gap-2">
-                  <AntDesign name="clockcircleo" size={18} color="#FF6B6B" />
+                  <AntDesign name="clock-circle" size={18} color="#FF6B6B" />
                   <Text className="text-base font-medium text-gray-900">Business Hours</Text>
                 </View>
                 <Pressable

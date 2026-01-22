@@ -25,21 +25,23 @@ interface MenuItem {
 
 export default function Profile() {
   const navigation = useNavigation<ScreenNavigationProp>();
-  const { vendor } = useVendor();
-  const { logout } = useAuth();
+  const { storeData } = useVendor();
+  const { logout, user } = useAuth();
 
  
   const getInitials = (name: string) => {
-    if (!name) return 'MA';
-    
-    const words = name.trim().split(' ');
-    if (words.length === 1) {
-      return words[0].substring(0, 2).toUpperCase();
-    }
-    return (words[0][0] + words[1][0]).toUpperCase();
+    if (!name) return 'S';
+    return name.trim().charAt(0).toUpperCase();
   };
 
- 
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
   const menuItems: MenuItem[] = [
     {
       id: 'store-info',
@@ -56,7 +58,7 @@ export default function Profile() {
     {
       id: 'payout-settings',
       icon: 'account-balance-wallet',
-      title: 'Payout Settings',
+      title: 'Bank Settings',
       screen: 'PayoutSettings'
     },
     {
@@ -100,14 +102,6 @@ export default function Profile() {
   };
 
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch (error) {
-      console.error('Logout error:', error);
-    }
-  };
-
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
@@ -122,18 +116,18 @@ export default function Profile() {
       <ScrollView className="flex-1">
        
         <View className="items-center py-8 border-b border-gray-100">
-          <View className="w-24 h-24 rounded-full bg-gray-100 items-center justify-center mb-4">
-            <Text className="text-3xl font-semibold text-gray-700">
-              {getInitials(vendor?.storeName || 'My Awesome Store')}
+          <View className="w-24 h-24 rounded-full bg-blue-50 items-center justify-center mb-4">
+            <Text className="text-3xl font-bold text-blue-600">
+              {getInitials(storeData?.storeName || 'Store')}
             </Text>
           </View>
 
           <Text className="text-xl font-semibold text-gray-900 mb-1">
-            {vendor?.storeName || 'My Awesome Store'}
+            {storeData?.storeName || 'My Store'}
           </Text>
 
           <Text className="text-sm text-gray-500 mb-3">
-            {vendor?.email || 'contact@mystore.shop'}
+            {user?.email || storeData?.email || 'Store Email'}
           </Text>
 
           <View className="bg-green-100 px-3 py-1 rounded-full">

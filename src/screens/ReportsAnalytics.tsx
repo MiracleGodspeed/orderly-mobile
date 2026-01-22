@@ -111,10 +111,10 @@ export default function ReportsAnalytics({ navigation }: Props) {
             data={{
               labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
               datasets: [{
-                data: [15000, 22000, 18000, 24000, 21000, 45000, 32000] // Hardcoded as requested
+                data: [15000, 22000, 18000, 24000, 21000, 45000, 32000] 
               }]
             }}
-            width={screenWidth - 64} // padding adjustment
+            width={screenWidth - 64} 
             height={220}
             chartConfig={{
               backgroundColor: '#ffffff',

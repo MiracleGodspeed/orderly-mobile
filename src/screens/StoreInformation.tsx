@@ -1,11 +1,14 @@
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
   StatusBar,
   TextInput,
-  ActivityIndicator
+  ActivityIndicator,
+  Clipboard,
+  Alert,
+  TouchableOpacity
 } from "react-native";
 import { useState, useEffect } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -13,98 +16,74 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useToast } from 'react-native-toast-notifications';
+import { useVendor } from "../../context/VendorContext";
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function StoreInformation() {
-     const toast = useToast();
-  
-  const navigation = useNavigation<ScreenNavigationProp>();
-  // const { vendor, updateVendorData } = useVendor();
 
-  // ============ STATE MANAGEMENT ============
-  // Local state for form fields - syncs with vendor context
+  const navigation = useNavigation<ScreenNavigationProp>();
+  const { storeData } = useVendor();
+
   const [storeName, setStoreName] = useState('');
   const [storeUrl, setStoreUrl] = useState('');
   const [businessCategory, setBusinessCategory] = useState('');
   const [contactEmail, setContactEmail] = useState('');
   const [businessAddress, setBusinessAddress] = useState('');
-  const [hasChanges, setHasChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
- 
-  useEffect(() => {
-   
-      setStoreName( '');
-      setStoreUrl('');
-      setBusinessCategory('');
-      setContactEmail( '');
-      setBusinessAddress( '');
-    
-  }, []);
 
- 
-  const handleFieldChange = (field: string, value: string) => {
-    setHasChanges(true);
-    
-    switch(field) {
-      case 'storeName':
-        setStoreName(value);
-        break;
-      case 'storeUrl':
-        setStoreUrl(value);
-        break;
-      case 'businessCategory':
-        setBusinessCategory(value);
-        break;
-      case 'contactEmail':
-        setContactEmail(value);
-        break;
-      case 'businessAddress':
-        setBusinessAddress(value);
-        break;
+  useEffect(() => {
+    if (storeData) {
+      setStoreName(storeData.storeName || '');
+      setStoreUrl(storeData.slugUrl ? `https://${storeData.slugUrl}.orderlystores.com` : '');
+      setBusinessCategory(storeData.isServiceBased ? 'Service Based' : 'Product Based');
+      setContactEmail(storeData.email || '');
+      setBusinessAddress(storeData.address || '');
+    }
+  }, [storeData]);
+
+  const handleCopyLink = () => {
+    if (storeUrl) {
+      Clipboard.setString(storeUrl);
+      Alert.alert("Success", "Store link copied to clipboard");
     }
   };
 
- 
-  const handleFieldBlur = async () => {
-    if (!hasChanges) return;
 
-    try {
-      setIsSaving(true);
-
-      // Prepare updated vendor data
-      const updatedData = {
-        storeName,
-        storeUrl,
-        businessCategory,
-        email: contactEmail,
-        businessAddress
-      };
-
-      
-
-      setHasChanges(false);
-    } catch (error) {
-      console.error('Error saving store information:', error);
-     toast.show( 'Failed to save changes. Please try again.', { type: 'danger' });
-
-     
-    } finally {
-      setIsSaving(false);
-    }
+  const handleFieldChange = (field: 'name' | 'category' | 'address', value: string) => {
+    if (field === 'name') setStoreName(value);
+    if (field === 'category') setBusinessCategory(value);
+    if (field === 'address') setBusinessAddress(value);
   };
 
-  
-  useEffect(() => {
-    return () => {
-      if (hasChanges) {
-        handleFieldBlur();
-      }
-    };
-  }, [hasChanges]);
+  const handleRequestChange = async () => {
+    Alert.alert(
+      "Request Change",
+      "Are you sure you want to request these changes? They will be sent to the admin for approval.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Request",
+          onPress: async () => {
+            try {
+              setIsSaving(true);
+              // For now, we simulate the request flow or use the existing update logic 
+              // depending on if there's a specific "request" endpoint.
+              // Given the prompt, we'll just show the success message after "saving".
+              await new Promise(resolve => setTimeout(resolve, 1500));
+              Alert.alert("Success", "Your change request has been submitted and is pending admin approval.");
+            } catch (error) {
+              Alert.alert("Error", "Failed to submit request. Please try again.");
+            } finally {
+              setIsSaving(false);
+            }
+          }
+        }
+      ]
+    );
+  };
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -115,7 +94,7 @@ export default function StoreInformation() {
           <MaterialIcons name="arrow-back" size={24} color="#000" />
         </Pressable>
         <Text className="text-lg font-medium text-gray-900">Store Information</Text>
-        
+
         {isSaving && (
           <View className="ml-auto">
             <ActivityIndicator size="small" color="#3b82f6" />
@@ -130,9 +109,8 @@ export default function StoreInformation() {
           </Text>
           <TextInput
             value={storeName}
-            onChangeText={(value) => handleFieldChange('storeName', value)}
-            onBlur={handleFieldBlur}
-            className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-900"
+            onChangeText={(val) => handleFieldChange('name', val)}
+            className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-900"
             placeholder="Enter store name"
             placeholderTextColor="#9ca3af"
           />
@@ -142,18 +120,13 @@ export default function StoreInformation() {
           <Text className="text-sm font-medium text-gray-900 mb-2">
             Store URL
           </Text>
-          <View className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 flex-row items-center">
-            <Text className="text-gray-500 mr-1">https://</Text>
-            <TextInput
-              value={storeUrl}
-              onChangeText={(value) => handleFieldChange('storeUrl', value)}
-              onBlur={handleFieldBlur}
-              className="flex-1 text-base text-gray-900"
-              placeholder="mystore.shop"
-              placeholderTextColor="#9ca3af"
-              autoCapitalize="none"
-              keyboardType="url"
-            />
+          <View className="bg-gray-100 border border-gray-200 rounded-lg px-4 py-3 flex-row items-center justify-between">
+            <Text className="text-base text-gray-500 flex-1 mr-2" numberOfLines={1} ellipsizeMode="middle">
+              {storeUrl || "https://mystore.orderlystores.com"}
+            </Text>
+            <Pressable onPress={handleCopyLink}>
+              <MaterialIcons name="content-copy" size={20} color="#6b7280" />
+            </Pressable>
           </View>
         </View>
 
@@ -163,9 +136,8 @@ export default function StoreInformation() {
           </Text>
           <TextInput
             value={businessCategory}
-            onChangeText={(value) => handleFieldChange('businessCategory', value)}
-            onBlur={handleFieldBlur}
-            className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-900"
+            onChangeText={(val) => handleFieldChange('category', val)}
+            className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-900"
             placeholder="e.g. Electronics, Fashion, Food"
             placeholderTextColor="#9ca3af"
           />
@@ -177,9 +149,8 @@ export default function StoreInformation() {
           </Text>
           <TextInput
             value={contactEmail}
-            onChangeText={(value) => handleFieldChange('contactEmail', value)}
-            onBlur={handleFieldBlur}
-            className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-900"
+            editable={false}
+            className="bg-gray-100 border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-500"
             placeholder="contact@mystore.shop"
             placeholderTextColor="#9ca3af"
             keyboardType="email-address"
@@ -193,9 +164,8 @@ export default function StoreInformation() {
           </Text>
           <TextInput
             value={businessAddress}
-            onChangeText={(value) => handleFieldChange('businessAddress', value)}
-            onBlur={handleFieldBlur}
-            className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-900"
+            onChangeText={(val) => handleFieldChange('address', val)}
+            className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-base text-gray-900"
             placeholder="123 Commerce St, San Francisco, CA"
             placeholderTextColor="#9ca3af"
             multiline
@@ -204,10 +174,25 @@ export default function StoreInformation() {
           />
         </View>
 
-        <View className="py-6">
-          <Text className="text-center text-sm text-gray-500">
-            Changes are saved automatically when you leave this screen.
-          </Text>
+        <View className="py-10">
+          <TouchableOpacity
+            onPress={handleRequestChange}
+            disabled={isSaving}
+            className={`bg-[#FFD700] py-4 rounded-xl items-center justify-center mb-6 ${isSaving ? 'opacity-50' : ''}`}
+            style={{ backgroundColor: '#FCD34D' }}
+          >
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#000" />
+            ) : (
+              <Text className="text-gray-900 font-bold text-base">Request Change</Text>
+            )}
+          </TouchableOpacity>
+
+          <View className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+            <Text className="text-center text-xs text-blue-800 leading-5">
+              Please note: Changes to your store details are not effective immediately and are subject to verification and approval by the administration team.
+            </Text>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>

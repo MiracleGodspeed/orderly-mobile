@@ -281,3 +281,30 @@ export interface StorePerformanceReportResponse {
   code: string;
   data: StorePerformanceReportData;
 }
+
+export interface Bank {
+  name: string;
+  code: string;
+}
+
+export interface GetBanksResponse {
+  message: string;
+  code: string;
+  data: Bank[];
+}
+
+export interface ValidateAccountPayload {
+  bankCode: string;
+  accountNumber: string;
+}
+
+export interface ValidateAccountData {
+  accountNumber: string;
+  accountName: string;
+}
+
+export interface ValidateAccountResponse {
+  message: string;
+  code: string;
+  data: ValidateAccountData;
+}

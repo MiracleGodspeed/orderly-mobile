@@ -1,336 +1,259 @@
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
   StatusBar,
   TextInput,
   ActivityIndicator,
-  Modal
+  Modal,
+  TouchableOpacity,
+  Dimensions,
 } from "react-native";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
+import Ionicons from '@expo/vector-icons/Ionicons';
+import { useVendor } from "../../context/VendorContext";
+import { getBanks, validateAccount } from "../api/vendor/vendor.api";
+import { Bank } from "../api/vendor/vendor.types";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-interface BankAccount {
-  id: string;
-  bankName: string;
-  accountNumber: string;
-  accountHolder: string;
-  routingNumber: string;
-  currency: string;
-  payoutSchedule: string;
-  isVerified: boolean;
-}
+const { height } = Dimensions.get('window');
 
 export default function PayoutSettings() {
   const navigation = useNavigation<ScreenNavigationProp>();
+  const { storeData, updateVendorSettings } = useVendor();
 
-  const [loading, setLoading] = useState(true);
-  const [bankAccount, setBankAccount] = useState<BankAccount | null>(null);
-  const [showEditModal, setShowEditModal] = useState(false);
-  const [saving, setSaving] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [banks, setBanks] = useState<Bank[]>([]);
+  const [selectedBank, setSelectedBank] = useState<Bank | null>(null);
+  const [accountNumber, setAccountNumber] = useState(storeData?.accountNumber || '');
+  const [accountName, setAccountName] = useState(storeData?.accountName || '');
+  const [isValidating, setIsValidating] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const [editAccountHolder, setEditAccountHolder] = useState('');
-  const [editAccountNumber, setEditAccountNumber] = useState('');
-  const [editRoutingNumber, setEditRoutingNumber] = useState('');
-  const [editPayoutSchedule, setEditPayoutSchedule] = useState('');
+  // Bank Selection Modal
+  const [bankModalVisible, setBankModalVisible] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    fetchBankAccount();
+    fetchBanks();
   }, []);
 
-  const fetchBankAccount = async () => {
+  useEffect(() => {
+    if (storeData?.bank && banks.length > 0) {
+      const foundBank = banks.find(b => b.name === storeData.bank);
+      if (foundBank) setSelectedBank(foundBank);
+    }
+  }, [storeData?.bank, banks]);
+
+  const fetchBanks = async () => {
     try {
-      setLoading(true);
-
-     
-      const mockAccount: BankAccount = {
-        id: '1',
-        bankName: 'Access Bank',
-        accountNumber: '•••• •••• 1234',
-        accountHolder: 'My Awesome Store LLC',
-        routingNumber: '•••• 5678',
-        currency: 'NGN',
-        payoutSchedule: 'Weekly (Every Monday)',
-        isVerified: true
-      };
-
-      setBankAccount(mockAccount);
+      const bankList = await getBanks();
+      setBanks(bankList);
     } catch (error) {
-      console.error('Error fetching bank account:', error);
-      
-    } finally {
-      setLoading(false);
+      console.error('Error fetching banks:', error);
     }
   };
 
-  const handleEditDetails = () => {
-    if (!bankAccount) return;
+  const handleValidateAccount = async () => {
+    if (!selectedBank || !accountNumber || accountNumber.length < 10) return;
 
-    setEditAccountHolder(bankAccount.accountHolder);
-    setEditAccountNumber(bankAccount.accountNumber.replace(/[•\s]/g, ''));
-    setEditRoutingNumber(bankAccount.routingNumber.replace(/[•\s]/g, ''));
-    setEditPayoutSchedule(bankAccount.payoutSchedule);
-
-    setShowEditModal(true);
-  };
-
-  const handleSaveChanges = async () => {
     try {
-      setSaving(true);
-
-     
-      if (bankAccount) {
-        setBankAccount({
-          ...bankAccount,
-          accountHolder: editAccountHolder,
-          accountNumber: `•••• •••• ${editAccountNumber.slice(-4)}`,
-          routingNumber: `•••• ${editRoutingNumber.slice(-4)}`,
-          payoutSchedule: editPayoutSchedule
-        });
-      }
-
-     
-
-      setShowEditModal(false);
-    } catch (error) {
-     
+      setIsValidating(true);
+      const data = await validateAccount(selectedBank.code, accountNumber);
+      setAccountName(data.accountName);
+    } catch (error: any) {
+      console.error('Error validating account:', error);
+      alert(error.message || 'Could not validate account. Please check the details.');
     } finally {
-      setSaving(false);
+      setIsValidating(false);
     }
   };
 
-  const maskAccountNumber = (number: string) => {
-    return number.replace(/\d(?=\d{4})/g, '•');
+  const handleSavePaymentSettings = async () => {
+    if (!selectedBank || !accountNumber || !accountName) return;
+
+    try {
+      setIsSaving(true);
+      await updateVendorSettings({
+        bank: selectedBank.name,
+        accountNumber: accountNumber,
+        accountName: accountName,
+      });
+      alert('Payment settings saved successfully!');
+    } catch (error: any) {
+      console.error('Error saving payment settings:', error);
+      alert(error.message || 'Failed to save payment settings.');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#3b82f6" />
-        </View>
-      </SafeAreaView>
-    );
-  }
+  const filteredBanks = banks.filter(b =>
+    b.name.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      <View className="bg-white flex-row items-center px-4 py-3 border-b border-gray-200">
-        <Pressable className="mr-3" onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#000" />
-        </Pressable>
-        <Text className="text-lg font-medium text-gray-900">Payout Settings</Text>
+      <View className="bg-white px-5 py-4 flex-row items-center justify-between border-b border-gray-100">
+        <TouchableOpacity onPress={() => navigation.openDrawer?.() || navigation.goBack()}>
+          <Ionicons name="menu-outline" size={24} color="#374151" />
+        </TouchableOpacity>
+        <Text className="text-xl font-bold text-[#1e293b] flex-1 text-center">
+          {storeData?.storeName}
+        </Text>
+        <View className="w-6" />
       </View>
 
-      <ScrollView className="flex-1">
-        <View className="mx-4 mt-4 mb-4 bg-white rounded-2xl p-4 shadow-sm">
-          
-          <View className="flex-row items-start justify-between mb-4">
-            <View className="flex-row items-start flex-1">
-              <View className="w-12 h-12 bg-blue-50 rounded-xl items-center justify-center mr-3">
-                <MaterialIcons name="account-balance" size={24} color="#3b82f6" />
-              </View>
+      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
+        <View className="mt-6 bg-[#ebf5ff] mx-5 rounded-2xl p-6 flex-row items-center">
+          <View className="w-12 h-12 bg-white rounded-full items-center justify-center shadow-sm">
+            <Ionicons name="card" size={24} color="#2563eb" />
+          </View>
+          <View className="ml-4 flex-1">
+            <Text className="text-xl font-bold text-[#1e293b]">Payment Settings</Text>
+            <Text className="text-sm text-gray-500">Configure your payment methods</Text>
+          </View>
+        </View>
 
-              <View className="flex-1">
-                <Text className="text-base font-semibold text-gray-900 mb-1">
-                  {bankAccount?.bankName}
-                </Text>
-                <Text className="text-sm text-gray-500">
-                  Ending in {bankAccount?.accountNumber.slice(-4)}
-                </Text>
-              </View>
-            </View>
+        {/* Form Body */}
+        <View className="bg-white mx-5 mt-6 rounded-2xl border border-gray-100 p-6 shadow-sm mb-10">
+          <Text className="text-base font-bold text-[#334155] mb-6">Bank Account Details</Text>
 
-            {bankAccount?.isVerified && (
-              <View className="bg-green-100 px-2 py-1 rounded-full flex-row items-center">
-                <MaterialIcons name="check-circle" size={14} color="#10b981" />
-                <Text className="text-xs font-medium text-green-700 ml-1">
-                  Verified
-                </Text>
-              </View>
-            )}
+          {/* Bank Dropdown */}
+          <View className="mb-5">
+            <Text className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Bank</Text>
+            <TouchableOpacity
+              onPress={() => setBankModalVisible(true)}
+              className="flex-row items-center justify-between border border-gray-200 rounded-xl px-4 py-3 bg-white"
+            >
+              <Text className={`text-base flex-1 ${selectedBank ? 'text-gray-900' : 'text-gray-400'}`}>
+                {selectedBank ? selectedBank.name : 'Select your bank'}
+              </Text>
+              <MaterialIcons name="keyboard-arrow-down" size={24} color="#94a3b8" />
+            </TouchableOpacity>
           </View>
 
-          <View className="flex-row mb-4">
-            <View className="flex-1">
-              <Text className="text-xs text-gray-500 mb-1">CURRENCY</Text>
-              <Text className="text-base text-gray-900 font-medium">
-                {bankAccount?.currency}
-              </Text>
+          <View className="mb-5">
+            <Text className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Account Number</Text>
+            <View className="flex-row items-center gap-3">
+              <TextInput
+                className="flex-1 border border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 bg-white"
+                placeholder="6801320832"
+                placeholderTextColor="#94a3b8"
+                keyboardType="number-pad"
+                value={accountNumber}
+                onChangeText={setAccountNumber}
+              />
             </View>
-            <View className="flex-1">
-              <Text className="text-xs text-gray-500 mb-1">SCHEDULE</Text>
-              <Text className="text-base text-gray-900 font-medium">
-                {bankAccount?.payoutSchedule.split(' ')[0]}
-              </Text>
-            </View>
+            <TouchableOpacity
+              onPress={handleValidateAccount}
+              disabled={!selectedBank || accountNumber.length < 10 || isValidating}
+              className={`mt-4 self-start bg-[#2563eb] px-5 py-2.5 rounded-lg flex-row items-center ${(!selectedBank || accountNumber.length < 10 || isValidating) ? 'opacity-50' : ''}`}
+            >
+              {isValidating ? (
+                <ActivityIndicator size="small" color="#fff" />
+              ) : (
+                <Text className="text-white font-bold text-sm">Validate Account</Text>
+              )}
+            </TouchableOpacity>
           </View>
 
-          <Pressable
-            onPress={handleEditDetails}
-            className="border-t border-gray-100 pt-4"
+          <View className="mb-8">
+            <Text className="text-[11px] font-bold text-gray-500 uppercase tracking-wider mb-2">Account Name</Text>
+            <TextInput
+              className="border border-gray-200 rounded-xl px-4 py-3 text-base text-gray-900 bg-gray-50 font-bold"
+              editable={false}
+              placeholder="ACCOUNT NAME"
+              placeholderTextColor="#94a3b8"
+              value={accountName}
+            />
+          </View>
+
+          <TouchableOpacity
+            onPress={handleSavePaymentSettings}
+            disabled={!selectedBank || !accountNumber || !accountName || isSaving}
+            className={`flex-row items-center justify-center bg-[#2563eb] rounded-xl py-4 shadow-lg shadow-blue-200 ${(!selectedBank || !accountNumber || !accountName || isSaving) ? 'opacity-50' : ''}`}
           >
-            <Text className="text-center text-blue-600 font-medium">
-              Edit Details
-            </Text>
-          </Pressable>
+            {isSaving ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <>
+                <Ionicons name="save-outline" size={20} color="white" />
+                <Text className="ml-2 text-white font-bold text-base">Save Payment Settings</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        <View className="py-10 items-center justify-center">
+          <Text className="text-sm text-gray-400">
+            {storeData?.storeName} 2026 | powered by <Text className="font-bold">orderly</Text>
+          </Text>
         </View>
       </ScrollView>
 
       <Modal
-        visible={showEditModal}
+        visible={bankModalVisible}
         animationType="slide"
-        presentationStyle="pageSheet"
+        transparent={true}
       >
-        <SafeAreaView className="flex-1 bg-white">
-          <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
-            <Pressable className="mr-3" onPress={() => setShowEditModal(false)}>
-              <MaterialIcons name="arrow-back" size={24} color="#000" />
-            </Pressable>
-            <Text className="text-lg font-medium text-gray-900">Payout Settings</Text>
-          </View>
+        <View className="flex-1 bg-black/50 justify-end">
+          <View className="bg-white rounded-t-3xl h-[80%]">
+            <View className="flex-row items-center justify-between p-5 border-b border-gray-100">
+              <Text className="text-xl font-bold text-gray-900">Select Bank</Text>
+              <TouchableOpacity onPress={() => setBankModalVisible(false)}>
+                <Ionicons name="close" size={28} color="#374151" />
+              </TouchableOpacity>
+            </View>
 
-          <ScrollView className="flex-1">
-            <View className="mx-4 mt-4 mb-4 bg-white rounded-2xl p-4 border border-gray-200">
-              <View className="flex-row items-start justify-between mb-4">
-                <View className="flex-row items-start flex-1">
-                  <View className="w-12 h-12 bg-blue-50 rounded-xl items-center justify-center mr-3">
-                    <MaterialIcons name="account-balance" size={24} color="#3b82f6" />
-                  </View>
-                  <View className="flex-1">
-                    <Text className="text-base font-semibold text-gray-900 mb-1">
-                      {bankAccount?.bankName}
-                    </Text>
-                    <Text className="text-sm text-gray-500">
-                      Ending in {bankAccount?.accountNumber.slice(-4)}
-                    </Text>
-                  </View>
-                </View>
-                {bankAccount?.isVerified && (
-                  <View className="bg-green-100 px-2 py-1 rounded-full flex-row items-center">
-                    <MaterialIcons name="check-circle" size={14} color="#10b981" />
-                    <Text className="text-xs font-medium text-green-700 ml-1">
-                      Verified
-                    </Text>
-                  </View>
-                )}
-              </View>
-
-              <View className="flex-row">
-                <View className="flex-1">
-                  <Text className="text-xs text-gray-500 mb-1">CURRENCY</Text>
-                  <Text className="text-base text-gray-900 font-medium">
-                    {bankAccount?.currency}
-                  </Text>
-                </View>
-                <View className="flex-1">
-                  <Text className="text-xs text-gray-500 mb-1">SCHEDULE</Text>
-                  <Text className="text-base text-gray-900 font-medium">
-                    {bankAccount?.payoutSchedule.split(' ')[0]}
-                  </Text>
-                </View>
+            <View className="p-4">
+              <View className="flex-row items-center bg-gray-100 rounded-xl px-4 py-2">
+                <Ionicons name="search-outline" size={20} color="#94a3b8" />
+                <TextInput
+                  className="flex-1 ml-3 h-10 text-base"
+                  placeholder="Search banks..."
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                />
               </View>
             </View>
 
-            <View className="px-4">
-              <Text className="text-xs font-semibold text-gray-500 mb-4">
-                BANK ACCOUNT DETAILS
-              </Text>
-
-              <View className="mb-4">
-                <Text className="text-sm font-medium text-gray-900 mb-2">
-                  Account Holder Name
-                </Text>
-                <TextInput
-                  value={editAccountHolder}
-                  onChangeText={setEditAccountHolder}
-                  className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-base"
-                  placeholder="Enter account holder name"
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
-
-              <View className="mb-4">
-                <Text className="text-sm font-medium text-gray-900 mb-2">
-                  Account Number / IBAN
-                </Text>
-                <TextInput
-                  value={editAccountNumber}
-                  onChangeText={setEditAccountNumber}
-                  className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-base font-mono"
-                  placeholder="•••• •••• 1234"
-                  placeholderTextColor="#9ca3af"
-                  keyboardType="number-pad"
-                  secureTextEntry
-                />
-              </View>
-
-              <View className="mb-4">
-                <Text className="text-sm font-medium text-gray-900 mb-2">
-                  Routing Number / SWIFT
-                </Text>
-                <TextInput
-                  value={editRoutingNumber}
-                  onChangeText={setEditRoutingNumber}
-                  className="bg-white border border-gray-200 rounded-lg px-4 py-3 text-base font-mono"
-                  placeholder="•••• 5678"
-                  placeholderTextColor="#9ca3af"
-                  keyboardType="number-pad"
-                  secureTextEntry
-                />
-              </View>
-
-              <View className="mb-4">
-                <Text className="text-sm font-medium text-gray-900 mb-2">
-                  Payout Schedule
-                </Text>
-                <Pressable className="bg-white border border-gray-200 rounded-lg px-4 py-3 flex-row items-center justify-between">
-                  <Text className="text-base text-gray-900">
-                    {editPayoutSchedule}
+            <ScrollView className="flex-1 px-4">
+              {filteredBanks.map((bank) => (
+                <TouchableOpacity
+                  key={bank.code}
+                  onPress={() => {
+                    setSelectedBank(bank);
+                    setBankModalVisible(false);
+                    setSearchQuery('');
+                  }}
+                  className={`py-4 px-2 border-b border-gray-50 flex-row items-center justify-between ${selectedBank?.code === bank.code ? 'bg-blue-50 rounded-xl' : ''}`}
+                >
+                  <Text className={`text-base ${selectedBank?.code === bank.code ? 'text-blue-600 font-bold' : 'text-gray-900'}`}>
+                    {bank.name}
                   </Text>
-                  <MaterialIcons name="keyboard-arrow-down" size={24} color="#6b7280" />
-                </Pressable>
-                <Text className="text-xs text-gray-500 mt-2">
-                  Choose how often you want your earnings to be deposited.
-                </Text>
-              </View>
-            </View>
-          </ScrollView>
-
-          <View className="flex-row px-4 py-4 border-t border-gray-200">
-            <Pressable
-              onPress={() => setShowEditModal(false)}
-              disabled={saving}
-              className="flex-1 py-4 items-center justify-center rounded-xl border border-gray-300 mr-2"
-            >
-              <Text className="text-gray-900 font-medium">Cancel</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={handleSaveChanges}
-              disabled={saving}
-              className={`flex-1 py-4 items-center justify-center rounded-xl ml-2 ${
-                saving ? 'bg-blue-400' : 'bg-blue-600'
-              }`}
-            >
-              {saving ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <Text className="text-white font-medium">Save Changes</Text>
+                  {selectedBank?.code === bank.code && (
+                    <Ionicons name="checkmark-circle" size={22} color="#2563eb" />
+                  )}
+                </TouchableOpacity>
+              ))}
+              {filteredBanks.length === 0 && (
+                <View className="items-center justify-center py-20">
+                  <Text className="text-gray-400 italic">No banks found</Text>
+                </View>
               )}
-            </Pressable>
+            </ScrollView>
           </View>
-        </SafeAreaView>
+        </View>
       </Modal>
     </SafeAreaView>
   );

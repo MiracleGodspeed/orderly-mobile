@@ -69,9 +69,7 @@ export default function StoreInformation() {
           onPress: async () => {
             try {
               setIsSaving(true);
-              // For now, we simulate the request flow or use the existing update logic 
-              // depending on if there's a specific "request" endpoint.
-              // Given the prompt, we'll just show the success message after "saving".
+
               await new Promise(resolve => setTimeout(resolve, 1500));
               Alert.alert("Success", "Your change request has been submitted and is pending admin approval.");
             } catch (error) {

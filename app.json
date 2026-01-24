@@ -1,0 +1,56 @@
+{
+  "expo": {
+    "name": "orderly-stores",
+    "slug": "orderly-stores",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "backgroundColor": "#265CC7"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.orderly.stores",
+      "googleServicesFile": "./GoogleService-Info.plist",
+      "infoPlist": {
+        "GIDClientID": "912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f.apps.googleusercontent.com",
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f"
+            ]
+          }
+        ],
+        "NSPhotoLibraryUsageDescription": "We need access to your photos so you can upload banner images for your store.",
+        "NSCameraUsageDescription": "We need camera access so you can take photos for your store."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.orderly.stores"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "@react-native-google-signin/google-signin",
+      "expo-font",
+      "expo-asset",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "We need access to your photos so you can upload banner images for your store.",
+          "cameraPermission": "We need camera access so you can take photos for your store."
+        }
+      ],
+      "@react-native-community/datetimepicker"
+    ]
+  }
+}

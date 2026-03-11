@@ -78,7 +78,11 @@ export default function AuthOptions ()  {
         >
             <Ionicons name="arrow-back" size={24} color="#000" />
         </TouchableOpacity>
-        <Text className="text-[20px] font-[500] text-gray-900">
+        <Text className="text-[20px] font-[500] text-gray-900 "
+            style={{
+              fontFamily: 'PlusJakartaSans_600SemiBold',
+            }}
+        >
         Create Your Orderly Account
         </Text>
     </View>

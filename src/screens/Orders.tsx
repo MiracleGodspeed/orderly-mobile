@@ -117,7 +117,7 @@ export default function Orders() {
   const [totalPages, setTotalPages] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
   
-  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetchOrders(1, "");
@@ -293,11 +293,7 @@ export default function Orders() {
 
             {/* Filter Tabs */}
             <View className="mb-6">
-                <ScrollView 
-                    horizontal 
-                    showsHorizontalScrollIndicator={false} 
-                    contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', gap: 8 }}
-                >
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
                 {[
                     { key: "all", label: "All" },
                     { key: "pending", label: "Pending" },

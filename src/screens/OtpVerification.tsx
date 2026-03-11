@@ -10,8 +10,7 @@ import {
 } from 'react-native';
 import React, { useState, useRef } from 'react';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation, RouteProp } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
@@ -20,13 +19,7 @@ import { OtpVerificationRequest } from '../api/auth/auth.types';
 import { useToast } from 'react-native-toast-notifications';
 
 
-type OtpNavigationProp = NativeStackNavigationProp<RootStackParamList, 'OtpVerification'>;
-type OtpRouteProp = RouteProp<RootStackParamList, 'OtpVerification'>;
-
-interface Props {
-  navigation: OtpNavigationProp;
-  route: OtpRouteProp;
-}
+type Props = NativeStackScreenProps<RootStackParamList, 'OtpVerification'>;
 
 export default function OtpVerification({ route, navigation }: Props) {
      const toast = useToast();

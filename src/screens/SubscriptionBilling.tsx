@@ -128,7 +128,7 @@ export default function SubscriptionBilling() {
       <ScrollView 
         className="flex-1"
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} color="#3b82f6" />
+          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={["#3b82f6"]} tintColor="#3b82f6" />
         }
       >
         {loading ? (

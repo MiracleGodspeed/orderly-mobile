@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   View, 
   Text, 
@@ -41,35 +41,45 @@ const slides = [
 export default function OnboardingScreen() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const [currentIndex, setCurrentIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
- const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null)
+  const currentIndexRef = useRef(0);
+  const flatListRef = useRef<FlatList<any>>(null);
+  const autoScrollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
- useEffect(() => {
-    startAutoScroll();
+  useEffect(() => {
+    const kickoff = setTimeout(() => {
+      startAutoScroll();
+    }, 700);
     
     return () => {
-      // Cleanup timer on unmount
+      clearTimeout(kickoff);
       if (autoScrollTimer.current) {
         clearInterval(autoScrollTimer.current);
       }
     };
-  }, [currentIndex]);
+  }, []);
 
   const startAutoScroll = () => {
-    // Clear existing timer
     if (autoScrollTimer.current) {
       clearInterval(autoScrollTimer.current);
     }
 
-    // Start new timer
     autoScrollTimer.current = setInterval(() => {
-      const nextIndex = (currentIndex + 1) % slides.length;
-      flatListRef.current?.scrollToIndex({
-        index: nextIndex,
-        animated: true,
-      });
+      const nextIndex = (currentIndexRef.current + 1) % slides.length;
+      currentIndexRef.current = nextIndex;
       setCurrentIndex(nextIndex);
-    }, 3000); // Auto-scroll every 3 seconds
+      try {
+        flatListRef.current?.scrollToIndex({
+          index: nextIndex,
+          animated: true,
+          viewPosition: 0,
+        });
+      } catch {
+        flatListRef.current?.scrollToOffset({
+          offset: screenWidth * nextIndex,
+          animated: true,
+        });
+      }
+    }, 4000);
   };
 
 
@@ -78,6 +88,7 @@ export default function OnboardingScreen() {
     const index = Math.round(contentOffsetX / screenWidth);
     
     if (index !== currentIndex) {
+      currentIndexRef.current = index;
       setCurrentIndex(index);
     }
   };
@@ -85,6 +96,7 @@ export default function OnboardingScreen() {
   const handleScrollBeginDrag = () => {
     if (autoScrollTimer.current) {
       clearInterval(autoScrollTimer.current);
+      autoScrollTimer.current = null;
     }
   };
 
@@ -93,48 +105,62 @@ export default function OnboardingScreen() {
   };
 
   const renderSlide = ({ item }: { item: any }) => (
-    <View style={{ width: screenWidth }} className="px-8 items-center justify-center">
-      <View className="items-center">
-       
-        <View className=" mb-6 items-center justify-center" style={{ width: 358, height: 200 }}>
-          <Image
-            source={item.image}
-            className=" rounded-2xl"
-            resizeMode="cover"
-            style={{ width: '100%', height: '100%' }}
-          />
+    <View style={{ width: screenWidth }} className="px-6">
+      <View className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
+        <View className="px-6 pt-6">
+          <View
+            className="bg-blue-50 rounded-2xl overflow-hidden items-center justify-center"
+            style={{ width: '100%', height: Math.min(280, Math.max(210, (screenWidth - 48) * 0.62)) }}
+          >
+            <Image
+              source={item.image}
+              className="w-full h-full"
+              resizeMode="cover"
+            />
+          </View>
+
+          <Text className="text-[25px] font-extrabold text-center text-gray-800 mt-7 leading-tight"
+            style={{
+              fontFamily: 'PlusJakartaSans_800ExtraBold',
+            }}
+          >
+            {item.title}
+          </Text>
+
+          <Text className="min-h-[110px] text-[15px] text-center text-gray-600 leading-relaxed mt-4 mb-7">
+            {item.description}
+          </Text>
         </View>
-        
-        
-        <Text className="text-[28px] font-bold text-center text-gray-900 mb-6 leading-tight">
-          {item.title}
-        </Text>
-        
-     
-        <Text className=" min-h-[120px] text-[16px] text-center text-gray-600 leading-relaxed mb-6">
-          {item.description}
-        </Text>
       </View>
     </View>
   );
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
+    <SafeAreaView className="flex-1 bg-gray-50">
       <View className="flex-1">
        
-        <View className="pt-5 px-6">
-          <View className="flex-row items-center justify-center mb-10">
+        <View className="pt-4 px-6">
+          <View className="flex-row items-center mb-6">
+            <View className="w-16" />
+            <View className="flex-1 items-center">
             <Image
               source={require('../../assets/blackLogo.png')}
-              className="w-32 h-24 mr-3"
+              className="w-28 h-10"
               resizeMode="contain"
             />
-            
+            </View>
+            <TouchableOpacity
+              onPress={() => navigation.navigate('AuthOptions')}
+              activeOpacity={0.8}
+              className="px-3 py-2 rounded-full bg-white border border-gray-200"
+            >
+              <Text className="text-sm font-semibold text-gray-700">Skip</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
       
-        <View className="flex-1 justify-center mb-5">
+        <View className="flex-1 justify-center">
           <FlatList
             ref={flatListRef}
             data={slides}
@@ -148,43 +174,48 @@ export default function OnboardingScreen() {
             onScrollBeginDrag={handleScrollBeginDrag}
             onScrollEndDrag={handleScrollEndDrag}
             decelerationRate="fast"
+            getItemLayout={(_, index) => ({
+              length: screenWidth,
+              offset: screenWidth * index,
+              index,
+            })}
+            onScrollToIndexFailed={(info) => {
+              flatListRef.current?.scrollToOffset({
+                offset: info.averageItemLength * info.index,
+                animated: true,
+              });
+            }}
           />
           
         </View>
-        <View className="flex-row justify-center items-center mt-2 mb-3">
+        <View className="flex-row justify-center items-center mt-5 mb-4">
             {slides.map((_, index) => (
               <View
                 key={index}
-                className={`w-2.5 h-2.5 rounded-full mx-1 ${
-                  index === currentIndex ? 'bg-[#265CC7]' : 'bg-gray-300'
-                }`}
+                className={`h-2 rounded-full mx-1 ${index === currentIndex ? 'w-7 bg-blue-600' : 'w-2 bg-gray-300'}`}
               />
             ))}
           </View>
 
        
-        <View className="px-6 pb-8 pt-4">
-          <View className="h-px bg-gray-200 mb-3" />
-          
-          <View className="items-center">
-           
-            
+        <View className="px-6 pb-10">
+          <View className="bg-white border border-gray-100 rounded-3xl shadow-sm p-4">
             <TouchableOpacity 
-              className="w-full py-4 bg-[#265CC7] rounded-full  items-center justify-center mb-4"
+              className="w-full py-4 bg-blue-600 rounded-full items-center justify-center"
               onPress={() => navigation.navigate('AuthOptions')}
               activeOpacity={0.8}
             >
               <Text className="text-white text-lg font-semibold">
-               Get started
+                Get started
               </Text>
             </TouchableOpacity>
             
             <TouchableOpacity 
-              className="w-full py-4 border-2 border-[#fff] rounded-xl items-center justify-center"
+              className="w-full py-3.5 border border-gray-200 rounded-full items-center justify-center mt-3"
               onPress={() => navigation.navigate('Login')}
               activeOpacity={0.8}
             >
-              <Text className="text-[#265CC7] text-lg font-semibold">
+              <Text className="text-blue-600 text-base font-semibold">
                 Log in
               </Text>
             </TouchableOpacity>

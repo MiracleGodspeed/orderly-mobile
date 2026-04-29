@@ -12,7 +12,7 @@ import {
   SubscriptionHistoryResponse, SubscriptionHistoryParams, SubscriptionHistory,
   GetPlansResponse, ApiSubscriptionPlan,
   StorePerformanceReportResponse, StorePerformanceReportData,
-  Bank, GetBanksResponse, ValidateAccountResponse, ValidateAccountData,
+  Bank, GetBanksResponse, ValidateAccountData,
 } from "./vendor.types";
 
 
@@ -377,18 +377,26 @@ export const getBanks = async (): Promise<Bank[]> => {
   }
 };
 
-export const validateAccount = async (bankCode: string, accountNumber: string): Promise<ValidateAccountData> => {
-  const response = await apiClient.get<ValidateAccountResponse>(
-    "/payment/validate-account",
-    {
-      params: { bankCode, accountNumber },
-      validateStatus: () => true,
-    }
+export const validateAccount = async (
+  bankCode: string,
+  accountNumber: string
+): Promise<ValidateAccountData> => {
+  const response = await apiClient.post<any>(
+    `/payment/validate-account-number?accountNumber=${accountNumber}&bankCode=${bankCode}`,
+    null,
+    { validateStatus: () => true }
   );
 
-  if (response.data.code !== "200") {
-    throw new Error(response.data.message || "Failed to validate account");
+  // This endpoint returns `{ status: boolean, message, data }` — not the
+  // `{ code: "200", ... }` envelope used elsewhere. Treat either shape as success.
+  const body = response.data;
+  const ok =
+    response.status >= 200 && response.status < 300 &&
+    (body?.status === true || body?.code === "200");
+
+  if (!ok || !body?.data?.accountName) {
+    throw new Error(body?.message || "Failed to validate account");
   }
 
-  return response.data.data;
+  return body.data as ValidateAccountData;
 };

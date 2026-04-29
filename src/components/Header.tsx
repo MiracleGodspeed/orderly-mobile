@@ -1,9 +1,12 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, Image } from 'react-native';
+import { View, TouchableOpacity, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
+import { AppImage } from './AppImage';
+
+const LOGO = require('../../assets/blackLogo.png');
 
 interface HeaderProps {
   onMenuClick: () => void;
@@ -29,13 +32,13 @@ export default function Header({
   };
 
   return (
-    <View className="bg-white border-b border-gray-200 px-4">
-      <View className="flex-row items-center justify-between">
-        <View className="flex-row items-center justify-center">
-          <Image
-            source={require('../../assets/blackLogo.png')}
-            className="w-32 h-24 mr-3"
-            resizeMode="contain"
+    <View className="bg-white border-b border-gray-200 px-4 py-2">
+      <View className="flex-row items-center justify-between h-11">
+        <View className="flex-row items-center">
+          <AppImage
+            source={LOGO}
+            contentFit="contain"
+            style={{ width: 96, height: 32 }}
           />
         </View>
         
@@ -70,13 +73,13 @@ export default function Header({
             )}
           </TouchableOpacity>
           
-          <TouchableOpacity 
+          {/* <TouchableOpacity 
             onPress={onMenuClick} 
             className="p-2" 
             activeOpacity={0.7}
           >
             <Ionicons name="menu" size={22} color="#374151" />
-          </TouchableOpacity>
+          </TouchableOpacity> */}
         </View>
       </View>
     </View>

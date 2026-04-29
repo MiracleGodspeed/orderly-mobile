@@ -21,6 +21,23 @@ export interface SignupRequest {
     password: string;
     otp: string;
     skipVerificationForLater: boolean;
+    countryCode?: string;
+    phone?: string;
+    referralCode?: string;
+}
+
+export interface Country {
+    id: number;
+    name: string;
+    flag?: string | null;
+    code: string;
+    enabled?: boolean;
+}
+
+export interface GetCountriesResponse {
+    message: string;
+    code: string;
+    data: Country[];
 }
 
 export interface SignupResponseInitial {

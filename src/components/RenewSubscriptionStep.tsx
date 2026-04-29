@@ -1,6 +1,14 @@
-import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
-import { useState, useEffect, useMemo } from "react"; // Added useMemo
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  ActivityIndicator,
+  Platform,
+} from "react-native";
+import { useState, useEffect, useMemo } from "react";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
 import { ApiSubscriptionPlan } from "../api/vendor/vendor.types";
 import { getAvailablePlans } from "../api/vendor/vendor.api";
 
@@ -14,6 +22,35 @@ type Props = {
   onClose: () => void;
 };
 
+const haptic = () => {
+  if (Platform.OS === "ios") {
+    Haptics.selectionAsync().catch(() => {});
+  }
+};
+
+const cycleLabel = (cycle: BillingCycle) =>
+  cycle === "Monthly" ? "/ month" : cycle === "Quarterly" ? "/ quarter" : "/ year";
+
+type IoniconName = keyof typeof Ionicons.glyphMap;
+
+function planTone(plan: ApiSubscriptionPlan): {
+  iconBg: string;
+  iconColor: string;
+  icon: IoniconName;
+} {
+  const name = plan.name.toLowerCase();
+  if (plan.isPopular || name.includes("pro") || name.includes("premium")) {
+    return { iconBg: "bg-blue-50", iconColor: "#2563eb", icon: "rocket" };
+  }
+  if (name.includes("enterprise")) {
+    return { iconBg: "bg-violet-50", iconColor: "#7c3aed", icon: "diamond" };
+  }
+  if (name.includes("starter") || name.includes("basic") || name.includes("free")) {
+    return { iconBg: "bg-emerald-50", iconColor: "#059669", icon: "leaf" };
+  }
+  return { iconBg: "bg-blue-50", iconColor: "#2563eb", icon: "shield-checkmark" };
+}
+
 export default function RenewSubscriptionStep({
   selectedPlan: initialPlan,
   billingCycle,
@@ -23,176 +60,297 @@ export default function RenewSubscriptionStep({
 }: Props) {
   const [plans, setPlans] = useState<ApiSubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // 1. Keep state simple
-  const [selectedApiPlan, setSelectedApiPlan] = useState<ApiSubscriptionPlan | null>(null);
+  const [selectedApiPlan, setSelectedApiPlan] =
+    useState<ApiSubscriptionPlan | null>(null);
 
   useEffect(() => {
     let isMounted = true;
-    const fetchPlans = async () => {
+    (async () => {
       try {
         setLoading(true);
         const data = await getAvailablePlans();
-        if (isMounted && data) {
-          setPlans(data);
-          // Find the initial plan OR default to the first one available
-          const current = data.find((p) => p.name === initialPlan.name) || data[0];
-          setSelectedApiPlan(current || null);
-        }
-      } catch (error) {
-        if (isMounted) console.error("Plan Fetch Error:", error);
+        if (!isMounted || !data) return;
+        setPlans(data);
+        const current = data.find((p) => p.name === initialPlan.name) ?? data[0];
+        setSelectedApiPlan(current ?? null);
+      } catch (err) {
+        if (isMounted) console.error("Plan Fetch Error:", err);
       } finally {
         if (isMounted) setLoading(false);
       }
+    })();
+    return () => {
+      isMounted = false;
     };
-    fetchPlans();
-    return () => { isMounted = false; };
-  }, []); // Only fetch on mount
+  }, []);
 
-  /**
-   * 2. Calculation outside of JSX to prevent re-render jumps
-   */
   const calculatedPrices = useMemo(() => {
     return plans.reduce((acc, plan) => {
       let price = plan.price;
-      let label = "per month";
-
-      if (billingCycle === "Quarterly") {
-        price = plan.price * 3;
-        label = "per 3 months";
-      } else if (billingCycle === "Yearly") {
-        price = (plan.price * 12) * 0.9;
-        label = "per year (10% off)";
-      }
-
-      acc[plan.id] = { price, label };
+      if (billingCycle === "Quarterly") price = plan.price * 3;
+      else if (billingCycle === "Yearly") price = plan.price * 12 * 0.9;
+      acc[plan.id] = { price: Math.round(price) };
       return acc;
-    }, {} as Record<string, { price: number; label: string }>);
+    }, {} as Record<string, { price: number }>);
   }, [plans, billingCycle]);
+
+  const handlePickPlan = (plan: ApiSubscriptionPlan) => {
+    haptic();
+    setSelectedApiPlan(plan);
+  };
+
+  const handleContinue = () => {
+    if (!selectedApiPlan) return;
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    }
+    onContinue(selectedApiPlan, billingCycle);
+  };
 
   if (loading) {
     return (
-      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 80 }}>
-        <ActivityIndicator size="large" color="#3b82f6" />
-        <Text style={{ marginTop: 8, color: '#6b7280' }}>Loading plans...</Text>
+      <View className="flex-1 items-center justify-center px-5">
+        <ActivityIndicator size="large" color="#2563eb" />
+        <Text className="mt-3 text-[13px] text-gray-500">Loading plans…</Text>
       </View>
     );
   }
 
+  const continuePrice = selectedApiPlan
+    ? calculatedPrices[selectedApiPlan.id]?.price ?? selectedApiPlan.price
+    : 0;
+
   return (
     <View className="flex-1">
       {/* Header */}
-      <View className="flex-row justify-between items-center px-5 pt-4 pb-3">
-        <Text className="text-lg font-semibold text-gray-900">Renew Subscription</Text>
-        <Pressable onPress={onClose} hitSlop={15}>
-          <MaterialIcons name="close" size={24} color="#111827" />
-        </Pressable>
-      </View>
-
-      <ScrollView className="flex-1 px-5" showsVerticalScrollIndicator={false}>
-        {/* Billing Cycle Tabs - Refactored to explicit buttons */}
-        <View className="flex-row bg-gray-100 rounded-xl p-1 mb-6">
-          <Pressable
-            onPress={() => setBillingCycle("Monthly")}
-            className={`flex-1 py-2.5 rounded-lg items-center justify-center ${billingCycle === "Monthly" ? "bg-white shadow-sm" : ""
-              }`}
-          >
-            <Text className={`text-center text-sm font-medium ${billingCycle === "Monthly" ? "text-gray-900" : "text-gray-500"
-              }`}>
-              Monthly
+      <View className="bg-white px-5 pt-4 pb-3 border-b border-gray-100">
+        <View className="flex-row items-start justify-between">
+          <View className="flex-1 pr-3">
+            <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.2px] text-blue-600">
+              Step 1 of 2
             </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setBillingCycle("Quarterly")}
-            className={`flex-1 py-2.5 rounded-lg items-center justify-center ${billingCycle === "Quarterly" ? "bg-white shadow-sm" : ""
-              }`}
-          >
-            <Text className={`text-center text-sm font-medium ${billingCycle === "Quarterly" ? "text-gray-900" : "text-gray-500"
-              }`}>
-              Quarterly
+            <Text className="text-[20px] font-extrabold text-gray-900 tracking-tight mt-0.5">
+              Choose your plan
             </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setBillingCycle("Yearly")}
-            className={`flex-1 py-2.5 rounded-lg items-center justify-center flex-row ${billingCycle === "Yearly" ? "bg-white shadow-sm" : ""
-              }`}
-          >
-            <Text className={`text-center text-sm font-medium ${billingCycle === "Yearly" ? "text-gray-900" : "text-gray-500"
-              }`}>
-              Yearly
+            <Text className="text-[12.5px] text-gray-500 mt-0.5">
+              Pick what fits — switch anytime later.
             </Text>
-            <View className="ml-1 bg-green-100 px-1.5 py-0.5 rounded">
-              <Text className="text-[8px] font-bold text-green-700">-10%</Text>
-            </View>
+          </View>
+          <Pressable
+            onPress={onClose}
+            className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center active:bg-gray-200"
+            hitSlop={6}
+          >
+            <Ionicons name="close" size={18} color="#374151" />
           </Pressable>
         </View>
+      </View>
 
-        {/* Plan Cards */}
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
+      >
+        {/* Billing cycle pills */}
+        <View className="flex-row bg-gray-100 rounded-2xl p-1 mb-5">
+          {(
+            [
+              { key: "Monthly", label: "Monthly", badge: null },
+              { key: "Quarterly", label: "Quarterly", badge: null },
+              { key: "Yearly", label: "Yearly", badge: "Save 10%" },
+            ] as { key: BillingCycle; label: string; badge: string | null }[]
+          ).map((tab) => {
+            const isActive = billingCycle === tab.key;
+            return (
+              <Pressable
+                key={tab.key}
+                onPress={() => {
+                  haptic();
+                  setBillingCycle(tab.key);
+                }}
+                className={`flex-1 h-10 rounded-xl items-center justify-center flex-row gap-1.5 ${
+                  isActive ? "bg-white" : ""
+                }`}
+                style={
+                  isActive
+                    ? {
+                        shadowColor: "#0f172a",
+                        shadowOffset: { width: 0, height: 1 },
+                        shadowOpacity: 0.06,
+                        shadowRadius: 3,
+                        elevation: 1,
+                      }
+                    : undefined
+                }
+              >
+                <Text
+                  className={`text-[13px] font-bold ${
+                    isActive ? "text-gray-900" : "text-gray-500"
+                  }`}
+                >
+                  {tab.label}
+                </Text>
+                {tab.badge && (
+                  <View className="bg-emerald-100 px-1.5 py-0.5 rounded">
+                    <Text className="text-[9px] font-extrabold text-emerald-700 tracking-wide">
+                      {tab.badge}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* Plan cards */}
         {plans.map((plan) => {
           const isSelected = selectedApiPlan?.id === plan.id;
-          const { price, label } = calculatedPrices[plan.id] || { price: plan.price, label: "per month" };
+          const priceInfo = calculatedPrices[plan.id] || { price: plan.price };
+          const tone = planTone(plan);
 
           return (
             <Pressable
               key={plan.id}
-              onPress={() => {
-                setSelectedApiPlan(plan);
-                onContinue(plan, billingCycle);
+              onPress={() => handlePickPlan(plan)}
+              className={`relative rounded-3xl p-5 mb-3 border-2 ${
+                isSelected
+                  ? "border-blue-600 bg-blue-50/40"
+                  : "border-gray-100 bg-white"
+              }`}
+              style={{
+                shadowColor: "#0f172a",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: isSelected ? 0.08 : 0.03,
+                shadowRadius: 12,
+                elevation: isSelected ? 3 : 1,
               }}
-              className={`rounded-2xl p-5 mb-5 ${isSelected ? "border-2 border-blue-600 shadow-sm" : "border border-gray-200"
-                }`}
-              style={{ backgroundColor: isSelected ? "#eff6ff" : "#ffffff" }}
             >
               {plan.isPopular && (
-                <View className="absolute -top-2.5 left-5 bg-blue-600 px-3 py-1 rounded-full">
-                  <Text className="text-[10px] text-white font-bold uppercase tracking-wider">Most Popular</Text>
+                <View className="absolute -top-2.5 left-5 bg-gray-900 px-2.5 py-1 rounded-full flex-row items-center gap-1">
+                  <Ionicons name="star" size={10} color="#fbbf24" />
+                  <Text className="text-[9px] font-extrabold text-white tracking-wide uppercase">
+                    Most popular
+                  </Text>
                 </View>
               )}
 
-              <View className="flex-row justify-between items-start mb-3">
-                <View className="flex-1">
-                  <Text className="text-xl font-bold text-gray-900 mb-1">{plan.name}</Text>
-                  <Text className="text-xs text-gray-500 pr-4 leading-4">{plan.description}</Text>
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="flex-row items-start gap-3 flex-1 min-w-0">
+                  <View
+                    className={`w-11 h-11 rounded-xl items-center justify-center ${tone.iconBg}`}
+                  >
+                    <Ionicons
+                      name={tone.icon}
+                      size={20}
+                      color={tone.iconColor}
+                    />
+                  </View>
+                  <View className="flex-1 min-w-0">
+                    <Text className="text-[16px] font-extrabold text-gray-900 mb-0.5">
+                      {plan.name}
+                    </Text>
+                    {plan.description ? (
+                      <Text className="text-[12px] text-gray-500 leading-[18px]">
+                        {plan.description}
+                      </Text>
+                    ) : null}
+                  </View>
                 </View>
                 <View className="items-end">
-                  <Text className="text-2xl font-bold text-gray-900">₦{price.toLocaleString()}</Text>
-                  <Text className="text-[10px] text-gray-400 font-medium">{label}</Text>
-                  {isSelected && (
-                    <View className="mt-2">
-                      <MaterialIcons name="check-circle" size={24} color="#2563eb" />
-                    </View>
-                  )}
+                  <Text className="text-[20px] font-extrabold text-gray-900 tracking-tight">
+                    ₦{priceInfo.price.toLocaleString()}
+                  </Text>
+                  <Text className="text-[10.5px] text-gray-500 mt-0.5">
+                    {cycleLabel(billingCycle)}
+                  </Text>
                 </View>
               </View>
 
-              {/* Features */}
-              <View className="mt-2 border-t border-gray-100 pt-4">
-                {plan.features?.map((feature, index) => (
-                  <View key={index} className="flex-row items-start mb-2.5">
-                    <MaterialIcons name="check" size={18} color="#10b981" style={{ marginRight: 8, marginTop: 1 }} />
-                    <Text className="text-sm text-gray-700 flex-1">{feature}</Text>
-                  </View>
-                ))}
+              {plan.features && plan.features.length > 0 && (
+                <View className="border-t border-gray-100 mt-4 pt-3">
+                  {plan.features.map((feature, i) => (
+                    <View
+                      key={`${plan.id}-feature-${i}`}
+                      className="flex-row items-start gap-2 py-1"
+                    >
+                      <View className="w-4 h-4 rounded-full bg-emerald-100 items-center justify-center mt-0.5">
+                        <Ionicons
+                          name="checkmark"
+                          size={10}
+                          color="#059669"
+                        />
+                      </View>
+                      <Text className="text-[12.5px] text-gray-700 leading-[18px] flex-1">
+                        {feature}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              )}
+
+              {/* Selection indicator */}
+              <View className="absolute top-5 right-5">
+                <View
+                  className={`w-6 h-6 rounded-full items-center justify-center ${
+                    isSelected
+                      ? "bg-blue-600"
+                      : "border-2 border-gray-200 bg-white"
+                  }`}
+                >
+                  {isSelected && (
+                    <Ionicons name="checkmark" size={14} color="white" />
+                  )}
+                </View>
               </View>
             </Pressable>
           );
         })}
+
+        <View className="flex-row items-start gap-2 mt-2 px-2">
+          <Ionicons name="lock-closed-outline" size={14} color="#94a3b8" />
+          <Text className="text-[11.5px] text-gray-500 flex-1 leading-[18px]">
+            Cancel or switch anytime. We won't surprise-bill you.
+          </Text>
+        </View>
       </ScrollView>
 
-      {/* Footer */}
-      <View className="px-5 py-4 border-t border-gray-100 bg-white">
+      {/* Sticky footer */}
+      <View
+        className="px-5 pt-3 pb-7 border-t border-gray-100 bg-white"
+        style={{
+          shadowColor: "#0f172a",
+          shadowOffset: { width: 0, height: -3 },
+          shadowOpacity: 0.04,
+          shadowRadius: 8,
+          elevation: 6,
+        }}
+      >
         <Pressable
+          onPress={handleContinue}
           disabled={!selectedApiPlan}
-          onPress={() => selectedApiPlan && onContinue(selectedApiPlan, billingCycle)}
-          className={`rounded-xl py-4 items-center ${!selectedApiPlan ? 'bg-gray-300' : 'bg-blue-600'}`}
+          className={`h-12 rounded-2xl items-center justify-center flex-row gap-2 ${
+            !selectedApiPlan ? "bg-gray-200" : "bg-blue-600"
+          }`}
+          style={{
+            shadowColor: "#2563eb",
+            shadowOffset: { width: 0, height: 4 },
+            shadowOpacity: !selectedApiPlan ? 0 : 0.25,
+            shadowRadius: 8,
+            elevation: 4,
+          }}
         >
-          <Text className="text-white font-semibold text-base">
+          <Text
+            className={`font-bold text-[15px] ${
+              !selectedApiPlan ? "text-gray-400" : "text-white"
+            }`}
+          >
             {selectedApiPlan
-              ? `Continue (₦${(calculatedPrices[selectedApiPlan.id]?.price || 0).toLocaleString()})`
-              : "Select a Plan"}
+              ? `Continue · ₦${continuePrice.toLocaleString()}`
+              : "Select a plan"}
           </Text>
+          {selectedApiPlan && (
+            <Ionicons name="arrow-forward" size={16} color="white" />
+          )}
         </Pressable>
       </View>
     </View>

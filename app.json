@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "orderly-stores",
-    "slug": "orderly-stores",
+    "name": "Orderly",
+    "slug": "orderly",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,6 +25,9 @@
         ],
         "NSPhotoLibraryUsageDescription": "We need access to your photos so you can upload banner images for your store.",
         "NSCameraUsageDescription": "We need camera access so you can take photos for your store."
+      },
+      "entitlements": {
+        "aps-environment": "production"
       }
     },
     "android": {
@@ -34,7 +37,13 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.orderly.stores"
+      "package": "com.orderly.stores",
+      "useNextNotificationsApi": true
+    },
+    "notification": {
+      "color": "#265CC7",
+      "androidMode": "default",
+      "androidCollapsedTitle": "Orderly"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -50,7 +59,20 @@
           "cameraPermission": "We need camera access so you can take photos for your store."
         }
       ],
-      "@react-native-community/datetimepicker"
-    ]
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "color": "#265CC7",
+          "defaultChannel": "default",
+          "sounds": []
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "1cc515f9-d5b1-4404-81dd-94b3e7b4732e"
+      }
+    }
   }
 }

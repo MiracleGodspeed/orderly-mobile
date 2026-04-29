@@ -2,268 +2,581 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Image,
   StatusBar,
   Platform,
   TextInput,
   ActivityIndicator,
-} from 'react-native';
-import React, { useState } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import Ionicons from '@expo/vector-icons/Ionicons';
-import { useToast } from 'react-native-toast-notifications';
+  KeyboardAvoidingView,
+  ScrollView,
+  Pressable,
+  Image,
+  Alert,
+} from "react-native";
+import React, { useEffect, useMemo, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
+import { useToast } from "react-native-toast-notifications";
+import {
+  GoogleSignin,
+  statusCodes,
+} from "@react-native-google-signin/google-signin";
 
-import { SignupRequest } from '../api/auth/auth.types';
-import { signup } from '../api/auth/auth.api';
-import EyeIcon from '../../assets/icons/eye.svg';
-import EyeOffIcon from '../../assets/icons/eye-off.svg';
-
+import { RootStackParamList } from "../navigation/types";
+import { SignupRequest, Country } from "../api/auth/auth.types";
+import { signup, getCountries } from "../api/auth/auth.api";
+import { CountryPickerDrawer } from "../components/CountryPickerDrawer";
+import { AppImage } from "../components/AppImage";
+import { useAuth } from "../../context/AuthContext";
+import { useVendor } from "../../context/VendorContext";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
+const LOGO = require("../../assets/blackLogo.png");
+const GOOGLE_LOGO = require("../../assets/Google.png");
+
+const FALLBACK_COUNTRY: Country = {
+  id: 0,
+  name: "Nigeria",
+  flag: "🇳🇬",
+  code: "+234",
+  enabled: true,
+};
+
+const haptic = () => {
+  if (Platform.OS === "ios") {
+    Haptics.selectionAsync().catch(() => {});
+  }
+};
 
 export default function EmailSignUp() {
-   const toast = useToast();
+  const toast = useToast();
+  const navigation = useNavigation<ScreenNavigationProp>();
+  const { googleLogin } = useAuth();
+  const { fetchVendorData } = useVendor();
 
-    const navigation = useNavigation<ScreenNavigationProp>();
-      const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [countries, setCountries] = useState<Country[]>([]);
+  const [country, setCountry] = useState<Country>(FALLBACK_COUNTRY);
+  const [loadingCountries, setLoadingCountries] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [acceptMarketing, setAcceptMarketing] = useState(false)
-   const [loading, setLoading] = useState(false);
+  const [acceptMarketing, setAcceptMarketing] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [focusedField, setFocusedField] = useState<
+    "email" | "password" | "confirm" | "phone" | null
+  >(null);
 
-  const isFormValid = email.trim() !== '' && 
-                      password.trim() !== '' && 
-                      confirmPassword.trim() !== '';
-  
+  const handleGoogleSignIn = async () => {
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    setGoogleLoading(true);
+    try {
+      await GoogleSignin.hasPlayServices();
+      const userInfo = await GoogleSignin.signIn();
+      if (userInfo.data?.idToken) {
+        const payload = {
+          email: "",
+          idToken: userInfo.data.idToken,
+          role: 2,
+        };
+        const data = await googleLogin(payload);
+        await fetchVendorData();
+        navigation.replace(data?.userStatus === 2 ? "SetupStep1" : "Home");
+      } else {
+        Alert.alert("Error", "No ID token received from Google");
+      }
+    } catch (error: any) {
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+        // user cancelled — silent
+      } else if (error.code === statusCodes.IN_PROGRESS) {
+        // already in progress
+      } else if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        Alert.alert("Error", "Google Play Services not available");
+      } else {
+        console.error(error);
+        Alert.alert("Error", "Google Sign In failed: " + error.message);
+      }
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const list = await getCountries();
+        if (!alive) return;
+        setCountries(list);
+        const enabled = list.find((c) => c.enabled !== false);
+        if (enabled) setCountry(enabled);
+      } catch (err) {
+        // Stay silent — user can still proceed with the fallback country.
+        console.warn("Failed to load countries", err);
+      } finally {
+        if (alive) setLoadingCountries(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const passwordsMatch =
+    password.length > 0 &&
+    confirmPassword.length > 0 &&
+    password === confirmPassword;
+  const showMismatch =
+    confirmPassword.length > 0 && password.length > 0 && !passwordsMatch;
+  const passwordTooShort = password.length > 0 && password.length < 8;
+
+  const isFormValid = useMemo(() => {
+    return (
+      email.trim().length > 0 &&
+      password.length >= 8 &&
+      passwordsMatch &&
+      phone.trim().length >= 6
+    );
+  }, [email, password, passwordsMatch, phone]);
+
   const handleSignup = async () => {
-    if(password !== confirmPassword) {
-     toast.show( 'Passwords do not match', { type: 'danger' });
-
+    if (!passwordsMatch) {
+      toast.show("Passwords don't match", { type: "danger" });
       return;
     }
+    if (password.length < 8) {
+      toast.show("Password must be at least 8 characters", { type: "danger" });
+      return;
+    }
+
     setLoading(true);
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    }
 
     const payload: SignupRequest = {
-      email: email,
-      password: password,
-      otp: '',
+      email: email.trim().toLowerCase(),
+      password,
+      otp: "",
       skipVerificationForLater: false,
-    }
+      countryCode: country.code,
+      phone: phone.trim(),
+    };
+
     try {
-      const response = await signup(payload);
-       console.log('Signup response:', response);
-     toast.show( 'Check your email for the verification code', { type: 'normal' });
-
-      
-      navigation.navigate('OtpVerification', { email, password });
-
-
-    } catch(err) {
-       console.error('Signup error:', err);
-       let errorMessage = 'Signup failed. Please try again.';
-    
-    
-    if (err instanceof Error) {
-      errorMessage = err.message;
-    } else if (typeof err === 'string') {
-      errorMessage = err;
-    } else if (err && typeof err === 'object' && 'message' in err) {
-     
-      errorMessage = String((err as any).message);
-    }
-     toast.show( 'Sign Up Failed', { type: 'danger' });
-    
-   
+      await signup(payload);
+      toast.show("Check your email for the verification code", {
+        type: "normal",
+      });
+      navigation.navigate("OtpVerification", { email, password });
+    } catch (err) {
+      let message = "Sign up failed. Please try again.";
+      if (err instanceof Error) message = err.message;
+      else if (typeof err === "string") message = err;
+      toast.show(message, { type: "danger" });
     } finally {
-       setLoading(false);
-
+      setLoading(false);
     }
-
-   
-
-    console.log('Form submitted', { email, password, confirmPassword, acceptMarketing });
   };
-  
-    
+
   return (
-    <SafeAreaView className="flex-1 bg-white">
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <View className="pt-5 px-6">
-            <View className="flex-row items-center justify-center relative">
-        
-                <TouchableOpacity 
-                className="absolute left-0 p-2"
+    <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ flexGrow: 1, paddingBottom: 24 }}
+        >
+          {/* Top bar */}
+          <View className="px-6 pt-4">
+            <View className="flex-row items-center justify-between">
+              <TouchableOpacity
                 onPress={() => navigation.goBack()}
                 activeOpacity={0.7}
-                >
-                    <Ionicons name="arrow-back" size={24} color="#000" />
-                </TouchableOpacity>
-                <Text className="text-[20px] font-[500] text-gray-900"
-            style={{
-              fontFamily: 'PlusJakartaSans_600SemiBold',
-            }}
-                >
-                Create Your Orderly Account
-                </Text>
+                className="w-10 h-10 bg-white border border-gray-200 rounded-full items-center justify-center"
+              >
+                <Ionicons name="arrow-back" size={20} color="#111827" />
+              </TouchableOpacity>
+
+              <AppImage
+                source={LOGO}
+                contentFit="contain"
+                style={{ width: 96, height: 32 }}
+              />
+
+              <View className="w-10 h-10" />
             </View>
-            <Text className='px-3 text-[16px] font-[400] pt-8 text-[#6B7280]'>Start your stress free business management journey here.</Text>
-        </View>
-        <View className="flex-1 px-6 pt-8">
-            <View className="mb-6">
-                <Text className="text-[16px] font-[500] text-gray-900 mb-2">
-                    Email
-                </Text>
-                <TextInput
-                    className="border border-[#D1D5DB] bg-[#F9FAFB] rounded-lg px-4 py-3 text-[16px]"
-                    placeholder="Enter your email"
-                    placeholderTextColor="#9CA3AF"
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                />
+
+            <View className="mt-8">
+              <Text
+                className="text-3xl text-gray-900"
+                style={{
+                  fontFamily: "PlusJakartaSans_700Bold",
+                  letterSpacing: -0.5,
+                }}
+              >
+                Create your account
+              </Text>
+              <Text className="text-gray-500 text-[15px] mt-2 leading-[22px]">
+                Start your{" "}
+                <Text className="text-gray-900 font-bold">5-day free trial</Text>
+                . No card needed.
+              </Text>
             </View>
-            <View className="mb-6">
-          <Text className="text-[16px] font-[500] text-gray-900 mb-2">
-            Password
-          </Text>
-          <View className="relative">
-            <TextInput
-              className="border border-[#D1D5DB] bg-[#F9FAFB] rounded-lg px-4 py-3 pr-12 text-[16px]"
-              placeholder="Enter your password"
-              placeholderTextColor="#9CA3AF"
-              value={password}
-              onChangeText={setPassword}
-              secureTextEntry={!showPassword}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              className="absolute right-4 top-3"
-              onPress={() => setShowPassword(!showPassword)}
-              activeOpacity={0.7}
+          </View>
+
+          {/* Form card */}
+          <View className="flex-1 px-6 pt-6">
+            <View
+              className="bg-white rounded-3xl border border-gray-100 p-5"
+              style={{
+                shadowColor: "#0f172a",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 12,
+                elevation: 2,
+              }}
             >
-              {Platform.OS === 'ios' ? (
-              <Ionicons
-                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={24}
-                color="#6B7280"
-              />
-            ) : (
-              showPassword ? (
-                <EyeOffIcon
-                  width={24}
-                  height={24}
-                  fill="#6B7280"
-                />
-              ) : (
-                <EyeIcon
-                  width={24}
-                  height={24}
-                  fill="#6B7280"
-                />
-              )
-            )}
-                
-                      
-            </TouchableOpacity>
-          </View>
-        </View>
-        <View className="mb-6">
-          <Text className="text-[16px] font-[500] text-gray-900 mb-2">
-            Confirm Password
-          </Text>
-          <View className="relative">
-            <TextInput
-              className="border border-[#D1D5DB] bg-[#F9FAFB] rounded-lg px-4 py-3 pr-12 text-[16px]"
-              placeholder="Re-enter your password"
-              placeholderTextColor="#9CA3AF"
-              value={confirmPassword}
-              onChangeText={setConfirmPassword}
-              secureTextEntry={!showConfirmPassword}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <TouchableOpacity
-              className="absolute right-4 top-3"
-              onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-              activeOpacity={0.7}
-            > 
-            {Platform.OS === 'ios' ? (
-              <Ionicons
-                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                size={24}
-                color="#6B7280"
-              />
-            ) : (
-              showConfirmPassword ? (
-                <EyeOffIcon
-                  width={24}
-                  height={24}
-                  fill="#6B7280"
-                />
-              ) : (
-                <EyeIcon
-                  width={24}
-                  height={24}
-                  fill="#6B7280"
-                />
-              )
-            )}
-                                  
-            </TouchableOpacity>
-          </View>
-        </View>
-        <TouchableOpacity 
-          className="flex-row items-center mb-6 "
-          onPress={() => setAcceptMarketing(!acceptMarketing)}
-          activeOpacity={0.7}
-        >
-          <View className={`w-5 h-5 border-2 rounded mr-3 items-center justify-center ${
-            acceptMarketing ? 'bg-[#265CC7] border-[#265CC7]' : 'border-gray-400'
-          }`}>
-            {acceptMarketing && (
-              <Ionicons name="checkmark" size={16} color="#fff" />
-            )}
-          </View>
-          <Text className="text-[14px] text-[#6B7280]">
-            I'd like to receive marketing offers from Orderly
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          className={`py-4 rounded-full items-center justify-center ${
-            isFormValid ? 'bg-[#1A56DB]' : 'bg-[#E5E7EB]'
-          } flex-row`}
-          onPress={handleSignup}
-          disabled={!isFormValid || loading} // disable during loading
-          activeOpacity={0.8}
-        >
-          {loading && <ActivityIndicator color="#fff" size="small" className="mr-2" />}
-          <Text className={`text-lg font-semibold ${
-            isFormValid ? 'text-white' : 'text-[#1F2A37]'
-          }`}>
-            {loading ? 'Signing up...' : 'Next'}
-          </Text>
-        </TouchableOpacity>
+              {/* Google sign-in — OAuth-first, the modern signup pattern */}
+              <Pressable
+                onPress={handleGoogleSignIn}
+                disabled={googleLoading || loading}
+                className="h-12 rounded-2xl border border-gray-200 bg-white items-center justify-center flex-row gap-3 active:bg-gray-50 mb-4"
+              >
+                {googleLoading ? (
+                  <ActivityIndicator size="small" color="#374151" />
+                ) : (
+                  <Image
+                    source={GOOGLE_LOGO}
+                    style={{ width: 18, height: 18 }}
+                    resizeMode="contain"
+                  />
+                )}
+                <Text className="text-[14px] font-bold text-gray-800">
+                  {googleLoading ? "Signing in…" : "Continue with Google"}
+                </Text>
+              </Pressable>
 
-        <View className="mt-auto pb-6 mb-6fgh">
-          <Text className="text-[14px] text-center text-[#6B7280]">
-            By signing up, I agree to Orderly's{' '}
-            <Text className="text-[#265CC7]">Terms of Service</Text>
-            {' '}and{' '}
-            <Text className="text-[#265CC7]">Privacy Policy</Text>
-          </Text>
-        </View>
+              {/* OR divider */}
+              <View className="flex-row items-center mb-4">
+                <View className="flex-1 h-px bg-gray-200" />
+                <Text className="mx-3 text-[11px] font-extrabold text-gray-400 uppercase tracking-[1.5px]">
+                  Or sign up with email
+                </Text>
+                <View className="flex-1 h-px bg-gray-200" />
+              </View>
 
-        </View>
+              {/* Email */}
+              <Text className="text-[13px] font-semibold text-gray-700 mb-2">
+                Email
+              </Text>
+              <View
+                className={`flex-row items-center rounded-2xl border bg-gray-50 px-4 mb-4 ${
+                  focusedField === "email"
+                    ? "border-blue-600 bg-white"
+                    : "border-gray-200"
+                }`}
+              >
+                <Ionicons name="mail-outline" size={18} color="#9ca3af" />
+                <TextInput
+                  className="flex-1 ml-3 py-3 text-[15px] text-gray-900"
+                  placeholder="you@company.com"
+                  placeholderTextColor="#9CA3AF"
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onFocus={() => setFocusedField("email")}
+                  onBlur={() => setFocusedField(null)}
+                />
+              </View>
+
+              {/* Phone with country code */}
+              <Text className="text-[13px] font-semibold text-gray-700 mb-2">
+                Phone number
+              </Text>
+              <View
+                className={`flex-row items-stretch rounded-2xl border bg-gray-50 mb-4 overflow-hidden ${
+                  focusedField === "phone"
+                    ? "border-blue-600 bg-white"
+                    : "border-gray-200"
+                }`}
+              >
+                <Pressable
+                  onPress={() => {
+                    haptic();
+                    setPickerOpen(true);
+                  }}
+                  className="flex-row items-center gap-1.5 pl-3 pr-2 border-r border-gray-200 active:bg-gray-100"
+                >
+                  <Text style={{ fontSize: 18 }}>{country.flag ?? "🏳️"}</Text>
+                  <Text className="text-[13px] font-bold text-gray-900">
+                    {country.code}
+                  </Text>
+                  <Ionicons name="chevron-down" size={12} color="#9ca3af" />
+                </Pressable>
+                <View className="flex-1 flex-row items-center px-3">
+                  <Ionicons name="call-outline" size={16} color="#9ca3af" />
+                  <TextInput
+                    className="flex-1 ml-2 py-3 text-[15px] text-gray-900"
+                    placeholder="Phone number"
+                    placeholderTextColor="#9CA3AF"
+                    value={phone}
+                    onChangeText={(t) =>
+                      setPhone(t.replace(/[^\d]/g, ""))
+                    }
+                    keyboardType="phone-pad"
+                    onFocus={() => setFocusedField("phone")}
+                    onBlur={() => setFocusedField(null)}
+                  />
+                </View>
+              </View>
+
+              {/* Password */}
+              <Text className="text-[13px] font-semibold text-gray-700 mb-2">
+                Password
+              </Text>
+              <View
+                className={`flex-row items-center rounded-2xl border bg-gray-50 px-4 ${
+                  focusedField === "password"
+                    ? "border-blue-600 bg-white"
+                    : passwordTooShort
+                    ? "border-amber-300"
+                    : "border-gray-200"
+                }`}
+              >
+                <Ionicons name="lock-closed-outline" size={18} color="#9ca3af" />
+                <TextInput
+                  className="flex-1 ml-3 py-3 pr-2 text-[15px] text-gray-900"
+                  placeholder="Min. 8 characters"
+                  placeholderTextColor="#9CA3AF"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onFocus={() => setFocusedField("password")}
+                  onBlur={() => setFocusedField(null)}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  activeOpacity={0.7}
+                  className="w-10 h-10 items-center justify-center -mr-2"
+                  hitSlop={4}
+                >
+                  <Ionicons
+                    name={showPassword ? "eye-off-outline" : "eye-outline"}
+                    size={20}
+                    color="#6B7280"
+                  />
+                </TouchableOpacity>
+              </View>
+              {passwordTooShort ? (
+                <View className="flex-row items-center gap-1 mt-1.5 ml-1">
+                  <Ionicons name="alert-circle" size={12} color="#d97706" />
+                  <Text className="text-[11px] font-semibold text-amber-700">
+                    Use at least 8 characters
+                  </Text>
+                </View>
+              ) : (
+                <View className="h-2" />
+              )}
+
+              {/* Confirm password */}
+              <Text className="text-[13px] font-semibold text-gray-700 mb-2 mt-2">
+                Confirm password
+              </Text>
+              <View
+                className={`flex-row items-center rounded-2xl border bg-gray-50 px-4 ${
+                  showMismatch
+                    ? "border-rose-300"
+                    : focusedField === "confirm"
+                    ? "border-blue-600 bg-white"
+                    : "border-gray-200"
+                }`}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={showMismatch ? "#dc2626" : "#9ca3af"}
+                />
+                <TextInput
+                  className="flex-1 ml-3 py-3 pr-2 text-[15px] text-gray-900"
+                  placeholder="Re-enter your password"
+                  placeholderTextColor="#9CA3AF"
+                  value={confirmPassword}
+                  onChangeText={setConfirmPassword}
+                  secureTextEntry={!showConfirmPassword}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  onFocus={() => setFocusedField("confirm")}
+                  onBlur={() => setFocusedField(null)}
+                />
+                <TouchableOpacity
+                  onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                  activeOpacity={0.7}
+                  className="w-10 h-10 items-center justify-center -mr-2"
+                  hitSlop={4}
+                >
+                  <Ionicons
+                    name={
+                      showConfirmPassword ? "eye-off-outline" : "eye-outline"
+                    }
+                    size={20}
+                    color="#6B7280"
+                  />
+                </TouchableOpacity>
+              </View>
+              {showMismatch ? (
+                <View className="flex-row items-center gap-1 mt-1.5 ml-1">
+                  <Ionicons name="alert-circle" size={12} color="#dc2626" />
+                  <Text className="text-[11px] font-semibold text-rose-600">
+                    Passwords don't match
+                  </Text>
+                </View>
+              ) : passwordsMatch ? (
+                <View className="flex-row items-center gap-1 mt-1.5 ml-1">
+                  <Ionicons
+                    name="checkmark-circle"
+                    size={12}
+                    color="#059669"
+                  />
+                  <Text className="text-[11px] font-semibold text-emerald-700">
+                    Passwords match
+                  </Text>
+                </View>
+              ) : (
+                <View className="h-3" />
+              )}
+
+              {/* Marketing opt-in */}
+              <TouchableOpacity
+                onPress={() => {
+                  haptic();
+                  setAcceptMarketing(!acceptMarketing);
+                }}
+                activeOpacity={0.7}
+                className="flex-row items-start mt-4"
+                hitSlop={4}
+              >
+                <View
+                  className={`w-5 h-5 rounded-md border-2 mr-3 mt-0.5 items-center justify-center ${
+                    acceptMarketing
+                      ? "bg-blue-600 border-blue-600"
+                      : "border-gray-300"
+                  }`}
+                >
+                  {acceptMarketing && (
+                    <Ionicons name="checkmark" size={12} color="white" />
+                  )}
+                </View>
+                <Text className="text-[12.5px] text-gray-600 flex-1 leading-[18px]">
+                  Send me product updates and growth tips. No spam, unsubscribe
+                  anytime.
+                </Text>
+              </TouchableOpacity>
+
+              {/* Submit */}
+              <Pressable
+                onPress={handleSignup}
+                disabled={!isFormValid || loading}
+                className={`mt-5 h-12 rounded-2xl items-center justify-center flex-row gap-2 ${
+                  isFormValid && !loading ? "bg-blue-600" : "bg-gray-200"
+                }`}
+                style={{
+                  shadowColor: "#2563eb",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: isFormValid && !loading ? 0.25 : 0,
+                  shadowRadius: 8,
+                  elevation: isFormValid && !loading ? 4 : 0,
+                }}
+              >
+                {loading ? (
+                  <>
+                    <ActivityIndicator size="small" color="#fff" />
+                    <Text className="text-[15px] font-bold text-white">
+                      Creating account…
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text
+                      className={`text-[15px] font-bold ${
+                        isFormValid ? "text-white" : "text-gray-500"
+                      }`}
+                    >
+                      Create account
+                    </Text>
+                    {isFormValid && (
+                      <Ionicons name="arrow-forward" size={16} color="white" />
+                    )}
+                  </>
+                )}
+              </Pressable>
+
+              {/* Trust line */}
+              <View className="flex-row items-center justify-center gap-1.5 mt-4">
+                <Ionicons
+                  name="shield-checkmark-outline"
+                  size={13}
+                  color="#94a3b8"
+                />
+                <Text className="text-[11.5px] text-gray-500">
+                  Bank-grade security · SSL encrypted
+                </Text>
+              </View>
+            </View>
+
+            {/* Sign-in nudge */}
+            <View className="mt-6 items-center">
+              <Text className="text-[14px] text-gray-500">
+                Already have an account?{" "}
+                <Text
+                  className="text-blue-600 font-bold"
+                  onPress={() => navigation.navigate("Login")}
+                >
+                  Log in
+                </Text>
+              </Text>
+            </View>
+
+            {/* Terms */}
+            <Text className="text-[11.5px] text-center text-gray-500 mt-5 px-3 leading-[16px]">
+              By creating an account, you agree to Orderly's{" "}
+              <Text className="text-blue-600 font-semibold">Terms</Text> and{" "}
+              <Text className="text-blue-600 font-semibold">
+                Privacy Policy
+              </Text>
+              .
+            </Text>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <CountryPickerDrawer
+        visible={pickerOpen}
+        onClose={() => setPickerOpen(false)}
+        countries={countries.length > 0 ? countries : [FALLBACK_COUNTRY]}
+        loading={loadingCountries && countries.length === 0}
+        selectedCode={country.code}
+        onSelect={(c) => setCountry(c)}
+      />
     </SafeAreaView>
-    
-  )
+  );
 }

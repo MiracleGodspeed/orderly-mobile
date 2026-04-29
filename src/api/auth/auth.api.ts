@@ -1,5 +1,13 @@
 import { apiClient } from "../client";
-import { LoginResponse, LoginRequest, SignupRequest, SignupResponseComplete, SignupResponseInitial, OtpVerificationRequest } from "./auth.types";
+import {
+  LoginResponse,
+  LoginRequest,
+  SignupRequest,
+  SignupResponseComplete,
+  SignupResponseInitial,
+  OtpVerificationRequest,
+  Country,
+} from "./auth.types";
 
 const handleApiResponse = <T>(response: { data: any }): T => {
   if (!response.data) {
@@ -52,6 +60,15 @@ export const verifyOtp = async (
 
  
   return handleApiResponse<SignupResponseComplete>(response);
+};
+
+export const getCountries = async (): Promise<Country[]> => {
+  const response = await apiClient.get<{
+    message: string;
+    code: string;
+    data: Country[];
+  }>("/countries/get-all", { validateStatus: () => true });
+  return handleApiResponse<Country[]>(response);
 };
 
 export const googleLogin = async (idToken: any): Promise<LoginResponse> => {

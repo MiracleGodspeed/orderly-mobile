@@ -1,22 +1,22 @@
-import {
-  Modal,
-  View,
-  Text,
-  Pressable,
-  TextInput,
-  ScrollView,
-  ActivityIndicator,
-} from "react-native";
+import { View, Text, Pressable, TextInput, ScrollView } from "react-native";
 import { useState, useEffect } from "react";
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import AntDesign from '@expo/vector-icons/AntDesign';
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useVendor, WorkingHours } from "../../context/VendorContext";
+import { BottomSheet, BottomSheetFooter } from "./BottomSheet";
 import BusinessHoursModal from "./BusinessHoursModal";
 
 interface Props {
   visible: boolean;
   onClose: () => void;
-  initialContact?: string; 
+  initialContact?: string;
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mb-2">
+      {children}
+    </Text>
+  );
 }
 
 export default function ContactUsSectionModal({ visible, onClose }: Props) {
@@ -44,7 +44,7 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
       await updateVendorSettings({
         phone: contactNumber,
         address: businessAddress,
-        workingDaysHours: workingHours
+        workingDaysHours: workingHours,
       });
       onClose();
     } catch (e) {
@@ -56,92 +56,118 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
     setWorkingHours(updatedHours);
   };
 
+  const hoursConfigured = !!workingHours && workingHours.length > 0;
+
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      animationType="slide"
-      transparent
-      statusBarTranslucent
+      onClose={onClose}
+      title="Contact Information"
+      subtitle="How customers reach you and when you're open"
+      height="88%"
     >
-      <View className="flex-1 bg-black/40 justify-end">
-        <View className="bg-white rounded-t-3xl h-[85%]">
-
-          <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
-            <Text className="text-base font-semibold">Contact Information</Text>
-            <Pressable onPress={onClose}>
-              <MaterialIcons name="close" size={24} color="#000" />
-            </Pressable>
-          </View>
-
-          <ScrollView className="flex-1 px-4 pt-6">
-
-            <Text className="text-sm text-gray-700 mb-2">WhatsApp Number</Text>
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+      >
+        <View className="mt-4">
+          <FieldLabel>WhatsApp Number</FieldLabel>
+          <View className="flex-row items-center bg-white border border-gray-200 rounded-2xl px-4 h-12 mb-5">
+            <Ionicons name="logo-whatsapp" size={18} color="#16a34a" />
             <TextInput
               value={contactNumber}
               onChangeText={setContactNumber}
-              className="border border-gray-300 rounded-lg px-3 py-3 mb-4 text-base bg-white"
+              className="flex-1 ml-3 text-[15px] text-gray-900 h-full"
               placeholder="08123456789"
+              placeholderTextColor="#9ca3af"
               keyboardType="phone-pad"
             />
+          </View>
 
-            <Text className="text-sm text-gray-700 mb-2">Email Address</Text>
-            <View className="border border-gray-200 bg-gray-100 rounded-lg px-3 py-3 mb-4">
-              <Text className="text-base text-gray-500">{email}</Text>
+          <FieldLabel>Email Address</FieldLabel>
+          <View className="flex-row items-center bg-gray-50 border border-gray-100 rounded-2xl px-4 h-12 mb-1">
+            <Ionicons name="mail-outline" size={18} color="#6b7280" />
+            <Text className="flex-1 ml-3 text-[15px] text-gray-500" numberOfLines={1}>
+              {email || "—"}
+            </Text>
+            <Ionicons name="lock-closed-outline" size={14} color="#9ca3af" />
+          </View>
+          <Text className="text-[11px] text-gray-400 mb-5 ml-1">
+            Your account email — change it from Personal Details.
+          </Text>
+
+          <FieldLabel>Business Address</FieldLabel>
+          <View className="bg-white border border-gray-200 rounded-2xl px-4 py-3 mb-5">
+            <View className="flex-row items-start">
+              <Ionicons
+                name="location-outline"
+                size={18}
+                color="#6b7280"
+                style={{ marginTop: 2 }}
+              />
+              <TextInput
+                value={businessAddress}
+                onChangeText={setBusinessAddress}
+                className="flex-1 ml-3 text-[15px] text-gray-900"
+                style={{ minHeight: 60, textAlignVertical: "top" }}
+                placeholder="Street, area, city, state"
+                placeholderTextColor="#9ca3af"
+                multiline
+              />
             </View>
+          </View>
 
-            <Text className="text-sm text-gray-700 mb-2">Business Address</Text>
-            <TextInput
-              value={businessAddress}
-              onChangeText={setBusinessAddress}
-              className="border border-gray-300 rounded-lg px-3 py-3 mb-6 text-base bg-white min-h-[80px]"
-              placeholder="Enter business address"
-              multiline
-              textAlignVertical="top"
-            />
-
-            <View className="mt-2">
-              <View className="flex-row items-center justify-between mb-2">
-                <View className="flex-row items-center gap-2">
-                  <AntDesign name="clock-circle" size={18} color="#FF6B6B" />
-                  <Text className="text-base font-medium text-gray-900">Business Hours</Text>
-                </View>
-                <Pressable
-                  onPress={() => setShowHoursModal(true)}
-                  className="border border-red-100 bg-red-50 px-3 py-1.5 rounded-lg flex-row items-center"
-                >
-                  <MaterialIcons name="edit" size={14} color="#FF6B6B" style={{ marginRight: 4 }} />
-                  <Text className="text-[#FF6B6B] text-xs font-medium">Manage Hours</Text>
-                </Pressable>
+          {/* Business Hours card */}
+          <Pressable
+            onPress={() => setShowHoursModal(true)}
+            className="bg-white border border-gray-100 rounded-2xl px-4 py-4 flex-row items-center"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.04,
+              shadowRadius: 4,
+              elevation: 1,
+            }}
+          >
+            <View className="w-11 h-11 rounded-xl bg-amber-50 items-center justify-center mr-3">
+              <Ionicons name="time-outline" size={20} color="#d97706" />
+            </View>
+            <View className="flex-1">
+              <View className="flex-row items-center gap-2 mb-0.5">
+                <Text className="text-[14px] font-bold text-gray-900">
+                  Business Hours
+                </Text>
+                {hoursConfigured ? (
+                  <View className="flex-row items-center gap-1 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
+                    <View className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <Text className="text-[10px] font-bold text-emerald-700">
+                      SET
+                    </Text>
+                  </View>
+                ) : (
+                  <View className="flex-row items-center gap-1 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded-full">
+                    <View className="w-1.5 h-1.5 rounded-full bg-gray-400" />
+                    <Text className="text-[10px] font-bold text-gray-500">
+                      EMPTY
+                    </Text>
+                  </View>
+                )}
               </View>
-              <Text className="text-gray-400 text-xs mt-1">
-                Set your store's opening and closing hours.
+              <Text className="text-[12px] text-gray-500">
+                Set opening and closing times for each day
               </Text>
             </View>
-
-          </ScrollView>
-
-          <View className="flex-row items-center px-4 py-4 border-t border-gray-200 mb-6 bg-white">
-            <Pressable
-              onPress={onClose}
-              className="flex-1 py-4 items-center justify-center rounded-full border border-gray-300 mr-3"
-            >
-              <Text className="text-gray-900 font-medium text-base">Cancel</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={handleSave}
-              disabled={loading}
-              className={`flex-1 py-4 items-center justify-center rounded-full ${loading ? 'bg-blue-300' : 'bg-blue-600'}`}
-            >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text className="text-white font-medium text-base">Save Changes</Text>
-              )}
-            </Pressable>
-          </View>
+            <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
+          </Pressable>
         </View>
-      </View>
+      </ScrollView>
+
+      <BottomSheetFooter
+        onCancel={onClose}
+        onSave={handleSave}
+        loading={loading}
+      />
 
       <BusinessHoursModal
         visible={showHoursModal}
@@ -149,6 +175,6 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
         initialHours={workingHours}
         onSave={handleWorkingHoursSave}
       />
-    </Modal>
+    </BottomSheet>
   );
 }

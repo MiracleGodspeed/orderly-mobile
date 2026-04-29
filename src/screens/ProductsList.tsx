@@ -1,105 +1,173 @@
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
-  StatusBar,
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
   TextInput,
-  Image,
-  ActivityIndicator,
-  TouchableOpacity,
-  Modal
+  RefreshControl,
+  Platform,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
-import { useState, useEffect, useCallback, useRef } from "react";
-import { SafeAreaView } from 'react-native-safe-area-context';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useNavigation } from '@react-navigation/native'; 
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import AddProductModal from "../components/AddProductModal";
 import ProductDetailsModal from "../components/ProductDetailsModal";
-import Ionicons from '@expo/vector-icons/Ionicons';
-import AntDesign from '@expo/vector-icons/AntDesign';
-import { getProducts, deleteProduct } from '../../src/api/vendor/vendor.api';
-import { Product } from '../../src/api/vendor/vendor.types';
-import { useToast } from 'react-native-toast-notifications';
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { deleteProduct } from "../../src/api/vendor/vendor.api";
+import { Product } from "../../src/api/vendor/vendor.types";
+import { useToast } from "react-native-toast-notifications";
+import * as Haptics from "expo-haptics";
 
-import SkeletonPlaceholder from "react-native-skeleton-placeholder";
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  useInfiniteProducts,
+  useInvalidateInfiniteProducts,
+} from "../hooks/useInfiniteProducts";
+import { useInvalidateProducts } from "../hooks/useProducts";
+import { AppImage, prefetchImage } from "../components/AppImage";
+import { ProductGridSkeleton } from "../components/ProductCardSkeleton";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { EndOfList } from "../components/EndOfList";
+import { ListSearchBar } from "../components/ListSearchBar";
+import { BottomSheet, BottomSheetFooter } from "../components/BottomSheet";
 
-const PAGE_SIZE = 8;
+type FilterType = "all" | "active" | "drafts";
 
-type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+interface ProductCardProps {
+  product: Product;
+  onPress: () => void;
+}
+
+function ProductCard({ product, onPress }: ProductCardProps) {
+  const stock = product.stock ?? 0;
+  const stockStyle =
+    stock === 0
+      ? { dot: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-50" }
+      : stock < 10
+      ? { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50" }
+      : { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50" };
+
+  const stockLabel =
+    stock === 0
+      ? "Out of stock"
+      : stock < 10
+      ? `Low · ${stock} left`
+      : `${stock} in stock`;
+
+  const isDraft = product.status !== 1;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className="bg-white rounded-3xl mb-4 overflow-hidden border border-gray-100"
+      style={{
+        width: "48.5%",
+        shadowColor: "#0f172a",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2,
+      }}
+    >
+      <View className="aspect-square bg-gray-50 relative">
+        {product.image ? (
+          <AppImage
+            uri={product.image}
+            style={{ width: "100%", height: "100%" }}
+          />
+        ) : (
+          <View className="w-full h-full items-center justify-center">
+            <Ionicons name="image-outline" size={28} color="#cbd5e1" />
+          </View>
+        )}
+
+        {isDraft && (
+          <View className="absolute top-2.5 left-2.5 bg-gray-900/85 px-2 py-1 rounded-full">
+            <Text className="text-white text-[10px] font-bold tracking-wider uppercase">
+              Draft
+            </Text>
+          </View>
+        )}
+      </View>
+
+      <View className="p-3.5">
+        <Text
+          className="text-gray-900 font-semibold text-[14px] leading-snug mb-2"
+          numberOfLines={2}
+          style={{ minHeight: 36 }}
+        >
+          {product.title}
+        </Text>
+
+        <Text className="text-gray-900 font-extrabold text-[17px] tracking-tight">
+          ₦{(product.price ?? 0).toLocaleString()}
+        </Text>
+
+        <View className="h-px bg-gray-100 my-3" />
+
+        <View
+          className={`flex-row items-center gap-1.5 self-start px-2 py-1 rounded-md ${stockStyle.bg}`}
+        >
+          <View className={`w-1.5 h-1.5 rounded-full ${stockStyle.dot}`} />
+          <Text className={`text-[11px] font-bold ${stockStyle.text}`}>
+            {stockLabel}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
 
 export default function ProductsList() {
-   const toast = useToast();
-  const navigation = useNavigation<ScreenNavigationProp>();
-  
-  // STATES
-  const [activeFilter, setActiveFilter] = useState<'all' | 'active' | 'drafts'>('all');
-  const [searchQuery, setSearchQuery] = useState('');
+  const toast = useToast();
+
+  const [activeFilter, setActiveFilter] = useState<FilterType>("all");
+  // ListSearchBar owns the visible text + debounce; we only see the settled
+  // value, so the parent doesn't re-render on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+
   const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [showProductDetailsModal, setShowProductDetailsModal] = useState(false);
-  const [products, setProducts] = useState<Product[]>([]);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [searching, setSearching] = useState(false);
-  const [totalCount, setTotalCount] = useState(0);
-  const [totalPages, setTotalPages] = useState(0);
-  const [currentPage, setCurrentPage] = useState(1);
   const [configureFeeModalOpen, setConfigureFeeModalOpen] = useState(false);
-  const [selectedFeeOption, setSelectedFeeOption] = useState<'vendor' | 'customer' | 'included'>('customer');
+  const [selectedFeeOption, setSelectedFeeOption] = useState<
+    "vendor" | "customer" | "included"
+  >("customer");
   const [applyDiscountModalOpen, setApplyDiscountModalOpen] = useState(false);
-  const [discountValue, setDiscountValue] = useState('');
-  
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [discountValue, setDiscountValue] = useState("");
 
-  const fetchProducts = async (pageIndex: number = 1, search: string = '', isSearching: boolean = false) => {
-    try {
-      if (isSearching) {
-        setSearching(true);
-      } else {
-        setLoading(true);
-      }
-      
-      console.log(`fetching products: page=${pageIndex}, search="${search}"`);
-      const response = await getProducts({
-        pageIndex,
-        pageSize: PAGE_SIZE,
-        search: search.trim() || undefined,
-      });
-      
-      console.log('API getProducts response:', {
-        count: response.data.length,
-        totalCount: response.totalCount,
-        totalPages: response.totalPages,
-        pageIndex: response.pageIndex
-      });
-      
-      const items = response.data.length > PAGE_SIZE ? response.data.slice(0, PAGE_SIZE) : response.data;
-      setProducts(items);
-      setTotalCount(response.totalCount);
-      
-      const calculatedPages = response.totalPages > 0 
-        ? response.totalPages 
-        : Math.ceil(response.totalCount / PAGE_SIZE);
-      
-      setTotalPages(calculatedPages);
-      setCurrentPage(pageIndex);
-      
-      if (!search.trim()) {
-        await AsyncStorage.setItem('products_cache', JSON.stringify(response));
-      }
-    } catch (error) {
-      console.error('Error fetching products:', error);
-      toast.show(error instanceof Error ? error.message : 'Failed to fetch products', { type: 'danger' });
-    } finally {
-      setLoading(false);
-      setSearching(false);
-    }
-  };
+  const invalidateInfinite = useInvalidateInfiniteProducts();
+  const invalidatePaged = useInvalidateProducts();
+  const invalidateAll = useCallback(() => {
+    invalidateInfinite();
+    invalidatePaged();
+  }, [invalidateInfinite, invalidatePaged]);
+
+  const {
+    data,
+    isPending,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = useInfiniteProducts({ search: debouncedSearch });
+
+  const allProducts: Product[] = useMemo(
+    () => data?.pages.flatMap((p) => p.data) ?? [],
+    [data]
+  );
+  const totalCount = data?.pages[0]?.totalCount ?? 0;
+
+  // Pre-warm the disk cache for products the user might tap into next.
+  useEffect(() => {
+    allProducts.forEach((p) => prefetchImage(p.image));
+  }, [allProducts]);
 
   const handleProductClick = (product: Product) => {
+    if (Platform.OS === "ios") {
+      Haptics.selectionAsync().catch(() => {});
+    }
     setSelectedProduct(product);
     setShowProductDetailsModal(true);
   };
@@ -111,444 +179,655 @@ export default function ProductsList() {
 
   const handleDeleteProduct = async () => {
     if (!selectedProduct) return;
-
     try {
       await deleteProduct(selectedProduct.id);
-      toast.show('Product deleted successfully', { type: 'success' });
+      toast.show("Product deleted successfully", { type: "success" });
       setShowProductDetailsModal(false);
       setSelectedProduct(null);
-      await fetchProducts(currentPage, searchQuery);
+      invalidateAll();
     } catch (error) {
-      console.error('Error deleting product:', error);
-      toast.show(error instanceof Error ? error.message : 'Failed to delete product', { type: 'danger' });
+      console.error("Error deleting product:", error);
+      toast.show(
+        error instanceof Error ? error.message : "Failed to delete product",
+        { type: "danger" }
+      );
     }
   };
 
-  const handleSearchChange = (text: string) => {
-    setSearchQuery(text);
-    
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-    
-    searchTimeoutRef.current = setTimeout(() => {
-      setCurrentPage(1);
-      fetchProducts(1, text, true);
-    }, 500);
-  };
+  const filteredProducts = useMemo(() => {
+    if (activeFilter === "all") return allProducts;
+    return allProducts.filter((product) => {
+      if (activeFilter === "active") return product.status === 1;
+      if (activeFilter === "drafts") return product.status !== 1;
+      return true;
+    });
+  }, [allProducts, activeFilter]);
 
-  const handlePageChange = (page: number) => {
-    if (page >= 1 && page <= totalPages && page !== currentPage) {
-      fetchProducts(page, searchQuery);
-    }
-  };
+  const activeCount = useMemo(
+    () => allProducts.filter((p) => p.status === 1).length,
+    [allProducts]
+  );
+  const draftCount = useMemo(
+    () => allProducts.filter((p) => p.status !== 1).length,
+    [allProducts]
+  );
 
-  const openFeeModal = () => setConfigureFeeModalOpen(true);
-  const closeFeeModal = () => setConfigureFeeModalOpen(false);
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
+  const handleFilterTap = (next: FilterType) => {
+    if (Platform.OS === "ios") {
+      Haptics.selectionAsync().catch(() => {});
+    }
+    setActiveFilter(next);
+  };
 
   const handleSaveFeeConfiguration = () => {
-    console.log('Saving fee configuration:', selectedFeeOption);
-     toast.show('fee configuration  saved!!!', { type: 'success' });
-    closeFeeModal();
+    toast.show("Fee configuration saved", { type: "success" });
+    setConfigureFeeModalOpen(false);
   };
 
-  useEffect(() => {
-    fetchProducts(1, '');
-    
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
+  // Infinite scroll trigger via onScroll instead of FlatList — keeps the
+  // TextInput in the header from being unmounted during data updates.
+  const fetchingRef = useRef(false);
+  fetchingRef.current = isFetchingNextPage;
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      if (distanceFromBottom < 400 && hasNextPage && !fetchingRef.current) {
+        fetchNextPage();
       }
-    };
-  }, []);
+    },
+    [hasNextPage, fetchNextPage]
+  );
 
-  // Filter products by status only (search is handled by API)
-  const filteredProducts = products.filter((product) => {
-    if (activeFilter === 'active' && product.status !== 1) return false;
-    if (activeFilter === 'drafts' && product.status === 1) return false;
-    return true;
-  });
+  const showInitialSkeleton = isPending && !data;
 
-  console.log('Rendering ProductsList:', {
-    productsCount: products.length,
-    filteredCount: filteredProducts.length,
-    currentPage,
-    totalPages,
-    totalCount
-  });
-
-  const getStockDisplay = (product: Product) => {
-    if (product.stock === 0) {
-      return { text: `Out of Stock (${product.stock} units)`, color: 'text-red-600' };
-    } else if (product.stock < 10) {
-      return { text: `Low Stock (${product.stock} units)`, color: 'text-orange-600' };
-    } else {
-      return { text: `In Stock (${product.stock} units)`, color: 'text-green-600' };
-    }
-  };
-
-  const activeProductsCount = products.filter(p => p.status === 1).length;
-  const inactiveCount = products.filter(p => p.status !== 1).length;
-
-  return (
-    <SafeAreaView className="bg-gray-50 flex-1" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
-      
-      {/* Header */}
-      <View className="px-5 py-4 bg-white border-b border-gray-100 flex-row items-center justify-between sticky top-0 z-10">
-        <View className="flex-row items-center">
-          <Pressable onPress={() => navigation.goBack()} className="mr-4 p-2 -ml-2 rounded-full active:bg-gray-100">
-            <MaterialIcons name="arrow-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-xl font-bold text-gray-900">Products</Text>
-        </View>
-        <View className="flex-row gap-3">
-             <Pressable onPress={openFeeModal} className="p-2 rounded-full bg-gray-50 border border-gray-200">
-                 <MaterialIcons name="settings" size={20} color="#374151" />
-             </Pressable>
+  // Hero metric scrolls with the list — pure summary content.
+  const HeroCard = (
+    <View
+      className="mx-5 mt-4 mb-4 bg-white rounded-3xl px-5 py-6 border border-gray-100"
+      style={{
+        shadowColor: "#0f172a",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View className="flex-row items-center justify-between mb-1">
+        <Text className="text-[12px] font-semibold text-gray-500 uppercase tracking-[1.2px]">
+          Total Products
+        </Text>
+        <View className="bg-blue-50 w-9 h-9 rounded-full items-center justify-center">
+          <Ionicons name="cube-outline" size={18} color="#2563eb" />
         </View>
       </View>
 
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        {/* Stats Overview */}
-        <View className="flex-row px-5 py-5 gap-3">
-           <View className="flex-1 bg-blue-600 rounded-xl p-3 shadow-sm">
-              <View className="flex-row justify-between items-start mb-3">
-                 <View className="bg-blue-500/30 p-1.5 rounded-lg">
-                    <Ionicons name="cube-outline" size={16} color="white" />
-                 </View>
-              </View>
-              <Text className="text-2xl font-bold text-white mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{totalCount}</Text>
-              <Text className="text-blue-100 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Total</Text>
-           </View>
+      <Text className="text-[44px] leading-[52px] font-extrabold text-gray-900 tracking-tight">
+        {totalCount}
+      </Text>
+      <Text className="text-[13px] text-gray-500 mt-1">
+        across your catalog
+      </Text>
 
-           <View className="flex-1 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <View className="flex-row justify-between items-start mb-3">
-                 <View className="bg-green-100 p-1.5 rounded-lg">
-                    <Ionicons name="radio-button-on" size={16} color="#16a34a" />
-                 </View>
-              </View>
-              <Text className="text-2xl font-bold text-gray-900 mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{activeProductsCount}</Text>
-              <Text className="text-gray-500 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Active</Text>
-           </View>
+      <View className="h-px bg-gray-100 my-4" />
 
-           <View className="flex-1 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <View className="flex-row justify-between items-start mb-3">
-                 <View className="bg-gray-100 p-1.5 rounded-lg">
-                    <Ionicons name="pause-circle-outline" size={16} color="#4b5563" />
-                 </View>
-              </View>
-              <Text className="text-2xl font-bold text-gray-900 mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{inactiveCount}</Text>
-              <Text className="text-gray-500 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Drafts</Text>
-           </View>
+      <View className="flex-row items-center gap-5">
+        <View className="flex-row items-center gap-2">
+          <View className="w-2 h-2 rounded-full bg-emerald-500" />
+          <Text className="text-[14px] font-bold text-gray-900">
+            {activeCount}
+          </Text>
+          <Text className="text-[13px] text-gray-500">Active</Text>
         </View>
+        <View className="flex-row items-center gap-2">
+          <View className="w-2 h-2 rounded-full bg-gray-400" />
+          <Text className="text-[14px] font-bold text-gray-900">
+            {draftCount}
+          </Text>
+          <Text className="text-[13px] text-gray-500">Drafts</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  // Search input + filter chips render inside the scrolling list header.
+  // The keyboard-dismiss problem is solved by ListSearchBar holding its own
+  // text state — the parent only re-renders when the *debounced* value
+  // settles, and ListSearchBar is React.memo'd so it never re-mounts.
+  const SearchAndFilter = (
+    <View>
+      <View className="px-5 mb-3">
+        <View className="flex-row items-center gap-3">
+          <View className="flex-1">
+            <ListSearchBar
+              placeholder="Search products..."
+              onSearchChange={setDebouncedSearch}
+            />
+          </View>
+          <Pressable
+            className="w-12 h-12 bg-white border border-gray-200 rounded-2xl items-center justify-center"
+            onPress={() => setApplyDiscountModalOpen(true)}
+          >
+            <MaterialIcons name="local-offer" size={20} color="#374151" />
+          </Pressable>
+        </View>
+      </View>
+
+      <View className="mb-4">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+          keyboardShouldPersistTaps="always"
+        >
+          {(
+            [
+              { key: "all", label: "All", count: allProducts.length },
+              { key: "active", label: "Active", count: activeCount },
+              { key: "drafts", label: "Drafts", count: draftCount },
+            ] as const
+          ).map((filter) => {
+            const isActive = activeFilter === filter.key;
+            return (
+              <Pressable
+                key={filter.key}
+                onPress={() => handleFilterTap(filter.key)}
+                className={`flex-row items-center gap-2 px-4 h-9 rounded-full border ${
+                  isActive
+                    ? "bg-gray-900 border-gray-900"
+                    : "bg-white border-gray-200"
+                }`}
+              >
+                <Text
+                  className={`text-[13px] font-semibold ${
+                    isActive ? "text-white" : "text-gray-700"
+                  }`}
+                >
+                  {filter.label}
+                </Text>
+                <View
+                  className={`px-1.5 rounded-full ${
+                    isActive ? "bg-white/20" : "bg-gray-100"
+                  }`}
+                >
+                  <Text
+                    className={`text-[11px] font-bold ${
+                      isActive ? "text-white" : "text-gray-600"
+                    }`}
+                  >
+                    {filter.count}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+    </View>
+  );
+
+  const EmptyState = (
+    <View className="items-center px-8 py-16">
+      <View className="w-20 h-20 bg-blue-50 rounded-2xl items-center justify-center mb-5">
+        <Ionicons name="cube-outline" size={36} color="#2563eb" />
+      </View>
+      <Text className="text-gray-900 text-lg font-bold mb-1.5">
+        {debouncedSearch ? "No matches" : "No products yet"}
+      </Text>
+      <Text className="text-gray-500 text-center text-sm leading-5 max-w-xs mb-5">
+        {debouncedSearch
+          ? "Try a different search term."
+          : "Start building your catalog by adding your first product."}
+      </Text>
+      {!debouncedSearch && (
+        <Pressable
+          onPress={() => {
+            if (Platform.OS === "ios") {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
+                () => {}
+              );
+            }
+            setShowAddProductModal(true);
+          }}
+          className="bg-blue-600 px-6 py-3 rounded-full flex-row items-center gap-2"
+        >
+          <Ionicons name="add" size={18} color="white" />
+          <Text className="text-white font-bold text-sm">Add product</Text>
+        </Pressable>
+      )}
+    </View>
+  );
+
+  return (
+    <View className="bg-gray-50 flex-1">
+      <ScreenHeader
+        title="Products"
+        right={
+          <Pressable
+            onPress={() => setConfigureFeeModalOpen(true)}
+            className="p-2 rounded-full bg-gray-50 border border-gray-200"
+            hitSlop={6}
+          >
+            <MaterialIcons name="settings" size={20} color="#374151" />
+          </Pressable>
+        }
+      />
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 120 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        onScroll={handleScroll}
+        scrollEventThrottle={400}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onPullRefresh}
+            tintColor="#2563eb"
+          />
+        }
+      >
+        {HeroCard}
+        {SearchAndFilter}
 
         <View className="px-5">
-            {/* Action Bar & Search */}
-            <View className="flex-row gap-3 mb-6">
-                <View className="flex-1 flex-row items-center bg-white border border-gray-200 rounded-xl px-4 h-12 shadow-sm">
-                    {searching ? (
-                        <ActivityIndicator size="small" color="#3b82f6" />
-                    ) : (
-                        <Ionicons name="search-outline" size={20} color="#9ca3af" />
-                    )}
-                    <TextInput
-                        value={searchQuery}
-                        onChangeText={handleSearchChange}
-                        className="flex-1 ml-3 text-base text-gray-900 h-full"
-                        placeholder="Search products..."
-                        placeholderTextColor="#9ca3af"
-                    />
-                </View>
-                 <Pressable 
-                    className="w-12 h-12 bg-white border border-gray-200 rounded-xl items-center justify-center shadow-sm"
-                    onPress={() => setApplyDiscountModalOpen(true)}
-                 >
-                    <MaterialIcons name="local-offer" size={20} color="#374151" />
-                 </Pressable>
-            </View>
-
-          {loading ? (
-            <View className="items-center py-20 px-6">
-               <ActivityIndicator size="large" color="#2563eb" />
-               <Text className="text-gray-400 text-sm mt-4 font-medium">Loading products...</Text>
-            </View>
+          {showInitialSkeleton ? (
+            <ProductGridSkeleton count={6} />
           ) : filteredProducts.length === 0 ? (
-            <View className="items-center py-20 px-6">
-               <View className="w-20 h-20 bg-gray-100 rounded-full items-center justify-center mb-4">
-                  <Ionicons name="cube-outline" size={40} color="#9ca3af" />
-               </View>
-              <Text className="text-gray-900 text-lg font-semibold mb-2">No products found</Text>
-              <Text className="text-gray-500 text-center text-sm max-w-xs">
-                {searchQuery ? "Try adjusting your search terms" : "Start building your inventory by adding your first product"}
-              </Text>
-            </View>
+            EmptyState
           ) : (
-            <>
-              <View className="flex-row flex-wrap justify-between px-1">
-                {filteredProducts.slice(0, PAGE_SIZE).map((product) => {
-                  const isLowStock = product.stock < 10;
-                  
+            <View className="flex-row flex-wrap justify-between">
+              {filteredProducts.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  onPress={() => handleProductClick(product)}
+                />
+              ))}
+            </View>
+          )}
+
+          <EndOfList
+            isFetchingMore={isFetchingNextPage}
+            hasNextPage={!!hasNextPage}
+            itemCount={filteredProducts.length}
+          />
+        </View>
+      </ScrollView>
+
+      {/* FAB */}
+      <View className="absolute bottom-8 right-6">
+        <Pressable
+          onPress={() => {
+            if (Platform.OS === "ios") {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
+                () => {}
+              );
+            }
+            setShowAddProductModal(true);
+          }}
+          className="bg-blue-600 w-14 h-14 rounded-full items-center justify-center"
+          style={{
+            shadowColor: "#2563eb",
+            shadowOffset: { width: 0, height: 6 },
+            shadowOpacity: 0.35,
+            shadowRadius: 12,
+            elevation: 8,
+          }}
+        >
+          <MaterialIcons name="add" size={28} color="white" />
+        </Pressable>
+      </View>
+
+      <AddProductModal
+        visible={showAddProductModal}
+        onClose={() => {
+          setShowAddProductModal(false);
+          setSelectedProduct(null);
+        }}
+        mode={selectedProduct ? "edit" : "add"}
+        productData={selectedProduct}
+        onProductAdded={() => invalidateAll()}
+      />
+
+   
+
+      {/* Fee Configuration */}
+      <BottomSheet
+        visible={configureFeeModalOpen}
+        onClose={() => setConfigureFeeModalOpen(false)}
+        title="Transaction Fee"
+        subtitle="Decide who covers the platform fee on each order"
+        height="78%"
+      >
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+        >
+          <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mt-4 mb-3">
+            Who pays the fee?
+          </Text>
+
+          {(
+            [
+              {
+                key: "vendor",
+                title: "I'll cover it",
+                description: "Deducted from your earnings on each sale",
+                example: "On a ₦10,000 order, you receive ₦9,850",
+                icon: "storefront-outline" as const,
+                tone: { bg: "bg-blue-50", iconColor: "#2563eb" },
+              },
+              {
+                key: "customer",
+                title: "Customer covers it",
+                description: "Added on top at checkout. You earn the full price.",
+                example: "Customer pays ₦10,150, you earn ₦10,000",
+                icon: "person-outline" as const,
+                tone: { bg: "bg-emerald-50", iconColor: "#059669" },
+                badge: "Most popular",
+              },
+              {
+                key: "included",
+                title: "Built into the price",
+                description: "Already factored into your listed product prices",
+                example: "Listed at ₦10,000, you receive ₦9,850",
+                icon: "pricetag-outline" as const,
+                tone: { bg: "bg-violet-50", iconColor: "#7c3aed" },
+              },
+            ] as const
+          ).map((option) => {
+            const selected = selectedFeeOption === option.key;
+            return (
+              <Pressable
+                key={option.key}
+                onPress={() => {
+                  if (Platform.OS === "ios") {
+                    Haptics.selectionAsync().catch(() => {});
+                  }
+                  setSelectedFeeOption(option.key);
+                }}
+                className={`mb-3 rounded-2xl border-2 px-4 py-4 ${
+                  selected
+                    ? "border-blue-600 bg-blue-50/40"
+                    : "border-gray-100 bg-white"
+                }`}
+                style={{
+                  shadowColor: "#0f172a",
+                  shadowOffset: { width: 0, height: 1 },
+                  shadowOpacity: selected ? 0.06 : 0.03,
+                  shadowRadius: 6,
+                  elevation: selected ? 2 : 1,
+                }}
+              >
+                <View className="flex-row items-start">
+                  <View
+                    className={`w-11 h-11 rounded-xl items-center justify-center mr-3 ${option.tone.bg}`}
+                  >
+                    <Ionicons
+                      name={option.icon}
+                      size={20}
+                      color={option.tone.iconColor}
+                    />
+                  </View>
+
+                  <View className="flex-1">
+                    <View className="flex-row items-center gap-2 mb-0.5">
+                      <Text className="text-[15px] font-extrabold text-gray-900">
+                        {option.title}
+                      </Text>
+                      {"badge" in option && option.badge && (
+                        <View className="bg-emerald-100 px-1.5 py-0.5 rounded-full">
+                          <Text className="text-[9px] font-extrabold text-emerald-700 tracking-wide uppercase">
+                            {option.badge}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text className="text-[12.5px] text-gray-600 leading-[18px] mb-2">
+                      {option.description}
+                    </Text>
+                    <View className="flex-row items-center gap-1.5">
+                      <Ionicons
+                        name="calculator-outline"
+                        size={12}
+                        color="#94a3b8"
+                      />
+                      <Text className="text-[11px] text-gray-500 italic">
+                        {option.example}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View
+                    className={`w-6 h-6 rounded-full ml-2 items-center justify-center ${
+                      selected
+                        ? "bg-blue-600"
+                        : "border-2 border-gray-200 bg-white"
+                    }`}
+                  >
+                    {selected && (
+                      <Ionicons name="checkmark" size={14} color="white" />
+                    )}
+                  </View>
+                </View>
+              </Pressable>
+            );
+          })}
+
+          <View className="bg-blue-50/60 border border-blue-100 rounded-2xl px-4 py-3 flex-row items-start gap-3 mt-2">
+            <Ionicons name="information-circle-outline" size={18} color="#2563eb" />
+            <Text className="text-[12px] text-blue-800 leading-[18px] flex-1">
+              You can change this anytime. The platform fee is currently 1.5% of
+              each transaction.
+            </Text>
+          </View>
+        </ScrollView>
+
+        <BottomSheetFooter
+          onCancel={() => setConfigureFeeModalOpen(false)}
+          onSave={handleSaveFeeConfiguration}
+          saveLabel="Save Setting"
+        />
+      </BottomSheet>
+
+      <ProductDetailsModal
+        visible={showProductDetailsModal}
+        onClose={() => {
+          setShowProductDetailsModal(false);
+          setSelectedProduct(null);
+        }}
+        product={selectedProduct}
+        onEdit={handleEditProduct}
+        onDelete={handleDeleteProduct}
+      />
+      {/* Apply Discount */}
+      <BottomSheet
+        visible={applyDiscountModalOpen}
+        onClose={() => setApplyDiscountModalOpen(false)}
+        title="Apply Discount"
+        subtitle="Reduce prices across every product in your catalog"
+        height="80%"
+      >
+        {(() => {
+          const parsed = Number(discountValue);
+          const discountNum =
+            Number.isFinite(parsed) && parsed > 0 && parsed <= 90 ? parsed : 0;
+          const isValid =
+            Number.isFinite(parsed) && parsed >= 1 && parsed <= 90;
+          const sampleOriginal = 10000;
+          const sampleDiscounted = Math.round(
+            sampleOriginal * (1 - discountNum / 100)
+          );
+          const sampleSaved = sampleOriginal - sampleDiscounted;
+
+          return (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+            >
+              {/* Big numeric input — calculator feel */}
+              <View
+                className="mt-4 mb-5 rounded-3xl border border-gray-100 bg-white px-5 py-6 items-center"
+                style={{
+                  shadowColor: "#0f172a",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 12,
+                  elevation: 2,
+                }}
+              >
+                <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mb-3">
+                  Discount Amount
+                </Text>
+                <View className="flex-row items-baseline">
+                  <TextInput
+                    value={discountValue}
+                    onChangeText={(v) => setDiscountValue(v.replace(/[^0-9.]/g, ""))}
+                    placeholder="0"
+                    keyboardType="numeric"
+                    className="text-[64px] font-extrabold text-gray-900 tracking-tight"
+                    style={{
+                      minWidth: 100,
+                      textAlign: "center",
+                      paddingVertical: 0,
+                      lineHeight: 72,
+                    }}
+                    placeholderTextColor="#cbd5e1"
+                    autoFocus
+                    maxLength={4}
+                  />
+                  <Text className="text-[36px] font-extrabold text-gray-300 tracking-tight ml-1">
+                    %
+                  </Text>
+                </View>
+                {discountValue.length > 0 && !isValid && (
+                  <View className="flex-row items-center gap-1.5 mt-2">
+                    <Ionicons name="alert-circle" size={14} color="#dc2626" />
+                    <Text className="text-[11.5px] font-semibold text-rose-600">
+                      Enter a value between 1 and 90
+                    </Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Quick presets */}
+              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mb-2">
+                Quick picks
+              </Text>
+              <View className="flex-row flex-wrap gap-2 mb-5">
+                {[5, 10, 15, 20, 25, 50].map((preset) => {
+                  const active = discountValue === String(preset);
                   return (
-                    <Pressable 
-                      key={product.id} 
-                      className="w-[48%] bg-white rounded-3xl mb-4 shadow-sm active:scale-[0.98] transition-transform overflow-hidden"
-                      onPress={() => handleProductClick(product)}
-                      style={{
-                        shadowColor: "#9ca3af",
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 12,
-                        elevation: 4,
+                    <Pressable
+                      key={preset}
+                      onPress={() => {
+                        if (Platform.OS === "ios") {
+                          Haptics.selectionAsync().catch(() => {});
+                        }
+                        setDiscountValue(String(preset));
                       }}
+                      className={`px-4 h-10 rounded-full border ${
+                        active
+                          ? "bg-gray-900 border-gray-900"
+                          : "bg-white border-gray-200"
+                      }`}
+                      style={{ justifyContent: "center" }}
                     >
-                      {/* Image Section - Prominent Top */}
-                      <View className="h-44 bg-gray-50 relative">
-                          {product.image ? (
-                            <Image source={{ uri: product.image }} className="w-full h-full" resizeMode="cover" />
-                          ) : (
-                            <View className="w-full h-full items-center justify-center bg-gray-50">
-                              <Ionicons name="image-outline" size={32} color="#e5e7eb" />
-                            </View>
-                          )}
-                          
-                          {/* Status Badge Overlay */}
-                           {product.status !== 1 && (
-                              <View className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-2.5 py-1 rounded-full shadow-sm">
-                                  <Text className="text-gray-900 text-[10px] font-bold tracking-wider uppercase">Draft</Text>
-                              </View>
-                          )}
-
-                           {/* More Options Overlay */}
-                           <View className="absolute top-3 right-3">
-                              <View className="bg-white/90 w-8 h-8 rounded-full items-center justify-center shadow-sm backdrop-blur-md">
-                                  <MaterialIcons name="more-horiz" size={18} color="#1f2937" />
-                              </View>
-                           </View>
-                      </View>
-                      
-                      {/* Content Section */}
-                      <View className="p-3.5">
-                           <Text className="text-gray-900 font-bold text-[15px] leading-snug mb-1.5 h-10" numberOfLines={2}>
-                              {product.title}
-                           </Text>
-                           
-                           <View className="flex-row items-baseline gap-2 mb-3">
-                               <Text className="text-gray-900 font-extrabold text-lg">
-                                  ₦{product.price.toLocaleString()}
-                               </Text>
-                               <Text className="text-gray-400 text-xs line-through font-medium decoration-gray-400">
-                                  ₦34,000
-                               </Text>
-                           </View>
-
-                           <View className="flex-row items-center justify-between border-t border-gray-50 pt-3">
-                               <View className={`px-2 py-1 rounded-md flex-row items-center gap-1.5 ${isLowStock ? 'bg-red-50' : 'bg-gray-100'}`}>
-                                  <View className={`w-1.5 h-1.5 rounded-full ${isLowStock ? 'bg-red-500' : 'bg-gray-500'}`} />
-                                  <Text className={`text-[10px] font-bold ${isLowStock ? 'text-red-600' : 'text-gray-600'}`}>
-                                      {product.stock} left
-                                  </Text>
-                               </View>
-                               
-                               {/* Mini Stats */}
-                               <View className="flex-row items-center gap-1 opacity-60">
-                                  <Ionicons name="eye-outline" size={14} color="#6b7280" />
-                                  <Text className="text-[10px] text-gray-600 font-medium">0</Text>
-                               </View>
-                           </View>
-                      </View>
+                      <Text
+                        className={`text-[13px] font-bold ${
+                          active ? "text-white" : "text-gray-700"
+                        }`}
+                      >
+                        {preset}%
+                      </Text>
                     </Pressable>
                   );
                 })}
               </View>
 
-              {/* Pagination Component */}
-              {totalPages > 1 && (
-                  <View className="flex-row items-center justify-center py-6 gap-2 pb-32">
-                      <Pressable 
-                          onPress={() => handlePageChange(currentPage - 1)}
-                          disabled={currentPage === 1}
-                          className={`w-10 h-10 rounded-xl items-center justify-center border ${currentPage === 1 ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'}`}
-                      >
-                          <MaterialIcons name="chevron-left" size={24} color={currentPage === 1 ? "#d1d5db" : "#374151"} />
-                      </Pressable>
-                      
-                      <View className="flex-row items-center gap-2">
-                          {Array.from({ length: totalPages }).map((_, i) => {
-                              const pageNum = i + 1;
-                              const isSelected = pageNum === currentPage;
-                              
-                              if (totalPages > 5) {
-                                  if (pageNum !== 1 && pageNum !== totalPages && Math.abs(pageNum - currentPage) > 1) {
-                                      if (Math.abs(pageNum - currentPage) === 2) {
-                                          return <Text key={`dot-${pageNum}`} className="text-gray-400">...</Text>;
-                                      }
-                                      return null;
-                                  }
-                              }
-
-                              return (
-                                  <Pressable
-                                      key={pageNum}
-                                      onPress={() => handlePageChange(pageNum)}
-                                      className={`w-10 h-10 rounded-xl items-center justify-center border ${isSelected ? 'border-blue-600 bg-blue-600' : 'border-gray-200 bg-white shadow-sm'}`}
-                                  >
-                                      <Text className={`font-bold ${isSelected ? 'text-white' : 'text-gray-700'}`}>{pageNum}</Text>
-                                  </Pressable>
-                              );
-                          })}
-                      </View>
-
-                      <Pressable 
-                          onPress={() => handlePageChange(currentPage + 1)}
-                          disabled={currentPage === totalPages}
-                          className={`w-10 h-10 rounded-xl items-center justify-center border ${currentPage === totalPages ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'}`}
-                      >
-                          <MaterialIcons name="chevron-right" size={24} color={currentPage === totalPages ? "#d1d5db" : "#374151"} />
-                      </Pressable>
+              {/* Live preview */}
+              {discountNum > 0 ? (
+                <View className="rounded-2xl bg-emerald-50 border border-emerald-100 px-4 py-4">
+                  <Text className="text-[11px] font-bold text-emerald-700 uppercase tracking-[1.2px] mb-2">
+                    Preview
+                  </Text>
+                  <Text className="text-[13px] text-emerald-900 leading-[20px]">
+                    A product priced at{" "}
+                    <Text className="font-extrabold">
+                      ₦{sampleOriginal.toLocaleString()}
+                    </Text>{" "}
+                    will sell for{" "}
+                    <Text className="font-extrabold">
+                      ₦{sampleDiscounted.toLocaleString()}
+                    </Text>
+                    .
+                  </Text>
+                  <View className="flex-row items-center gap-2 mt-2">
+                    <View className="bg-emerald-600 px-2 py-0.5 rounded-full">
+                      <Text className="text-[10px] font-extrabold text-white tracking-wider">
+                        −{discountNum}%
+                      </Text>
+                    </View>
+                    <Text className="text-[12px] text-emerald-800 font-semibold">
+                      Customer saves ₦{sampleSaved.toLocaleString()}
+                    </Text>
                   </View>
+                </View>
+              ) : (
+                <View className="rounded-2xl bg-gray-50 border border-gray-100 px-4 py-4 flex-row items-start gap-3">
+                  <Ionicons
+                    name="bulb-outline"
+                    size={18}
+                    color="#6b7280"
+                  />
+                  <Text className="text-[12px] text-gray-600 leading-[18px] flex-1">
+                    Pick a preset or type a number to see how the discount will
+                    affect your prices in real time.
+                  </Text>
+                </View>
               )}
-            </>
-          )}
-        </View>
-      </ScrollView>
 
-      {/* Floating Action Button */}
-      <View className="absolute bottom-8 right-6">
-          <Pressable 
-            onPress={() => setShowAddProductModal(true)}
-            className="bg-blue-600 w-14 h-14 rounded-full shadow-lg shadow-blue-500/40 items-center justify-center"
-          >
-              <MaterialIcons name="add" size={30} color="white" />
-          </Pressable>
-      </View>
-
-      <AddProductModal
-        visible={showAddProductModal}
-        onClose={() => { setShowAddProductModal(false); setSelectedProduct(null); }}
-        mode={selectedProduct ? 'edit' : 'add'}
-        productData={selectedProduct}
-        onProductAdded={fetchProducts}
-      />
-
-      <ProductDetailsModal
-        visible={showProductDetailsModal}
-        onClose={() => { setShowProductDetailsModal(false); setSelectedProduct(null); }}
-        product={selectedProduct}
-        onEdit={handleEditProduct}
-        onDelete={handleDeleteProduct}
-      />
-
-      {/* Fee Modal - Simplified Design */}
-      <Modal
-        visible={configureFeeModalOpen}
-        animationType="slide"
-        transparent
-        onRequestClose={closeFeeModal}
-      >
-        <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }} onPress={closeFeeModal}>
-            <Pressable 
-                onPress={e => e.stopPropagation()}
-                style={{
-                    marginTop: 'auto',
-                    backgroundColor: 'white',
-                    borderTopLeftRadius: 28,
-                    borderTopRightRadius: 28,
-                    padding: 24,
-                    maxHeight: '85%',
-                }}
-            >
-            <View className="items-center mb-6">
-                 <View className="w-12 h-1.5 bg-gray-200 rounded-full mb-6" />
-                 <Text className="text-xl font-bold text-gray-900 text-center">Fee Configuration</Text>
-                 <Text className="text-gray-500 text-center mt-2 px-4">
-                    Choose who covers the transaction fee for orders
-                 </Text>
-            </View>
-
-            <ScrollView className="mb-6">
-              {['vendor', 'customer', 'included'].map((option) => {
-                const labels: Record<string, string> = {
-                  vendor: 'Vendor (Me)',
-                  customer: 'Customer',
-                  included: 'Product Price',
-                };
-                const descriptions: Record<string, string> = {
-                  vendor: 'Deducted from your earnings',
-                  customer: "Added to customer's total",
-                  included: 'Inclusive in product price',
-                };
-                const selected = selectedFeeOption === option;
-
-                return (
-                  <Pressable
-                    key={option}
-                    onPress={() => setSelectedFeeOption(option as 'vendor' | 'customer' | 'included')}
-                    className={`flex-row items-center p-4 rounded-xl mb-3 border ${selected ? 'border-blue-600 bg-blue-50' : 'border-gray-200 bg-white'}`}
-                  >
-                     <View className={`w-5 h-5 rounded-full border-2 mr-4 items-center justify-center ${selected ? 'border-blue-600' : 'border-gray-300'}`}>
-                        {selected && <View className="w-2.5 h-2.5 rounded-full bg-blue-600" />}
-                     </View>
-                     <View>
-                        <Text className={`font-semibold text-base ${selected ? 'text-blue-900' : 'text-gray-900'}`}>{labels[option]}</Text>
-                        <Text className="text-gray-500 text-sm">{descriptions[option]}</Text>
-                     </View>
-                  </Pressable>
-                );
-              })}
+              <View className="bg-amber-50/60 border border-amber-100 rounded-2xl px-4 py-3 flex-row items-start gap-3 mt-3">
+                <Ionicons
+                  name="warning-outline"
+                  size={16}
+                  color="#d97706"
+                />
+                <Text className="text-[12px] text-amber-800 leading-[18px] flex-1">
+                  This applies to{" "}
+                  <Text className="font-extrabold">all products</Text>. You can
+                  remove the discount anytime by setting it back to 0.
+                </Text>
+              </View>
             </ScrollView>
+          );
+        })()}
 
-            <Pressable
-                className="bg-blue-600 py-4 rounded-xl items-center shadow-md shadow-blue-500/20"
-                onPress={handleSaveFeeConfiguration}
-              >
-                <Text className="text-white font-bold text-lg">Save Changes</Text>
-              </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* Discount Modal - Simplified */}
-      <Modal
-        visible={applyDiscountModalOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setApplyDiscountModalOpen(false)}
-      >
-         <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'center', padding: 24 }} onPress={() => setApplyDiscountModalOpen(false)}>
-            <Pressable onPress={e => e.stopPropagation()} className="bg-white rounded-3xl p-6 shadow-xl">
-                 <View className="flex-row justify-between items-center mb-6">
-                    <Text className="text-xl font-bold text-gray-900">Apply Discount</Text>
-                    <Pressable onPress={() => setApplyDiscountModalOpen(false)} className="bg-gray-100 p-2 rounded-full">
-                        <MaterialIcons name="close" size={20} color="#6b7280" />
-                    </Pressable>
-                 </View>
-                 
-                 <Text className="text-gray-500 mb-4">Enter percentage discount (1-90%) to apply to all products.</Text>
-                 
-                 <View className="flex-row gap-3">
-                    <TextInput
-                        value={discountValue}
-                        onChangeText={setDiscountValue}
-                        placeholder="%"
-                        keyboardType="numeric"
-                        className="flex-1 border border-gray-300 rounded-xl px-4 py-3 text-lg font-medium text-gray-900"
-                        autoFocus
-                    />
-                    <Pressable
-                        onPress={() => {
-                            console.log('Apply discount:', discountValue);
-                            setApplyDiscountModalOpen(false);
-                        }}
-                        className="bg-blue-600 px-6 justify-center rounded-xl"
-                    >
-                        <Text className="text-white font-bold">Apply</Text>
-                    </Pressable>
-                 </View>
-            </Pressable>
-         </Pressable>
-      </Modal>
-
-    </SafeAreaView>
+        <BottomSheetFooter
+          onCancel={() => setApplyDiscountModalOpen(false)}
+          onSave={() => setApplyDiscountModalOpen(false)}
+          saveLabel="Apply Discount"
+          saveDisabled={
+            !discountValue ||
+            !Number.isFinite(Number(discountValue)) ||
+            Number(discountValue) < 1 ||
+            Number(discountValue) > 90
+          }
+        />
+      </BottomSheet>
+    </View>
   );
 }

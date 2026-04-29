@@ -1,188 +1,351 @@
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
-  StatusBar 
-} from "react-native";
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useVendor } from '../../context/VendorContext';
-import { useAuth } from '../../context/AuthContext';
+import { View, Text, Pressable, ScrollView, StatusBar, Platform, TouchableOpacity } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
+
+import { RootStackParamList } from "../navigation/types";
+import { useVendor } from "../../context/VendorContext";
+import { useAuth } from "../../context/AuthContext";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
 interface MenuItem {
   id: string;
-  icon: string;
+  icon: IoniconName;
+  tint: string;
+  iconColor: string;
   title: string;
-  screen?: keyof RootStackParamList; 
-  action?: 'logout'; 
+  subtitle?: string;
+  screen?: keyof RootStackParamList;
 }
+
+interface MenuGroup {
+  label: string;
+  items: MenuItem[];
+}
+
+const haptic = () => {
+  if (Platform.OS === "ios") {
+    Haptics.selectionAsync().catch(() => {});
+  }
+};
 
 export default function Profile() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const { storeData } = useVendor();
   const { logout, user } = useAuth();
 
- 
   const getInitials = (name: string) => {
-    if (!name) return 'S';
+    if (!name) return "S";
     return name.trim().charAt(0).toUpperCase();
   };
 
   const handleLogout = async () => {
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+    }
     try {
       await logout();
     } catch (error) {
-      console.error('Logout error:', error);
+      console.error("Logout error:", error);
     }
   };
 
-  const menuItems: MenuItem[] = [
+  const groups: MenuGroup[] = [
     {
-      id: 'store-info',
-      icon: 'store',
-      title: 'Store Information',
-      screen: 'StoreInformation'
+      label: "Store",
+      items: [
+        {
+          id: "store-info",
+          icon: "storefront-outline",
+          tint: "#dbeafe",
+          iconColor: "#2563eb",
+          title: "Store information",
+          subtitle: "Brand, address, working hours",
+          screen: "StoreInformation",
+        },
+        {
+          id: "personal-details",
+          icon: "person-outline",
+          tint: "#e0e7ff",
+          iconColor: "#4f46e5",
+          title: "Personal details",
+          subtitle: "Your name and contact info",
+          screen: "PersonalDetails",
+        },
+        {
+          id: "payout-settings",
+          icon: "wallet-outline",
+          tint: "#d1fae5",
+          iconColor: "#059669",
+          title: "Bank settings",
+          subtitle: storeData?.accountNumber
+            ? `•••• ${storeData.accountNumber.slice(-4)}`
+            : "Set up payouts",
+          screen: "PayoutSettings",
+        },
+      ],
     },
     {
-      id: 'personal-details',
-      icon: 'person-outline',
-      title: 'Personal Details',
-      screen: 'PersonalDetails'
+      label: "Account",
+      items: [
+        {
+          id: "subscription",
+          icon: "card-outline",
+          tint: "#ede9fe",
+          iconColor: "#7c3aed",
+          title: "Subscription & billing",
+          subtitle: storeData?.storeSubscription?.isTrial
+            ? `${storeData?.storeSubscription?.daysRemaining ?? 0} days left in trial`
+            : "Manage your plan",
+          screen: "SubscriptionBilling",
+        },
+        {
+          id: "security",
+          icon: "shield-checkmark-outline",
+          tint: "#f1f5f9",
+          iconColor: "#475569",
+          title: "Security",
+          subtitle: "Password, sessions, 2FA",
+          screen: "Security",
+        },
+        {
+          id: "notifications",
+          icon: "notifications-outline",
+          tint: "#fef3c7",
+          iconColor: "#d97706",
+          title: "Notifications",
+          subtitle: "Push, email, alerts",
+          screen: "NotificationProfile",
+        },
+      ],
     },
     {
-      id: 'payout-settings',
-      icon: 'account-balance-wallet',
-      title: 'Bank Settings',
-      screen: 'PayoutSettings'
+      label: "Support",
+      items: [
+        {
+          id: "help",
+          icon: "help-circle-outline",
+          tint: "#cffafe",
+          iconColor: "#0891b2",
+          title: "Help & support",
+          subtitle: "Get answers or contact us",
+          screen: "HelpSupport",
+        },
+        {
+          id: "legal",
+          icon: "document-text-outline",
+          tint: "#ffe4e6",
+          iconColor: "#e11d48",
+          title: "Legal & policies",
+          subtitle: "Terms, privacy, refunds",
+          screen: "LegalPolicies",
+        },
+      ],
     },
-    {
-      id: 'subscription',
-      icon: 'credit-card',
-      title: 'Subscription & Billing',
-      screen: 'SubscriptionBilling'
-    },
-    {
-      id: 'security',
-      icon: 'shield-outline',
-      title: 'Security',
-      screen: 'Security'
-    },
-    {
-      id: 'notifications',
-      icon: 'notifications-none',
-      title: 'Notifications',
-      screen: 'NotificationProfile'
-    },
-    {
-      id: 'help',
-      icon: 'help-outline',
-      title: 'Help & Support',
-      screen: 'HelpSupport'
-    },
-    {
-      id: 'legal',
-      icon: 'description',
-      title: 'Legal & Policies',
-      screen: 'LegalPolicies'
-    }
   ];
 
   const handleMenuPress = (item: MenuItem) => {
-    if (item.action === 'logout') {
-      handleLogout();
-    } else if (item.screen) {
+    haptic();
+    if (item.screen) {
       navigation.navigate(item.screen);
     }
   };
 
+  const isVerified = storeData?.isVerified;
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+    <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
 
-      <View className="flex-row items-center px-4 py-3 border-b border-gray-200">
-        <Pressable className="mr-3" onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#000" />
-        </Pressable>
-        <Text className="text-lg font-medium text-gray-900">Profile</Text>
+      {/* Top bar */}
+      <View className="px-6 pt-4 pb-2">
+        <View className="flex-row items-center justify-between">
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            activeOpacity={0.7}
+            className="w-10 h-10 bg-white border border-gray-200 rounded-full items-center justify-center"
+          >
+            <Ionicons name="arrow-back" size={20} color="#111827" />
+          </TouchableOpacity>
+          <Text
+            className="text-[16px] text-gray-900"
+            style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+          >
+            Profile
+          </Text>
+          <View className="w-10 h-10" />
+        </View>
       </View>
 
-      <ScrollView className="flex-1">
-       
-        <View className="items-center py-8 border-b border-gray-100">
-          <View className="w-24 h-24 rounded-full bg-blue-50 items-center justify-center mb-4">
-            <Text className="text-3xl font-bold text-blue-600">
-              {getInitials(storeData?.storeName || 'Store')}
-            </Text>
-          </View>
-
-          <Text className="text-xl font-semibold text-gray-900 mb-1">
-            {storeData?.storeName || 'My Store'}
-          </Text>
-
-          <Text className="text-sm text-gray-500 mb-3">
-            {user?.email || storeData?.email || 'Store Email'}
-          </Text>
-
-          <View className="bg-green-100 px-3 py-1 rounded-full">
-            <Text className="text-green-700 text-sm font-medium">
-              Active Account
-            </Text>
-          </View>
-        </View>
-
-       
-        <View className="py-4">
-          {menuItems.map((item, index) => (
-            <Pressable
-              key={item.id}
-              onPress={() => handleMenuPress(item)}
-              className="flex-row items-center px-4 py-4 border-b border-gray-100"
-              android_ripple={{ color: '#f3f4f6' }}
-            >
-              <View className="w-10">
-                <MaterialIcons 
-                  name={item.icon as any} 
-                  size={24} 
-                  color="#6b7280" 
-                />
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 32 }}
+      >
+        {/* Hero card */}
+        <View className="px-6 pt-3">
+          <View
+            className="rounded-3xl bg-white border border-gray-100 p-5 items-center"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 12,
+              elevation: 2,
+            }}
+          >
+            {/* Avatar */}
+            <View className="relative mb-3">
+              <View
+                className="w-20 h-20 rounded-full bg-blue-50 items-center justify-center border-2 border-blue-100"
+                style={{
+                  shadowColor: "#2563eb",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 12,
+                  elevation: 3,
+                }}
+              >
+                <Text
+                  className="text-blue-600"
+                  style={{
+                    fontFamily: "PlusJakartaSans_700Bold",
+                    fontSize: 32,
+                    letterSpacing: -0.5,
+                  }}
+                >
+                  {getInitials(storeData?.storeName || "Store")}
+                </Text>
               </View>
+              {isVerified && (
+                <View
+                  className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-emerald-500 items-center justify-center border-[3px] border-white"
+                >
+                  <Ionicons name="checkmark" size={14} color="white" />
+                </View>
+              )}
+            </View>
 
-              <Text className="flex-1 text-base text-gray-900 ml-3">
-                {item.title}
+            <Text
+              className="text-gray-900 text-[20px] mb-0.5"
+              style={{
+                fontFamily: "PlusJakartaSans_700Bold",
+                letterSpacing: -0.4,
+              }}
+              numberOfLines={1}
+            >
+              {storeData?.storeName || "My Store"}
+            </Text>
+
+            <Text className="text-[13px] text-gray-500 mb-3" numberOfLines={1}>
+              {user?.email || storeData?.email || "Store email"}
+            </Text>
+
+            <View className="flex-row items-center gap-1.5 bg-emerald-50 px-3 py-1 rounded-full border border-emerald-100">
+              <View className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+              <Text className="text-[10.5px] text-emerald-700 font-extrabold uppercase tracking-wide">
+                Active account
               </Text>
-
-              <MaterialIcons 
-                name="chevron-right" 
-                size={24} 
-                color="#9ca3af" 
-              />
-            </Pressable>
-          ))}
+            </View>
+          </View>
         </View>
 
-        <View className="px-4 py-6">
+        {/* Menu groups */}
+        {groups.map((group) => (
+          <View key={group.label} className="px-6 mt-6">
+            <Text className="text-[11px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-3 px-1">
+              {group.label}
+            </Text>
+            <View
+              className="bg-white rounded-3xl border border-gray-100 overflow-hidden"
+              style={{
+                shadowColor: "#0f172a",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 12,
+                elevation: 2,
+              }}
+            >
+              {group.items.map((item, idx) => (
+                <Pressable
+                  key={item.id}
+                  onPress={() => handleMenuPress(item)}
+                  android_ripple={{ color: "#f3f4f6" }}
+                  className={`flex-row items-center px-4 py-3.5 active:bg-gray-50 ${
+                    idx !== group.items.length - 1
+                      ? "border-b border-gray-100"
+                      : ""
+                  }`}
+                >
+                  <View
+                    className="w-10 h-10 rounded-2xl items-center justify-center"
+                    style={{ backgroundColor: item.tint }}
+                  >
+                    <Ionicons
+                      name={item.icon}
+                      size={19}
+                      color={item.iconColor}
+                    />
+                  </View>
+
+                  <View className="flex-1 ml-3 pr-2">
+                    <Text
+                      className="text-[14.5px] text-gray-900"
+                      style={{
+                        fontFamily: "PlusJakartaSans_700Bold",
+                        letterSpacing: -0.2,
+                      }}
+                      numberOfLines={1}
+                    >
+                      {item.title}
+                    </Text>
+                    {item.subtitle && (
+                      <Text
+                        className="text-[12px] text-gray-500 mt-0.5"
+                        numberOfLines={1}
+                      >
+                        {item.subtitle}
+                      </Text>
+                    )}
+                  </View>
+
+                  <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        ))}
+
+        {/* Log out */}
+        <View className="px-6 mt-6">
           <Pressable
             onPress={handleLogout}
-            className="flex-row items-center justify-center py-3"
+            className="flex-row items-center justify-center bg-white border border-red-100 rounded-2xl py-3.5 active:bg-red-50"
+            style={{
+              shadowColor: "#dc2626",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.05,
+              shadowRadius: 8,
+              elevation: 2,
+            }}
           >
-            <MaterialIcons name="logout" size={20} color="#dc2626" />
-            <Text className="text-red-600 font-medium text-base ml-2">
-              Log Out
+            <Ionicons name="log-out-outline" size={18} color="#dc2626" />
+            <Text className="text-red-600 ml-2 text-[14.5px]"
+              style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+            >
+              Log out
             </Text>
           </Pressable>
         </View>
 
-       
-        <View className="items-center pb-8">
-          <Text className="text-xs text-gray-400">
-            Version 2.4.0 (Build 1042)
+        {/* Version */}
+        <View className="items-center mt-6">
+          <Text className="text-[11px] text-gray-400 font-medium">
+            Version 2.4.0 · Build 1042
           </Text>
         </View>
       </ScrollView>

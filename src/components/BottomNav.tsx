@@ -1,9 +1,10 @@
-// src/components/BottomNav.tsx - COMPLETE UPDATED VERSION
 import React from 'react';
-import { View, TouchableOpacity, Text } from 'react-native';
+import { View, TouchableOpacity, Text, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Haptics from 'expo-haptics';
 import { RootStackParamList } from '../navigation/types';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -18,42 +19,55 @@ interface TabConfig {
 export default function BottomNav() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute();
+  const insets = useSafeAreaInsets();
 
   const tabs: TabConfig[] = [
     { id: 'home', icon: 'home', label: 'Home', screen: 'Home' },
     { id: 'orders', icon: 'receipt', label: 'Orders', screen: 'Orders' },
     { id: 'store', icon: 'storefront', label: 'Store', screen: 'ManageStore' },
     { id: 'reports', icon: 'document-text', label: 'Reports', screen: 'ReportsAnalytics' },
-    { id: 'profile', icon: 'person', label: 'Profile', screen: 'Profile' }
+    { id: 'profile', icon: 'person', label: 'Profile', screen: 'Profile' },
   ];
 
-  const isActiveTab = (screenName: string) => {
-    return route.name === screenName;
-  };
+  const isActiveTab = (screenName: string) => route.name === screenName;
 
-  const handleTabPress = (screen: keyof RootStackParamList) => {
+  const handleTabPress = (screen: keyof RootStackParamList, isActive: boolean) => {
+    if (isActive) return;
+    if (Platform.OS === 'ios') {
+      Haptics.selectionAsync().catch(() => {});
+    }
     navigation.navigate(screen as any);
   };
 
   return (
-    <View className="absolute bottom-10 left-0 right-0 bg-white border-t border-gray-200">
+    <View
+      className="absolute bottom-0 left-0 right-0 bg-white border-t border-gray-200"
+      style={{
+        paddingBottom: insets.bottom > 0 ? insets.bottom : 8,
+        // Crisp top divider via subtle elevation
+        shadowColor: '#0f172a',
+        shadowOffset: { width: 0, height: -2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+        elevation: 8,
+      }}
+    >
       <View className="flex-row h-16">
         {tabs.map((tab) => {
           const isActive = isActiveTab(tab.screen);
-          
           return (
             <TouchableOpacity
               key={tab.id}
-              onPress={() => handleTabPress(tab.screen)}
+              onPress={() => handleTabPress(tab.screen, isActive)}
               className="flex-1 items-center justify-center"
               activeOpacity={0.7}
             >
-              <Ionicons 
-                name={isActive ? tab.icon : `${tab.icon}-outline` as any}
-                size={24} 
-                color={isActive ? '#2563EB' : '#6B7280'} 
+              <Ionicons
+                name={isActive ? tab.icon : (`${tab.icon}-outline` as any)}
+                size={24}
+                color={isActive ? '#2563EB' : '#6B7280'}
               />
-              <Text 
+              <Text
                 className={`text-xs font-medium mt-1 ${
                   isActive ? 'text-blue-600' : 'text-gray-500'
                 }`}

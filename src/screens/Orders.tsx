@@ -2,30 +2,36 @@ import {
   View,
   Text,
   Pressable,
+  RefreshControl,
+  Platform,
   ScrollView,
-  StatusBar,
-  TextInput,
-  ActivityIndicator,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
-import { useEffect, useMemo, useState, useRef } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
-import MaterialIcons from "@expo/vector-icons/MaterialIcons";
+import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
 
 import { RootStackParamList } from "../navigation/types";
-import { getPaidOrders } from "../api/vendor/vendor.api";
 import { Order } from "../api/vendor/vendor.types";
-import Ionicons from "@expo/vector-icons/Ionicons";
+import { useInfiniteOrders } from "../hooks/useInfiniteOrders";
+import { OrdersListSkeleton } from "../components/OrderRowSkeleton";
+import { prefetchImage } from "../components/AppImage";
+import { ScreenHeader } from "../components/ScreenHeader";
+import { EndOfList } from "../components/EndOfList";
+import { ListSearchBar } from "../components/ListSearchBar";
+import { formatRelativeTime } from "../lib/format";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-type FilterType = "all" | "pending" | "paid" | "shipped";
+type FilterType = "all" | "pending" | "paid";
 
 type UIStatus = "Paid" | "Pending" | "Shipped" | "Completed" | "Cancelled";
 
 const mapStatus = (status: string): UIStatus => {
-  switch (status.toLowerCase()) {
+  switch (status?.toLowerCase()) {
     case "success":
       return "Paid";
     case "pending":
@@ -35,444 +41,457 @@ const mapStatus = (status: string): UIStatus => {
   }
 };
 
-const getStatusColor = (status: UIStatus) => {
-  switch (status) {
-    case "Paid":
-      return "bg-green-100 text-green-700";
-    case "Pending":
-      return "bg-orange-100 text-orange-700";
-    case "Shipped":
-      return "bg-purple-100 text-purple-700";
-    case "Completed":
-      return "bg-blue-100 text-blue-700";
-    case "Cancelled":
-      return "bg-red-100 text-red-700";
-    default:
-      return "bg-gray-100 text-gray-700";
-  }
+const STATUS_STYLES: Record<
+  UIStatus,
+  { dot: string; text: string; bg: string; border: string }
+> = {
+  Paid: {
+    dot: "bg-emerald-500",
+    text: "text-emerald-700",
+    bg: "bg-emerald-50",
+    border: "border-emerald-100",
+  },
+  Pending: {
+    dot: "bg-amber-500",
+    text: "text-amber-700",
+    bg: "bg-amber-50",
+    border: "border-amber-100",
+  },
+  Shipped: {
+    dot: "bg-violet-500",
+    text: "text-violet-700",
+    bg: "bg-violet-50",
+    border: "border-violet-100",
+  },
+  Completed: {
+    dot: "bg-blue-500",
+    text: "text-blue-700",
+    bg: "bg-blue-50",
+    border: "border-blue-100",
+  },
+  Cancelled: {
+    dot: "bg-rose-500",
+    text: "text-rose-700",
+    bg: "bg-rose-50",
+    border: "border-rose-100",
+  },
 };
 
 const getDateGroup = (date: string) => {
   const today = new Date();
   const created = new Date(date);
-
   const diffDays =
     (today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
-
   if (diffDays < 1) return "Today";
   if (diffDays < 2) return "Yesterday";
+  if (diffDays < 7) return "This Week";
+  if (diffDays < 30) return "This Month";
   return "Earlier";
 };
 
 const getInitials = (name: string): string => {
   if (!name) return "??";
-  
-  const nameParts = name.trim().split(/\s+/);
-  
-  if (nameParts.length === 1) {
-    return nameParts[0].slice(0, 2).toUpperCase();
-  }
-  
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (
-    nameParts[0].charAt(0).toUpperCase() +
-    nameParts[nameParts.length - 1].charAt(0).toUpperCase()
+    parts[0].charAt(0).toUpperCase() +
+    parts[parts.length - 1].charAt(0).toUpperCase()
   );
 };
 
+const AVATAR_COLORS = [
+  "#2563eb",
+  "#059669",
+  "#dc2626",
+  "#7c3aed",
+  "#ea580c",
+  "#db2777",
+  "#0d9488",
+  "#9333ea",
+  "#ca8a04",
+];
+
 const getAvatarColor = (name: string): string => {
-  if (!name) return "#2563eb"; 
-  
-  const colors = [
-    "#2563eb", 
-    "#059669", 
-    "#dc2626", 
-    "#7c3aed", 
-    "#ea580c", 
-    "#db2777", 
-    "#0d9488", 
-    "#9333ea", 
-    "#ca8a04", 
-  ];
-  
+  if (!name) return AVATAR_COLORS[0];
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
     hash = name.charCodeAt(i) + ((hash << 5) - hash);
   }
-  
-  return colors[Math.abs(hash) % colors.length];
+  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
 };
 
-const PAGE_SIZE = 10;
+interface OrderRowProps {
+  order: Order;
+  onPress: () => void;
+}
 
+function OrderRow({ order, onPress }: OrderRowProps) {
+  const status = mapStatus(order.status);
+  const statusStyle = STATUS_STYLES[status];
+  const initials = getInitials(order.buyerName);
+  const avatarColor = getAvatarColor(order.buyerName);
+  const itemsCount = order.catalogItems?.length ?? 0;
+
+  return (
+    <Pressable
+      onPress={onPress}
+      className="bg-white rounded-2xl px-4 py-3.5 mb-2 border border-gray-100 active:bg-gray-50"
+      style={{
+        shadowColor: "#0f172a",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.04,
+        shadowRadius: 4,
+        elevation: 1,
+      }}
+    >
+      <View className="flex-row items-center">
+        <View
+          className="w-11 h-11 rounded-full items-center justify-center mr-3"
+          style={{ backgroundColor: avatarColor }}
+        >
+          <Text className="text-white font-bold text-[13px]">{initials}</Text>
+        </View>
+
+        <View className="flex-1 min-w-0">
+          <View className="flex-row items-center justify-between mb-0.5">
+            <Text
+              className="font-bold text-gray-900 text-[15px] flex-1 mr-2"
+              numberOfLines={1}
+            >
+              {order.buyerName || "Customer"}
+            </Text>
+            <Text className="font-bold text-gray-900 text-[15px]">
+              ₦{order.totalPrice.toLocaleString()}
+            </Text>
+          </View>
+
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center flex-1 min-w-0">
+              <Text className="text-[12px] text-gray-500 font-medium">
+                #{order.orderNumber}
+              </Text>
+              <Text className="text-[12px] text-gray-300 mx-1.5">·</Text>
+              <Text className="text-[12px] text-gray-500" numberOfLines={1}>
+                {formatRelativeTime(order.createdAt)}
+              </Text>
+              {itemsCount > 0 && (
+                <>
+                  <Text className="text-[12px] text-gray-300 mx-1.5">·</Text>
+                  <Text className="text-[12px] text-gray-500">
+                    {itemsCount} {itemsCount === 1 ? "item" : "items"}
+                  </Text>
+                </>
+              )}
+            </View>
+
+            <View
+              className={`flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border ${statusStyle.bg} ${statusStyle.border} ml-2`}
+            >
+              <View
+                className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}
+              />
+              <Text
+                className={`text-[10px] font-bold ${statusStyle.text}`}
+              >
+                {status}
+              </Text>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  );
+}
 
 export default function Orders() {
   const navigation = useNavigation<ScreenNavigationProp>();
 
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [searching, setSearching] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
+  // ListSearchBar owns the visible text + debounce; the parent only sees the
+  // settled value, so it doesn't re-render on every keystroke.
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
-  
-  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
 
+  const {
+    data,
+    isPending,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+    refetch,
+  } = useInfiniteOrders({ search: debouncedSearch });
+
+  const allOrders: Order[] = useMemo(
+    () => data?.pages.flatMap((p) => p.data) ?? [],
+    [data]
+  );
+  const totalCount = data?.pages[0]?.totalCount ?? 0;
+
+  // Preload order-item thumbnails so OrderDetails opens instantly.
   useEffect(() => {
-    fetchOrders(1, "");
-    return () => {
-      if (searchTimeoutRef.current) {
-        clearTimeout(searchTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  const fetchOrders = async (pageIndex: number = 1, search: string = "", isSearching: boolean = false) => {
-    try {
-      if (isSearching) {
-        setSearching(true);
-      } else {
-        setLoading(true);
-      }
-
-
-
-      const res = await getPaidOrders({
-        pageIndex,
-        pageSize: PAGE_SIZE,
-        search: search.trim() || undefined,
-      });
-
-      const items = res.data.length > PAGE_SIZE ? res.data.slice(0, PAGE_SIZE) : res.data;
-      setOrders(items);
-      setTotalCount(res.totalCount);
-      
-      const calculatedPages = Math.ceil(res.totalCount / PAGE_SIZE);
-      
-      setTotalPages(calculatedPages);
-      setCurrentPage(pageIndex);
-    } catch (error) {
-      console.error("Failed to fetch orders", error);
-    } finally {
-      setLoading(false);
-      setSearching(false);
-    }
-  };
-
-  const handleSearchChange = (text: string) => {
-    setSearchQuery(text);
-    
-    if (searchTimeoutRef.current) {
-      clearTimeout(searchTimeoutRef.current);
-    }
-    
-    searchTimeoutRef.current = setTimeout(() => {
-      setCurrentPage(1);
-      fetchOrders(1, text, true);
-    }, 500);
-  };
-
-  const handlePageChange = (page: number) => {
-    if (page >= 1 && page <= totalPages && page !== currentPage) {
-      fetchOrders(page, searchQuery);
-    }
-  };
+    allOrders.forEach((order) => {
+      order.catalogItems?.forEach((item: any) => prefetchImage(item.image));
+    });
+  }, [allOrders]);
 
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+    if (activeFilter === "all") return allOrders;
+    return allOrders.filter((order) => {
       const uiStatus = mapStatus(order.status);
-
-      const matchesFilter =
-        activeFilter === "all"
-          ? true
-          : activeFilter === "paid"
-          ? uiStatus === "Paid"
-          : activeFilter === "pending"
-          ? uiStatus === "Pending"
-          : true;
-
-      return matchesFilter;
+      if (activeFilter === "paid") return uiStatus === "Paid";
+      if (activeFilter === "pending") return uiStatus === "Pending";
+      return true;
     });
-  }, [orders, activeFilter]);
+  }, [allOrders, activeFilter]);
 
-  const groupedOrders = useMemo(() => {
-    return filteredOrders.reduce((groups, order) => {
-      const group = getDateGroup(order.createdAt);
-      if (!groups[group]) groups[group] = [];
-      groups[group].push(order);
-      return groups;
-    }, {} as Record<string, Order[]>);
+  const sections = useMemo(() => {
+    const grouped: Record<string, Order[]> = {};
+    filteredOrders.forEach((order) => {
+      const key = getDateGroup(order.createdAt);
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(order);
+    });
+    // Stable display order regardless of map iteration.
+    const order = ["Today", "Yesterday", "This Week", "This Month", "Earlier"];
+    return order
+      .filter((g) => grouped[g]?.length)
+      .map((title) => ({ title, data: grouped[title] }));
   }, [filteredOrders]);
 
-  const totalOrders = totalCount;
-  const activeOrders = orders.filter(
-    (o) => mapStatus(o.status) !== "Completed"
-  ).length; 
-  const pendingOrders = orders.filter(
-    (o) => mapStatus(o.status) === "Pending"
-  ).length;
+  const paidCount = useMemo(
+    () => allOrders.filter((o) => mapStatus(o.status) === "Paid").length,
+    [allOrders]
+  );
+  const pendingCount = useMemo(
+    () => allOrders.filter((o) => mapStatus(o.status) === "Pending").length,
+    [allOrders]
+  );
 
-  if (loading) {
-    return (
-      <SafeAreaView className="bg-gray-50 flex-1" edges={["top"]}>
-        <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#2563eb" />
-          <Text className="text-gray-600 mt-4">Loading orders...</Text>
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await refetch();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refetch]);
+
+  const handleOrderTap = useCallback(
+    (order: Order) => {
+      if (Platform.OS === "ios") {
+        Haptics.selectionAsync().catch(() => {});
+      }
+      navigation.navigate("OrderDetails", { order });
+    },
+    [navigation]
+  );
+
+  const handleFilterTap = (next: FilterType) => {
+    if (Platform.OS === "ios") {
+      Haptics.selectionAsync().catch(() => {});
+    }
+    setActiveFilter(next);
+  };
+
+  // ScrollView-based infinite scroll: trigger the next page when the user
+  // gets within 400px of the bottom.
+  const fetchingRef = useRef(false);
+  fetchingRef.current = isFetchingNextPage;
+
+  const handleScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      if (distanceFromBottom < 400 && hasNextPage && !fetchingRef.current) {
+        fetchNextPage();
+      }
+    },
+    [hasNextPage, fetchNextPage]
+  );
+
+  const showInitialSkeleton = isPending && !data;
+
+  // Hero metric scrolls away with the list — purely informational.
+  const HeroCard = (
+    <View
+      className="mx-5 mt-4 mb-4 bg-white rounded-3xl px-5 py-6 border border-gray-100"
+      style={{
+        shadowColor: "#0f172a",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View className="flex-row items-center justify-between mb-1">
+        <Text className="text-[12px] font-semibold text-gray-500 uppercase tracking-[1.2px]">
+          Total Orders
+        </Text>
+        <View className="bg-blue-50 w-9 h-9 rounded-full items-center justify-center">
+          <Ionicons name="receipt-outline" size={18} color="#2563eb" />
         </View>
-      </SafeAreaView>
-    );
-  }
-
-  return (
-    <SafeAreaView className="bg-gray-50 flex-1" edges={["top"]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
-
-      <View className="px-5 py-4 bg-white border-b border-gray-100 flex-row items-center justify-between sticky top-0 z-10">
-        <View className="flex-row items-center">
-          <Pressable onPress={() => navigation.goBack()} className="mr-4 p-2 -ml-2 rounded-full active:bg-gray-100">
-            <MaterialIcons name="arrow-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-xl font-bold text-gray-900">Orders</Text>
-        </View>
-        <View className="w-8" />
       </View>
 
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-        
-        {/* Stats Overview - Fixed Grid */}
-        <View className="flex-row px-5 py-5 gap-3">
-           <View className="flex-1 bg-blue-600 rounded-xl p-3 shadow-sm">
-              <View className="flex-row justify-between items-start mb-3">
-                 <View className="bg-blue-500/30 p-1.5 rounded-lg">
-                    <Ionicons name="receipt-outline" size={16} color="white" />
-                 </View>
-              </View>
-              <Text className="text-2xl font-bold text-white mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{totalOrders}</Text>
-              <Text className="text-blue-100 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Total</Text>
-           </View>
+      <Text className="text-[44px] leading-[52px] font-extrabold text-gray-900 tracking-tight">
+        {totalCount}
+      </Text>
+      <Text className="text-[13px] text-gray-500 mt-1">across all time</Text>
 
-           <View className="flex-1 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <View className="flex-row justify-between items-start mb-3">
-                 <View className="bg-green-100 p-1.5 rounded-lg">
-                    <Ionicons name="checkmark-circle-outline" size={16} color="#16a34a" />
-                 </View>
-              </View>
-              <Text className="text-2xl font-bold text-gray-900 mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{activeOrders}</Text>
-              <Text className="text-gray-500 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Active</Text>
-           </View>
+      <View className="h-px bg-gray-100 my-4" />
 
-           <View className="flex-1 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
-              <View className="flex-row justify-between items-start mb-3">
-                 <View className="bg-orange-100 p-1.5 rounded-lg">
-                    <Ionicons name="time-outline" size={16} color="#ea580c" />
-                 </View>
-              </View>
-              <Text className="text-2xl font-bold text-gray-900 mb-0.5" numberOfLines={1} adjustsFontSizeToFit>{pendingOrders}</Text>
-              <Text className="text-gray-500 text-xs font-medium" numberOfLines={1} adjustsFontSizeToFit>Pending</Text>
-           </View>
+      <View className="flex-row items-center gap-5">
+        <View className="flex-row items-center gap-2">
+          <View className="w-2 h-2 rounded-full bg-emerald-500" />
+          <Text className="text-[14px] font-bold text-gray-900">
+            {paidCount}
+          </Text>
+          <Text className="text-[13px] text-gray-500">Paid</Text>
         </View>
+        <View className="flex-row items-center gap-2">
+          <View className="w-2 h-2 rounded-full bg-amber-500" />
+          <Text className="text-[14px] font-bold text-gray-900">
+            {pendingCount}
+          </Text>
+          <Text className="text-[13px] text-gray-500">Pending</Text>
+        </View>
+      </View>
+    </View>
+  );
+
+  // Search input + filter chips render inside the scrolling list header
+  // (where the user wants them visually). The keyboard-dismiss problem is
+  // solved by ListSearchBar holding its own text state — the parent only
+  // re-renders when the *debounced* value settles, not on every keystroke,
+  // and ListSearchBar is React.memo'd so it never re-mounts.
+  const SearchAndFilter = (
+    <View>
+      <View className="px-5 mb-3">
+        <ListSearchBar
+          placeholder="Search by name, order #..."
+          onSearchChange={setDebouncedSearch}
+        />
+      </View>
+
+      <View className="mb-4">
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 20, gap: 8 }}
+          keyboardShouldPersistTaps="always"
+        >
+          {(
+            [
+              { key: "all", label: "All", count: allOrders.length },
+              { key: "pending", label: "Pending", count: pendingCount },
+              { key: "paid", label: "Paid", count: paidCount },
+            ] as const
+          ).map((filter) => {
+            const isActive = activeFilter === filter.key;
+            return (
+              <Pressable
+                key={filter.key}
+                onPress={() => handleFilterTap(filter.key)}
+                className={`flex-row items-center gap-2 px-4 h-9 rounded-full border ${
+                  isActive
+                    ? "bg-gray-900 border-gray-900"
+                    : "bg-white border-gray-200"
+                }`}
+              >
+                <Text
+                  className={`text-[13px] font-semibold ${
+                    isActive ? "text-white" : "text-gray-700"
+                  }`}
+                >
+                  {filter.label}
+                </Text>
+                <View
+                  className={`px-1.5 rounded-full ${
+                    isActive ? "bg-white/20" : "bg-gray-100"
+                  }`}
+                >
+                  <Text
+                    className={`text-[11px] font-bold ${
+                      isActive ? "text-white" : "text-gray-600"
+                    }`}
+                  >
+                    {filter.count}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+    </View>
+  );
+
+  const EmptyState = (
+    <View className="items-center px-8 py-16">
+      <View className="w-20 h-20 bg-blue-50 rounded-2xl items-center justify-center mb-5">
+        <Ionicons name="receipt-outline" size={36} color="#2563eb" />
+      </View>
+      <Text className="text-gray-900 text-lg font-bold mb-1.5">
+        {debouncedSearch ? "No matches" : "No orders yet"}
+      </Text>
+      <Text className="text-gray-500 text-center text-sm leading-5 max-w-xs">
+        {debouncedSearch
+          ? "Try a different name or order number."
+          : "Your incoming orders from customers will show up here in real-time."}
+      </Text>
+    </View>
+  );
+
+  return (
+    <View className="bg-gray-50 flex-1">
+      <ScreenHeader title="Orders" />
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: 40 }}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        onScroll={handleScroll}
+        scrollEventThrottle={400}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onPullRefresh}
+            tintColor="#2563eb"
+          />
+        }
+      >
+        {HeroCard}
+        {SearchAndFilter}
 
         <View className="px-5">
-            {/* Search Bar */}
-            <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-4 h-12 shadow-sm mb-6">
-                {searching ? (
-                    <ActivityIndicator size="small" color="#2563eb" />
-                ) : (
-                    <Ionicons name="search-outline" size={20} color="#9ca3af" />
-                )}
-                <TextInput
-                    value={searchQuery}
-                    onChangeText={handleSearchChange}
-                    className="flex-1 ml-3 text-base text-gray-900 h-full"
-                    placeholder="Search orders..."
-                    placeholderTextColor="#9ca3af"
-                />
-            </View>
-
-            {/* Filter Tabs */}
-            <View className="mb-6">
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-                {[
-                    { key: "all", label: "All" },
-                    { key: "pending", label: "Pending" },
-                    { key: "paid", label: "Paid" },
-                ].map((filter) => {
-                    const isActive = activeFilter === filter.key;
-                    return (
-                        <Pressable
-                        key={filter.key}
-                        onPress={() => setActiveFilter(filter.key as FilterType)}
-                        className={`px-5 py-2 rounded-full border ${
-                            isActive
-                            ? "bg-gray-900 border-gray-900"
-                            : "bg-white border-gray-200"
-                        }`}
-                        >
-                        <Text
-                            className={`font-semibold text-sm ${
-                            isActive
-                                ? "text-white"
-                                : "text-gray-600"
-                            }`}
-                        >
-                            {filter.label}
-                        </Text>
-                        </Pressable>
-                    );
-                })}
-                </ScrollView>
-            </View>
-
-            {/* Orders List */}
-            {loading ? (
-                 <View className="items-center py-20">
-                    <ActivityIndicator size="large" color="#2563eb" />
-                </View>
-            ) : filteredOrders.length === 0 ? (
-                <View className="items-center py-20 px-6">
-                    <View className="w-20 h-20 bg-gray-100 rounded-full items-center justify-center mb-4">
-                        <Ionicons name="receipt-outline" size={40} color="#9ca3af" />
-                    </View>
-                    <Text className="text-gray-900 text-lg font-semibold mb-2">No orders found</Text>
-                    <Text className="text-gray-500 text-center text-sm max-w-xs">
-                        {searchQuery ? "Try adjusting your search terms" : "Orders will appear here once customers start buying"}
-                    </Text>
-                </View>
-            ) : (
-              <View className="pb-32">
-                {Object.entries(groupedOrders).map(([dateGroup, groupOrders]) => (
-                    <View key={dateGroup} className="mb-6">
-                    <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 pl-1">
-                        {dateGroup}
-                    </Text>
-
-                    {groupOrders.map((order) => {
-                        const status = mapStatus(order.status);
-                        const initials = getInitials(order.buyerName);
-                        const avatarColor = getAvatarColor(order.buyerName);
-
-                        return (
-                        <Pressable
-                            key={order.id}
-                            onPress={() =>
-                            navigation.navigate("OrderDetails", { order })
-                            }
-                            className="bg-white rounded-2xl p-4 mb-4 shadow-sm border border-gray-100 active:scale-[0.99] transition-transform"
-                             style={{
-                                shadowColor: "#000",
-                                shadowOffset: { width: 0, height: 2 },
-                                shadowOpacity: 0.04,
-                                shadowRadius: 8,
-                                elevation: 2,
-                            }}
-                        >
-                            <View className="flex-row justify-between mb-4">
-                                <View className="flex-row items-center gap-3">
-                                    <View
-                                        className="w-10 h-10 rounded-full items-center justify-center shadow-inner"
-                                        style={{ backgroundColor: avatarColor }}
-                                    >
-                                        <Text className="text-white font-bold text-sm">
-                                        {initials}
-                                        </Text>
-                                    </View>
-                                    <View>
-                                        <Text className="font-bold text-gray-900 text-base">
-                                            {order.buyerName}
-                                        </Text>
-                                        <Text className="text-gray-400 text-xs font-medium">
-                                            #{order.orderNumber}
-                                        </Text>
-                                    </View>
-                                </View>
-                                <View
-                                    className={`px-3 py-1 rounded-full self-start ${getStatusColor(
-                                        status
-                                    )}`}
-                                    >
-                                    <Text
-                                        className={`text-xs font-bold ${
-                                        getStatusColor(status).includes("text-")
-                                            ? getStatusColor(status)
-                                                .split(" ")
-                                                .find((c) => c.startsWith("text-"))
-                                            : "text-gray-700"
-                                        }`}
-                                    >
-                                        {status}
-                                    </Text>
-                                </View>
-                            </View>
-
-                            <View className="border-t border-gray-50 pt-3 flex-row justify-between items-center">
-                                <View className="flex-row items-center gap-1.5">
-                                    <Ionicons name="time-outline" size={14} color="#9ca3af" />
-                                    <Text className="text-gray-400 text-xs font-medium">
-                                        {new Date(order.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                    </Text>
-                                </View>
-                                <Text className="font-bold text-gray-900 text-lg">
-                                    ₦{order.totalPrice.toLocaleString()}
-                                </Text>
-                            </View>
-                        </Pressable>
-                        );
-                    })}
-                    </View>
+          {showInitialSkeleton ? (
+            <OrdersListSkeleton count={5} />
+          ) : sections.length === 0 ? (
+            EmptyState
+          ) : (
+            sections.map((section) => (
+              <View key={section.title} className="mt-3">
+                <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mb-2 px-1">
+                  {section.title}
+                </Text>
+                {section.data.map((order) => (
+                  <OrderRow
+                    key={order.id}
+                    order={order}
+                    onPress={() => handleOrderTap(order)}
+                  />
                 ))}
-
-                {/* Pagination Component */}
-                {totalPages > 1 && (
-                    <View className="flex-row items-center justify-center py-6 gap-2">
-                        <Pressable 
-                            onPress={() => handlePageChange(currentPage - 1)}
-                            disabled={currentPage === 1}
-                            className={`w-10 h-10 rounded-xl items-center justify-center border ${currentPage === 1 ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'}`}
-                        >
-                            <MaterialIcons name="chevron-left" size={24} color={currentPage === 1 ? "#d1d5db" : "#374151"} />
-                        </Pressable>
-                        
-                        <View className="flex-row items-center gap-2">
-                            {Array.from({ length: totalPages }).map((_, i) => {
-                                const pageNum = i + 1;
-                                const isSelected = pageNum === currentPage;
-                                
-                                if (totalPages > 5) {
-                                    if (pageNum !== 1 && pageNum !== totalPages && Math.abs(pageNum - currentPage) > 1) {
-                                        if (Math.abs(pageNum - currentPage) === 2) {
-                                            return <Text key={`dot-${pageNum}`} className="text-gray-400">...</Text>;
-                                        }
-                                        return null;
-                                    }
-                                }
-
-                                return (
-                                    <Pressable
-                                        key={pageNum}
-                                        onPress={() => handlePageChange(pageNum)}
-                                        className={`w-10 h-10 rounded-xl items-center justify-center border ${isSelected ? 'border-blue-600 bg-blue-600' : 'border-gray-200 bg-white shadow-sm'}`}
-                                    >
-                                        <Text className={`font-bold ${isSelected ? 'text-white' : 'text-gray-700'}`}>{pageNum}</Text>
-                                    </Pressable>
-                                );
-                            })}
-                        </View>
-
-                        <Pressable 
-                            onPress={() => handlePageChange(currentPage + 1)}
-                            disabled={currentPage === totalPages}
-                            className={`w-10 h-10 rounded-xl items-center justify-center border ${currentPage === totalPages ? 'border-gray-100 bg-gray-50' : 'border-gray-200 bg-white shadow-sm'}`}
-                        >
-                            <MaterialIcons name="chevron-right" size={24} color={currentPage === totalPages ? "#d1d5db" : "#374151"} />
-                        </Pressable>
-                    </View>
-                )}
               </View>
-            )}
+            ))
+          )}
+
+          <EndOfList
+            isFetchingMore={isFetchingNextPage}
+            hasNextPage={!!hasNextPage}
+            itemCount={filteredOrders.length}
+          />
         </View>
       </ScrollView>
-    </SafeAreaView>
+    </View>
   );
 }

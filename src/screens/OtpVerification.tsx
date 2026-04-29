@@ -2,245 +2,433 @@ import {
   View,
   Text,
   TouchableOpacity,
-  Image,
   StatusBar,
   TextInput,
-  Alert,
   ActivityIndicator,
-} from 'react-native';
-import React, { useState, useRef } from 'react';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { NativeStackScreenProps } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import { Ionicons } from '@expo/vector-icons';
-import { useAuth } from '../../context/AuthContext';
-import { verifyOtp } from '../api/auth/auth.api';
-import { OtpVerificationRequest } from '../api/auth/auth.types';
-import { useToast } from 'react-native-toast-notifications';
+  Pressable,
+  Platform,
+  ScrollView,
+  KeyboardAvoidingView,
+} from "react-native";
+import React, { useState, useRef, useEffect, useCallback } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { useFocusEffect } from "@react-navigation/native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
+import { useToast } from "react-native-toast-notifications";
 
+import { RootStackParamList } from "../navigation/types";
+import { useAuth } from "../../context/AuthContext";
+import { verifyOtp } from "../api/auth/auth.api";
+import { OtpVerificationRequest } from "../api/auth/auth.types";
 
-type Props = NativeStackScreenProps<RootStackParamList, 'OtpVerification'>;
+type Props = NativeStackScreenProps<RootStackParamList, "OtpVerification">;
+
+const RESEND_COOLDOWN_S = 30;
+const OTP_LENGTH = 6;
+
+/**
+ * Isolated resend timer. Owns its own ticking state so its 1Hz update doesn't
+ * re-render the OTP shell — the kind of churn that interrupts keyboard
+ * transitions on iOS.
+ */
+function ResendTimer({ onResend }: { onResend: () => void }) {
+  const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  if (cooldown > 0) {
+    return (
+      <Text className="text-[13px] text-gray-500">
+        Didn't get it? Resend in{" "}
+        <Text className="font-bold text-gray-900">{cooldown}s</Text>
+      </Text>
+    );
+  }
+
+  return (
+    <Pressable
+      onPress={() => {
+        if (Platform.OS === "ios") {
+          Haptics.selectionAsync().catch(() => {});
+        }
+        onResend();
+        setCooldown(RESEND_COOLDOWN_S);
+      }}
+      hitSlop={8}
+    >
+      <Text className="text-[13px] text-blue-600 font-extrabold">
+        Resend code
+      </Text>
+    </Pressable>
+  );
+}
+
+const maskEmail = (email: string) => {
+  if (!email) return "";
+  const [local, domain] = email.split("@");
+  if (!domain) return email;
+  if (local.length <= 2) return `${local[0]}•@${domain}`;
+  return `${local[0]}${"•".repeat(Math.min(local.length - 2, 4))}${local.slice(
+    -1
+  )}@${domain}`;
+};
+
+/**
+ * Blinking caret for the currently-active cell. Pure visual — has nothing to
+ * do with focus state, just a blue bar that fades in/out.
+ */
+function Caret() {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const t = setInterval(() => setVisible((v) => !v), 530);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <View
+      style={{
+        width: 2,
+        height: 24,
+        backgroundColor: "#2563eb",
+        borderRadius: 1,
+        opacity: visible ? 1 : 0,
+      }}
+    />
+  );
+}
 
 export default function OtpVerification({ route, navigation }: Props) {
-     const toast = useToast();
-  
-  const { email, password } = route.params;
+  const toast = useToast();
+  const { email, password } = route?.params;
   const { setAuthData } = useAuth();
-  const [otp, setOtp] = useState(['', '', '', '', '', '']);
-  const inputRefs = useRef<Array<TextInput | null>>([]);
+
+  // ONE source of truth: a single string. The visible cells just render
+  // slices of it. There is no per-cell focus state to coordinate.
+  const [otp, setOtp] = useState("");
+  const hiddenInputRef = useRef<TextInput>(null);
   const [loading, setLoading] = useState(false);
+  const [errored, setErrored] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
 
-  const handleChange = (text: string, index: number) => {
-    const newOtp = [...otp];
-    const digits = text.replace(/[^0-9]/g, '');
+  // Reliable initial focus: useFocusEffect waits for the navigator's settle
+  // event, then we give the renderer a beat to mount the hidden input before
+  // asking for the keyboard.
+  useFocusEffect(
+    useCallback(() => {
+      const t = setTimeout(() => hiddenInputRef.current?.focus(), 80);
+      return () => clearTimeout(t);
+    }, [])
+  );
 
-    // Handle paste of multiple digits
-    if (digits.length > 1) {
-      for (let i = 0; i < digits.length && index + i < 6; i++) {
-        newOtp[index + i] = digits[i];
-      }
-      setOtp(newOtp);
-      const nextIndex = Math.min(5, index + digits.length);
-      inputRefs.current[nextIndex]?.focus();
-      return;
-    }
-
-    if (digits.length === 0) {
-      // User deleted - clear current field
-      newOtp[index] = '';
-      setOtp(newOtp);
-      // Stay in current field for easy correction
-    } else {
-      // User entered a digit - replace current value
-      newOtp[index] = digits[0];
-      setOtp(newOtp);
-      // Auto-advance to next field
-      if (index < 5) {
-        inputRefs.current[index + 1]?.focus();
-      }
-    }
-  };
-
-  const handleKeyPress = (e: any, index: number) => {
-    const key = e.nativeEvent.key;
-
-    if (key === 'Backspace') {
-      // If current field is empty, move back to previous field
-      if (otp[index] === '' && index > 0) {
-        const newOtp = [...otp];
-        newOtp[index - 1] = '';
-        setOtp(newOtp);
-        setTimeout(() => {
-          inputRefs.current[index - 1]?.focus();
-        }, 0);
-      }
-    }
+  const handleChange = (text: string) => {
+    const digits = text.replace(/[^0-9]/g, "").slice(0, OTP_LENGTH);
+    setOtp(digits);
+    if (errored) setErrored(false);
   };
 
   const handleVerify = async () => {
-    const enteredOtp = otp.join('');
-
-    if (enteredOtp.length !== 6) {
-     toast.show( 'Incomplete OTP', { type: 'danger' });
-
-     
+    if (otp.length !== OTP_LENGTH) {
+      toast.show("Enter the full 6-digit code", { type: "danger" });
       return;
+    }
+
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
 
     setLoading(true);
     const payload: OtpVerificationRequest = {
-      email: email,
-      password: password,
-      otp: enteredOtp,
+      email,
+      password,
+      otp,
       skipVerificationForLater: false,
     };
 
     try {
       const response = await verifyOtp(payload);
-      console.log(response, 'OTP verification response');
-      const { token, userId, fullName, storeId, email: userEmail } = response;
-      console.log('OTP verification successful:', response);
-
-      if (!token) throw new Error('Token missing in response');
-  if (!storeId) throw new Error('Store ID missing in response');
-
-      
-      const user = {
-        id: userId,
+      const {
+        token,
+        userId,
+        fullName,
+        storeId,
         email: userEmail,
-        name: fullName ?? undefined,
-         storeId,
-         
-      };
+      } = response;
 
-     setAuthData(token, {
+      if (!token) throw new Error("Token missing in response");
+      if (!storeId) throw new Error("Store ID missing in response");
+
+      setAuthData(token, {
         id: userId,
         email: userEmail,
         name: fullName ?? undefined,
         storeId,
       });
-     toast.show( 'Verification Successful', { type: 'success' });
 
-     
+      if (Platform.OS === "ios") {
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success
+        ).catch(() => {});
+      }
 
-      navigation.navigate('OtpSuccess');
+      navigation.navigate("OtpSuccess");
     } catch (error: any) {
-      console.error('OTP verification error:', error);
-      
-      
-      const errorMessage = 
-        error?.response?.data?.message || 
+      console.error("OTP verification error:", error);
+      const message =
+        error?.response?.data?.message ||
         error?.response?.data?.error ||
-        error?.message || 
-        'Verification failed. Please try again.';
-     toast.show( 'Verification Failed', { type: 'danger' });
-
-      
-      
-      setOtp(['', '', '', '', '', '']);
-      inputRefs.current[0]?.focus();
+        error?.message ||
+        "That code didn't work. Try again.";
+      toast.show(message, { type: "danger" });
+      setErrored(true);
+      if (Platform.OS === "ios") {
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Error
+        ).catch(() => {});
+      }
+      setOtp("");
+      hiddenInputRef.current?.focus();
     } finally {
       setLoading(false);
     }
   };
 
-  const handleResendOtp = () => {
-    setOtp(['', '', '', '', '', '']);
-    inputRefs.current[0]?.focus();
-     toast.show( 'OTP Resent', { type: 'warning' });
-    
-   
+  const handleResend = () => {
+    setOtp("");
+    setErrored(false);
+    hiddenInputRef.current?.focus();
+    toast.show("A fresh code is on its way.", { type: "success" });
   };
 
-  const isOtpComplete = otp.every(digit => digit !== '');
+  const isOtpComplete = otp.length === OTP_LENGTH;
 
   return (
-    <SafeAreaView className="flex-1 bg-white">
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-     
-      <View className="pt-5 px-6">
-        <View className="flex-row items-center justify-center relative">
-          <TouchableOpacity
-            className="absolute left-0 p-2"
-            onPress={() => navigation.goBack()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={24} color="#000" />
-          </TouchableOpacity>
-          <View className="p-3">
-            <Image
-              source={require('../../assets/lock.png')}
-              style={{ width: 100, height: 100 }}
-              resizeMode="contain"
-            />
+    <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+
+      <KeyboardAvoidingView
+        className="flex-1"
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView
+          className="flex-1"
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{ paddingBottom: 24 }}
+        >
+          {/* Top bar */}
+          <View className="px-6 pt-4">
+            <View className="flex-row items-center justify-between">
+              <TouchableOpacity
+                onPress={() => navigation.goBack()}
+                activeOpacity={0.7}
+                className="w-10 h-10 bg-white border border-gray-200 rounded-full items-center justify-center"
+              >
+                <Ionicons name="arrow-back" size={20} color="#111827" />
+              </TouchableOpacity>
+              <Text
+                className="text-[15px] text-gray-900"
+                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+              >
+                Verify your email
+              </Text>
+              <View className="w-10 h-10" />
+            </View>
           </View>
-        </View>
-        <View className="flex-col items-center justify-center">
-          <Text className="px-3 text-[20px] font-[500] pt-8 text-[#374151]">
-            Secure Verification
-          </Text>
-          <Text className="px-3 text-[16px] font-[400] pt-4 text-[#6B7280] text-center">
-            A one-time 6-digit code has been sent to{' '}
-            <Text className="font-[500] text-[#6B7280]">{email}</Text>. Please
-            enter it to confirm
-          </Text>
-        </View>
-        <View className="flex-row justify-center mb-10 mt-8">
-          {[...Array(6)].map((_, index) => (
+
+          {/* Hero */}
+          <View className="items-center px-6 mt-8">
             <View
-              key={index}
-              className={`border-2 rounded-xl w-12 h-16 items-center justify-center mx-1 ${
-                otp[index] ? 'border-[#1A56DB]' : 'border-gray-300'
-              }`}
+              className="w-16 h-16 rounded-3xl bg-blue-50 border border-blue-100 items-center justify-center mb-5"
+              style={{
+                shadowColor: "#2563eb",
+                shadowOffset: { width: 0, height: 6 },
+                shadowOpacity: 0.18,
+                shadowRadius: 16,
+                elevation: 4,
+              }}
             >
+              <Ionicons name="mail-open-outline" size={28} color="#2563eb" />
+            </View>
+
+            <Text
+              className="text-gray-900 text-center"
+              style={{
+                fontFamily: "PlusJakartaSans_700Bold",
+                fontSize: 26,
+                letterSpacing: -0.5,
+                lineHeight: 32,
+              }}
+            >
+              Check your email
+            </Text>
+            <Text className="text-gray-500 text-[14.5px] mt-2 text-center leading-[21px]">
+              We sent a 6-digit code to{"\n"}
+              <Text className="text-gray-900 font-bold">
+                {maskEmail(email)}
+              </Text>
+            </Text>
+          </View>
+
+          {/* OTP cells — the cells are pure presentation. The actual input is
+              a full-width transparent TextInput layered ON TOP of the row, so
+              every tap on the cells lands directly on the input itself. No
+              focus relay, no Pressable indirection. */}
+          <View className="px-6 mt-8">
+            <View style={{ position: "relative", height: 58 }}>
+              {/* Visible cell row */}
+              <View className="flex-row justify-between">
+                {Array.from({ length: OTP_LENGTH }).map((_, i) => {
+                  const digit = otp[i] || "";
+                  const isFilled = i < otp.length;
+                  const isActive = isFocused && i === otp.length && !errored;
+                  const borderClass = errored
+                    ? "border-red-300 bg-red-50/40"
+                    : isActive
+                    ? "border-blue-600 bg-white"
+                    : isFilled
+                    ? "border-blue-200 bg-white"
+                    : "border-gray-200 bg-white";
+
+                  return (
+                    <View
+                      key={i}
+                      className={`w-[48px] h-[58px] rounded-2xl border-[1.5px] items-center justify-center ${borderClass}`}
+                      style={
+                        isActive
+                          ? {
+                              shadowColor: "#2563eb",
+                              shadowOffset: { width: 0, height: 4 },
+                              shadowOpacity: 0.18,
+                              shadowRadius: 8,
+                              elevation: 3,
+                            }
+                          : undefined
+                      }
+                    >
+                      {digit ? (
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans_700Bold",
+                            fontSize: 22,
+                            letterSpacing: -0.3,
+                            color: "#111827",
+                          }}
+                        >
+                          {digit}
+                        </Text>
+                      ) : isActive ? (
+                        <Caret />
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+
+              {/* Real-sized transparent TextInput overlaid on top. Receives all
+                  taps (rendered after the cells, so it's on top in z-order),
+                  text and caret are transparent so it looks like the cells
+                  are the input. */}
               <TextInput
-                ref={(ref) => {
-                  inputRefs.current[index] = ref;
-                }}
-                className="text-2xl font-bold text-center w-full h-full"
+                ref={hiddenInputRef}
+                value={otp}
+                onChangeText={handleChange}
+                onFocus={() => setIsFocused(true)}
+                onBlur={() => setIsFocused(false)}
                 keyboardType="number-pad"
-                maxLength={1}
-                value={otp[index]}
-                onChangeText={(text) => handleChange(text, index)}
-                onKeyPress={(e) => handleKeyPress(e, index)}
-                selectTextOnFocus
-                autoFocus={index === 0}
+                maxLength={OTP_LENGTH}
+                textContentType="oneTimeCode"
+                autoComplete="sms-otp"
+                importantForAutofill="yes"
                 editable={!loading}
+                caretHidden
+                selectionColor="transparent"
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  color: "transparent",
+                  backgroundColor: "transparent",
+                  fontSize: 1,
+                  textAlign: "center",
+                }}
               />
             </View>
-          ))}
-        </View>
-        <View className="items-center mb-10">
-          <Text className="text-gray-600 mb-2">
-            Didn't receive the code?{' '}
-            <Text
-              className="text-lg font-medium text-[#265CC7]"
-              onPress={handleResendOtp}
+
+            {errored && (
+              <View className="flex-row items-center justify-center gap-1.5 mt-3">
+                <Ionicons name="alert-circle" size={14} color="#dc2626" />
+                <Text className="text-[12.5px] font-semibold text-red-600">
+                  That code didn't work — try again
+                </Text>
+              </View>
+            )}
+          </View>
+
+          {/* Resend — isolated component so its 1Hz tick doesn't re-render the OTP cells */}
+          <View className="items-center mt-6">
+            <ResendTimer onResend={handleResend} />
+          </View>
+
+          {/* CTA */}
+          <View className="px-6 mt-8">
+            <Pressable
+              onPress={handleVerify}
+              disabled={!isOtpComplete || loading}
+              className={`h-12 rounded-2xl items-center justify-center flex-row gap-2 ${
+                isOtpComplete && !loading ? "bg-blue-600" : "bg-gray-200"
+              }`}
+              style={{
+                shadowColor: "#2563eb",
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: isOtpComplete && !loading ? 0.25 : 0,
+                shadowRadius: 8,
+                elevation: isOtpComplete && !loading ? 4 : 0,
+              }}
             >
-              Resend
-            </Text>
-          </Text>
-        </View>
-        <TouchableOpacity
-          className={`w-full py-4 rounded-full items-center justify-center flex-row ${
-            isOtpComplete && !loading ? 'bg-[#1A56DB]' : 'bg-gray-300'
-          }`}
-          onPress={handleVerify}
-          disabled={!isOtpComplete || loading}
-          activeOpacity={isOtpComplete ? 0.8 : 1}
-        >
-          {loading && (
-            <ActivityIndicator color="#fff" size="small" className="mr-2" />
-          )}
-          <Text
-            className={`text-lg font-semibold ${
-              isOtpComplete && !loading ? 'text-white' : 'text-gray-500'
-            }`}
-          >
-            {loading ? 'Verifying...' : 'Verify'}
-          </Text>
-        </TouchableOpacity>
-      </View>
+              {loading ? (
+                <>
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text className="text-[15px] font-bold text-white">
+                    Verifying…
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Text
+                    className={`text-[15px] font-bold ${
+                      isOtpComplete ? "text-white" : "text-gray-500"
+                    }`}
+                  >
+                    Verify
+                  </Text>
+                  {isOtpComplete && (
+                    <Ionicons name="arrow-forward" size={16} color="white" />
+                  )}
+                </>
+              )}
+            </Pressable>
+
+            {/* Trust line */}
+            <View className="flex-row items-center justify-center gap-1.5 mt-4">
+              <Ionicons
+                name="shield-checkmark-outline"
+                size={13}
+                color="#94a3b8"
+              />
+              <Text className="text-[11.5px] text-gray-500">
+                Codes expire after 10 minutes for your security
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }

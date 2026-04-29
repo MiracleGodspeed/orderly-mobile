@@ -4,13 +4,13 @@ import {
   Text,
   Pressable,
   ScrollView,
-  Image,
   ActivityIndicator,
 } from "react-native";
 import { useState } from "react";
 import { SafeAreaView } from 'react-native-safe-area-context';
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import { Product } from '../../src/api/vendor/vendor.types';
+import { AppImage } from './AppImage';
 
 interface Props {
   visible: boolean;
@@ -71,10 +71,9 @@ export default function ProductDetailsModal({
        
           <View className="relative">
             {product.image ? (
-              <Image
-                source={{ uri: product.image }}
-                className="w-full h-80"
-                resizeMode="cover"
+              <AppImage
+                uri={product.image}
+                style={{ width: "100%", height: 320 }}
               />
             ) : (
               <View className="w-full h-80 bg-gray-100 justify-center items-center">

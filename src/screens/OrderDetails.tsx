@@ -4,12 +4,9 @@ import {
   Text,
   Pressable,
   ScrollView,
-  StatusBar,
-  Image,
   Linking,
   Platform,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useToast } from 'react-native-toast-notifications';
@@ -17,6 +14,8 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 
 import { RootStackParamList } from "../navigation/types";
 import { Order } from "../api/vendor/vendor.types";
+import { AppImage } from "../components/AppImage";
+import { ScreenHeader } from "../components/ScreenHeader";
 
 type ScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -135,19 +134,8 @@ export default function OrderDetailsScreen() {
   const initials = getInitials(order.buyerName);
 
   return (
-    <SafeAreaView className="bg-gray-50 flex-1" edges={["top"]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
-
-      {/* Header */}
-      <View className="px-5 py-4 bg-white border-b border-gray-100 flex-row items-center justify-between sticky top-0 z-10">
-        <View className="flex-row items-center">
-          <Pressable onPress={() => navigation.goBack()} className="mr-4 p-2 -ml-2 rounded-full active:bg-gray-100">
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </Pressable>
-          <Text className="text-xl font-bold text-gray-900">Order Details</Text>
-        </View>
-        <View className="w-8" />
-      </View>
+    <View className="bg-gray-50 flex-1">
+      <ScreenHeader title="Order Details" />
 
       <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
        {/* Order Summary Card */}
@@ -270,10 +258,9 @@ export default function OrderDetailsScreen() {
                 {order.catalogItems.map((item: any, index: number) => (
                     <View key={item.id || index} className={`p-4 flex-row ${index !== order.catalogItems.length - 1 ? 'border-b border-gray-100' : ''}`}>
                         <View className="w-16 h-16 bg-gray-100 rounded-lg mr-4 overflow-hidden border border-gray-200">
-                            <Image
-                                source={{ uri: item.image }}
-                                className="w-full h-full"
-                                resizeMode="cover"
+                            <AppImage
+                                uri={item.image}
+                                style={{ width: "100%", height: "100%" }}
                             />
                         </View>
 
@@ -390,6 +377,6 @@ export default function OrderDetailsScreen() {
           </View>
         </View>
       )}
-    </SafeAreaView>
+    </View>
   );
 }

@@ -1,7 +1,8 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from "react";
 import { getStorefrontDetails, updateStorefrontSettings } from "../src/api/vendor/vendor.api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "react-native";
+import { useAuth } from "./AuthContext";
 
 const STORE_DATA_CACHE = "store_data_cache";
 
@@ -265,6 +266,22 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
     };
     loadCachedData();
   }, []);
+
+  // Wipe in-memory vendor state the moment the auth token clears, so a fresh
+  // login on the same device never sees the previous user's store details.
+  const { token } = useAuth();
+  const prevTokenRef = useRef<string | null>(token);
+  useEffect(() => {
+    if (prevTokenRef.current && !token) {
+      setBusinessName("");
+      setDescription("");
+      setIsServiceBased(null);
+      setSelectedCategories([]);
+      setStoreData(null);
+      setChecklistItems([]);
+    }
+    prevTokenRef.current = token;
+  }, [token]);
 
   const setBusinessInfo = (name: string, desc: string) => {
     setBusinessName(name);

@@ -1,19 +1,19 @@
 import {
-  Modal,
   View,
   Text,
   Pressable,
   TextInput,
-  Image,
-  Switch,
   Platform,
   ScrollView,
-  ActivityIndicator,
+  Alert,
 } from "react-native";
 import { useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
-import AntDesign from '@expo/vector-icons/AntDesign';
+import * as Haptics from "expo-haptics";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { HeroItem, useVendor } from "../../context/VendorContext";
+import { BottomSheet, BottomSheetFooter } from "./BottomSheet";
+import { AppImage } from "./AppImage";
 
 interface Props {
   visible: boolean;
@@ -21,31 +21,36 @@ interface Props {
   initialData?: HeroItem[];
 }
 
-export default function HeroSectionModal({ visible, onClose, initialData }: Props) {
+const blankSlide = (): HeroItem => ({
+  title: "",
+  subTitle: "",
+  slideImage: null,
+});
+
+export default function HeroSectionModal({
+  visible,
+  onClose,
+  initialData,
+}: Props) {
   const { updateVendorSettings, storeData, loading } = useVendor();
   const [slides, setSlides] = useState<HeroItem[]>([]);
-  const [enabled, setEnabled] = useState(true);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (visible && initialData && Array.isArray(initialData)) {
-      if (initialData.length > 0) {
+    if (visible) {
+      if (initialData && Array.isArray(initialData) && initialData.length > 0) {
         setSlides([...initialData]);
       } else {
-        setSlides([{ title: "", subTitle: "", slideImage: null }]);
+        setSlides([blankSlide()]);
       }
-    } else if (visible && (!initialData || initialData.length === 0)) {
-      setSlides([{ title: "", subTitle: "", slideImage: null }]);
     }
   }, [visible, initialData]);
 
-  // Ask for permission ONCE (prevents iOS + Hermes crash) 
   useEffect(() => {
     (async () => {
       if (Platform.OS !== "web") {
         const { status } =
           await ImagePicker.getMediaLibraryPermissionsAsync();
-
         if (status !== "granted") {
           const request =
             await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -62,17 +67,18 @@ export default function HeroSectionModal({ visible, onClose, initialData }: Prop
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.7, // Reduced quality slightly to help size
+      quality: 0.7,
       base64: true,
     });
 
     if (!result.canceled && result.assets.length > 0) {
       const asset = result.assets[0];
-      console.log("Hero Image Size:", asset.fileSize);
 
-      // File size validation (2MB = 2097152 bytes)
       if (asset.fileSize && asset.fileSize > 2097152) {
-        alert("Image size exceeds 2MB. Please upload a smaller image.");
+        Alert.alert(
+          "Image too large",
+          "Please choose an image smaller than 2MB."
+        );
         return;
       }
 
@@ -91,158 +97,181 @@ export default function HeroSectionModal({ visible, onClose, initialData }: Prop
   };
 
   const addSlide = () => {
-    setSlides((prev) => [...prev, { title: "", subTitle: "", slideImage: null }]);
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    setSlides((prev) => [...prev, blankSlide()]);
   };
 
   const removeSlide = (index: number) => {
     setSlides((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const removeImage = (index: number) => {
-    updateSlide(index, { slideImage: null });
-  };
-
   const handleSave = async () => {
     if (!storeData) return;
-
     try {
       const updatedStoreFrontJson = {
         ...storeData.storeFrontJson,
         heroArr: slides,
       };
-
-      await updateVendorSettings({
-        storeFrontJson: updatedStoreFrontJson,
-      });
+      await updateVendorSettings({ storeFrontJson: updatedStoreFrontJson });
       onClose();
     } catch (error) {
       console.error("Save failed:", error);
     }
   };
 
-  const handleCancel = () => {
-    onClose();
-  };
-
-
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
+      onClose={onClose}
+      title="Hero Section"
+      subtitle="Showcase what visitors see first when they land"
+      height="92%"
     >
-      <View className="flex-1 justify-end bg-black/40">
-        <View className="h-[85%] bg-white rounded-t-3xl">
-          <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
-            <Text className="text-base font-semibold">Hero Section</Text>
-            <Pressable onPress={onClose}>
-              <AntDesign name="close" size={24} color="black" />
-            </Pressable>
-          </View>
-
-          <ScrollView className="flex-1 px-4 pt-4">
-            {slides.map((slide, index) => (
-              <View key={index} className="mb-8 p-4 border border-gray-100 rounded-2xl bg-gray-50/50">
-                <View className="flex-row justify-between items-center mb-4">
-                  <Text className="text-sm font-bold text-gray-400 uppercase tracking-widest">
-                    Slide {index + 1}
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+      >
+        {slides.map((slide, index) => (
+          <View
+            key={index}
+            className="bg-white rounded-3xl border border-gray-100 mt-4 overflow-hidden"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 10,
+              elevation: 2,
+            }}
+          >
+            <View className="flex-row items-center justify-between px-4 pt-4 pb-3">
+              <View className="flex-row items-center gap-2">
+                <View className="w-7 h-7 rounded-full bg-blue-50 items-center justify-center">
+                  <Text className="text-[12px] font-extrabold text-blue-600">
+                    {index + 1}
                   </Text>
-                  {slides.length > 1 && (
-                    <Pressable onPress={() => removeSlide(index)}>
-                      <Text className="text-red-500 font-medium text-sm">Remove Slide</Text>
-                    </Pressable>
-                  )}
                 </View>
-
-                <Text className="text-sm text-gray-700 mb-2">Image</Text>
-                <Pressable
-                  onPress={slide.slideImage ? undefined : () => pickImage(index)}
-                  className="h-40 border border-dashed border-gray-300 rounded-xl items-center justify-center mb-6 overflow-hidden relative bg-white"
-                >
-                  {slide.slideImage ? (
-                    <>
-                      <Image
-                        source={{ uri: slide.slideImage }}
-                        className="w-full h-full"
-                        resizeMode="cover"
-                      />
-                      <Pressable
-                        onPress={() => removeImage(index)}
-                        className="absolute top-2 right-2 bg-black/50 p-2 rounded-full"
-                      >
-                        <AntDesign name="close" size={20} color="white" />
-                      </Pressable>
-                    </>
-                  ) : (
-                    <>
-                      <AntDesign name="plus" size={24} color="#9ca3af" />
-                      <Text className="text-gray-400 mt-2">
-                        Upload a banner image
-                      </Text>
-                      <Text className="text-xs text-gray-400 mt-1">
-                        1200 × 600 recommended
-                      </Text>
-                    </>
-                  )}
-                </Pressable>
-
-                <Text className="text-sm text-gray-700 mb-2">Heading</Text>
-                <TextInput
-                  value={slide.title}
-                  onChangeText={(text) => updateSlide(index, { title: text })}
-                  className="border border-gray-300 rounded-lg px-3 py-3 mb-4 bg-white"
-                  placeholder="Enter heading"
-                />
-
-                <Text className="text-sm text-gray-700 mb-2">Subheading</Text>
-                <TextInput
-                  value={slide.subTitle}
-                  onChangeText={(text) => updateSlide(index, { subTitle: text })}
-                  className="border border-gray-300 rounded-lg px-3 py-3 mb-2 bg-white"
-                  placeholder="Enter subheading"
-                  multiline
-                />
+                <Text className="text-[13px] font-bold text-gray-900">
+                  Slide {index + 1}
+                </Text>
               </View>
-            ))}
-
-            <Pressable
-              onPress={addSlide}
-              className="border border-dashed border-blue-400 rounded-lg py-4 items-center mb-6 bg-blue-50/30"
-            >
-              <Text className="text-blue-600 font-medium">
-                ＋ Add Hero Slide
-              </Text>
-            </Pressable>
-
-            {/* <View className="flex-row items-center gap-3 mb-10">
-              <Switch value={enabled} onValueChange={setEnabled} />
-              <Text className="text-gray-900">Show on Homepage</Text>
-            </View> */}
-          </ScrollView>
-
-          <View className="flex-row items-center px-4 py-4 border-t border-gray-200 mb-6 bg-white">
-            <Pressable
-              onPress={handleCancel}
-              className="flex-1 py-4 items-center justify-center rounded-full border border-gray-300 mr-3"
-            >
-              <Text className="text-gray-900 font-medium text-base">Cancel</Text>
-            </Pressable>
-
-            <Pressable
-              onPress={handleSave}
-              disabled={loading}
-              className={`flex-1 py-4 items-center justify-center rounded-full ${loading ? 'bg-blue-300' : 'bg-blue-600'}`}
-            >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text className="text-white font-medium text-base">Save Changes</Text>
+              {slides.length > 1 && (
+                <Pressable
+                  onPress={() => removeSlide(index)}
+                  className="flex-row items-center gap-1 px-2 py-1 rounded-full active:bg-rose-50"
+                  hitSlop={6}
+                >
+                  <Ionicons name="trash-outline" size={14} color="#dc2626" />
+                  <Text className="text-[12px] font-semibold text-rose-600">
+                    Remove
+                  </Text>
+                </Pressable>
               )}
-            </Pressable>
+            </View>
+
+            <View className="px-4 pb-4">
+              {/* Image picker */}
+              <Pressable
+                onPress={() => pickImage(index)}
+                className="rounded-2xl overflow-hidden bg-gray-50 border border-dashed border-gray-200 mb-4"
+                style={{ aspectRatio: 16 / 9 }}
+              >
+                {slide.slideImage ? (
+                  <View className="w-full h-full">
+                    <AppImage
+                      uri={slide.slideImage}
+                      style={{ width: "100%", height: "100%" }}
+                    />
+                    <View className="absolute inset-0 bg-black/20" />
+                    <View className="absolute bottom-2 right-2 flex-row gap-2">
+                      <Pressable
+                        onPress={() => pickImage(index)}
+                        className="bg-white/95 px-2.5 h-8 rounded-full flex-row items-center gap-1.5"
+                      >
+                        <Ionicons
+                          name="refresh-outline"
+                          size={14}
+                          color="#374151"
+                        />
+                        <Text className="text-[11px] font-bold text-gray-800">
+                          Replace
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => updateSlide(index, { slideImage: null })}
+                        className="bg-white/95 w-8 h-8 rounded-full items-center justify-center"
+                      >
+                        <Ionicons name="close" size={16} color="#dc2626" />
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : (
+                  <View className="flex-1 items-center justify-center px-4">
+                    <View className="w-12 h-12 rounded-full bg-blue-50 items-center justify-center mb-3">
+                      <Ionicons
+                        name="image-outline"
+                        size={22}
+                        color="#2563eb"
+                      />
+                    </View>
+                    <Text className="text-[14px] font-semibold text-gray-900">
+                      Upload banner image
+                    </Text>
+                    <Text className="text-[11.5px] text-gray-500 mt-1 text-center">
+                      1200 × 600 recommended · Max 2MB
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+
+              {/* Heading */}
+              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mb-2">
+                Heading
+              </Text>
+              <TextInput
+                value={slide.title}
+                onChangeText={(text) => updateSlide(index, { title: text })}
+                className="border border-gray-200 rounded-2xl px-4 h-12 mb-4 bg-white text-[15px] text-gray-900"
+                placeholder="e.g. Premium Hair, Delivered Fast"
+                placeholderTextColor="#9ca3af"
+              />
+
+              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mb-2">
+                Subheading
+              </Text>
+              <TextInput
+                value={slide.subTitle}
+                onChangeText={(text) =>
+                  updateSlide(index, { subTitle: text })
+                }
+                className="border border-gray-200 rounded-2xl px-4 py-3 bg-white text-[15px] text-gray-900"
+                style={{ minHeight: 80, textAlignVertical: "top" }}
+                placeholder="A short line that gets visitors curious enough to scroll"
+                placeholderTextColor="#9ca3af"
+                multiline
+              />
+            </View>
           </View>
-        </View>
-      </View>
-    </Modal>
+        ))}
+
+        <Pressable
+          onPress={addSlide}
+          className="mt-5 h-14 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 flex-row items-center justify-center gap-2"
+        >
+          <Ionicons name="add-circle-outline" size={18} color="#2563eb" />
+          <Text className="text-[14px] font-bold text-blue-700">
+            Add another slide
+          </Text>
+        </Pressable>
+      </ScrollView>
+
+      <BottomSheetFooter
+        onCancel={onClose}
+        onSave={handleSave}
+        loading={loading}
+      />
+    </BottomSheet>
   );
 }

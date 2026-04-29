@@ -1,9 +1,12 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { navigate } from '../src/navigation/NavigationService';
+import { reset } from '../src/navigation/NavigationService';
 
 const AUTH_TOKEN_KEY = "auth_token";
 const AUTH_USER_KEY = "auth_user";
 
+// Pure storage helper — no navigation. Routing is the caller's responsibility
+// because the right destination depends on context (post-login vs. post-OTP
+// vs. silent token refresh).
 export const saveAuthToStorage = async (
   token?: string,
   user?: any
@@ -11,15 +14,8 @@ export const saveAuthToStorage = async (
   if (token) {
     await AsyncStorage.setItem(AUTH_TOKEN_KEY, token);
   }
-  console.log(user, "user_storage")
-  console.log(user?.userStatus, "userStatus")
   if (user) {
     await AsyncStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
-  }
-  if (user && user?.userStatus == 2) {
-    navigate('SetupStep1')
-  } else {
-    navigate('Home')
   }
 };
 
@@ -45,7 +41,12 @@ export const IsLoggedIn = async () : Promise<boolean> => {
 };
 
 export const clearAuthFromStorage = async () => {
-  await AsyncStorage.removeItem(AUTH_TOKEN_KEY);
-  await AsyncStorage.removeItem(AUTH_USER_KEY);
-  navigate('AuthOptions')
+  await AsyncStorage.multiRemove([
+    AUTH_TOKEN_KEY,
+    AUTH_USER_KEY,
+    "store_data_cache",
+    "store_setup_steps",
+    "vendor_auto_renew",
+  ]);
+  reset('Splash');
 };

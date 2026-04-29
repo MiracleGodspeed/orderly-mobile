@@ -7,6 +7,8 @@ import { useEffect, useState, useCallback } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import RootNavigator from './src/navigation/RootNavigator';
 import { ToastProvider } from 'react-native-toast-notifications';
+import { usePushNotifications } from './src/hooks/usePushNotifications';
+import { preloadAppAssets } from './src/lib/preloadAssets';
 import {
   useFonts,
   Quicksand_400Regular,
@@ -34,12 +36,19 @@ export default function App() {
   });
   const isReady = appIsReady && fontsLoaded;
 
+  // Mount push-notification foreground/tap listeners once.
+  usePushNotifications();
+
   useEffect(() => {
     async function prepare() {
       try {
-        setAppIsReady(true);
+        // Decode critical bitmap assets (logo, splash artwork) into memory
+        // *before* we hide the splash screen — eliminates the flash where
+        // the navbar logo arrives 5-10s after first paint.
+        await preloadAppAssets();
       } catch (e) {
         console.warn(e);
+      } finally {
         setAppIsReady(true);
       }
     }

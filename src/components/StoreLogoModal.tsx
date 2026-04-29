@@ -1,17 +1,11 @@
-import {
-  Modal,
-  View,
-  Text,
-  Pressable,
-  Image,
-  Platform
-} from "react-native";
+import { View, Text, Pressable, Platform, Alert } from "react-native";
 import { useState, useEffect } from "react";
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import * as ImagePicker from "expo-image-picker";
-import AntDesign from '@expo/vector-icons/AntDesign';
+import * as Haptics from "expo-haptics";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import { useVendor } from "../../context/VendorContext";
-import { ActivityIndicator } from "react-native";
+import { BottomSheet, BottomSheetFooter } from "./BottomSheet";
+import { AppImage } from "./AppImage";
 
 interface Props {
   visible: boolean;
@@ -19,23 +13,29 @@ interface Props {
   initialLogo?: string | null;
 }
 
-export default function StoreLogoModal({ visible, onClose, initialLogo }: Props) {
+export default function StoreLogoModal({
+  visible,
+  onClose,
+  initialLogo,
+}: Props) {
   const { updateVendorSettings, storeData, loading } = useVendor();
   const [logo, setLogo] = useState<string | null>(null);
+  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (visible && initialLogo) {
-      setLogo(initialLogo);
+    if (visible) {
+      setLogo(initialLogo ?? null);
     }
   }, [visible, initialLogo]);
-  const [hasPermission, setHasPermission] = useState<boolean | null>(null);
 
   useEffect(() => {
     (async () => {
       if (Platform.OS !== "web") {
-        const { status } = await ImagePicker.getMediaLibraryPermissionsAsync();
+        const { status } =
+          await ImagePicker.getMediaLibraryPermissionsAsync();
         if (status !== "granted") {
-          const request = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          const request =
+            await ImagePicker.requestMediaLibraryPermissionsAsync();
           setHasPermission(request.status === "granted");
         } else {
           setHasPermission(true);
@@ -46,6 +46,9 @@ export default function StoreLogoModal({ visible, onClose, initialLogo }: Props)
 
   const pickLogo = async () => {
     if (hasPermission === false) return;
+    if (Platform.OS === "ios") {
+      Haptics.selectionAsync().catch(() => {});
+    }
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
@@ -57,11 +60,12 @@ export default function StoreLogoModal({ visible, onClose, initialLogo }: Props)
 
     if (!result.canceled && result.assets.length > 0) {
       const asset = result.assets[0];
-      console.log("Store Logo Size:", asset.fileSize);
 
-      // File size validation (2MB = 2097152 bytes)
       if (asset.fileSize && asset.fileSize > 2097152) {
-        alert("Image size exceeds 2MB. Please upload a smaller image.");
+        Alert.alert(
+          "Image too large",
+          "Please choose an image smaller than 2MB."
+        );
         return;
       }
 
@@ -70,6 +74,13 @@ export default function StoreLogoModal({ visible, onClose, initialLogo }: Props)
         : asset.uri;
       setLogo(imageSource);
     }
+  };
+
+  const handleRemove = () => {
+    if (Platform.OS === "ios") {
+      Haptics.selectionAsync().catch(() => {});
+    }
+    setLogo(null);
   };
 
   const handleSave = async () => {
@@ -82,73 +93,87 @@ export default function StoreLogoModal({ visible, onClose, initialLogo }: Props)
     }
   };
 
-  const handleCancel = () => {
-    onClose();
-  };
-
-
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      animationType="slide"
-      transparent
-      statusBarTranslucent
+      onClose={onClose}
+      title="Store Logo"
+      subtitle="Upload your brand mark — used across your storefront"
+      height={520}
     >
-      <View className="flex-1 bg-black/40 justify-end">
-        <View className="bg-white rounded-t-2xl px-4 pt-4 pb-6 h-[50%]">
-
-          <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
-            <Text className="text-base font-semibold">Store Logo</Text>
-            <Pressable>
-              <AntDesign name="close" size={24} color="black" onPress={onClose} />
-            </Pressable>
-          </View>
-
-          <View className="pt-6">
-            <Text className="text-sm text-gray-700 mb-3">Select a transparent logo for your store front.</Text>
-            <Pressable
-              onPress={pickLogo}
-              className="bg-white rounded-xl p-12 items-center justify-center border border-gray-200"
-            >
-              {logo ? (
-                <Image
-                  source={{ uri: logo }}
-                  className="w-32 h-32 rounded-lg"
-                  resizeMode="cover"
-                />
-              ) : (
-                <>
-                  <MaterialIcons name="image" size={64} color="#d1d5db" />
-                  <Text className="text-gray-500 text-sm mt-3">Upload your Logo</Text>
-                  <Text className="text-gray-400 text-xs mt-1">
-                    Recommended: 512 × 512 px
+      <View className="px-5 pt-4">
+        <Pressable
+          onPress={pickLogo}
+          className="rounded-3xl border border-dashed border-gray-200 bg-gray-50/70 items-center justify-center overflow-hidden"
+          style={{ height: 220 }}
+        >
+          {logo ? (
+            <View className="w-full h-full">
+              <AppImage
+                uri={logo}
+                contentFit="contain"
+                style={{ width: "100%", height: "100%" }}
+              />
+              <View className="absolute bottom-2 right-2 flex-row gap-2">
+                <Pressable
+                  onPress={pickLogo}
+                  className="bg-white/95 px-3 h-8 rounded-full flex-row items-center gap-1.5"
+                  hitSlop={4}
+                >
+                  <Ionicons name="refresh-outline" size={14} color="#374151" />
+                  <Text className="text-[11px] font-bold text-gray-800">
+                    Replace
                   </Text>
-                </>
-              )}
-            </Pressable>
-          </View>
-          <View className="flex-row items-center px-4 py-4 border-t border-gray-200 mb-10 mt-5">
-            <Pressable
-              onPress={handleCancel}
-              className="flex-1 py-3 items-center justify-center rounded-full border border-gray-300 mr-3"
-            >
-              <Text className="text-gray-900 font-medium text-base">Cancel</Text>
-            </Pressable>
+                </Pressable>
+                <Pressable
+                  onPress={handleRemove}
+                  className="bg-white/95 w-8 h-8 rounded-full items-center justify-center"
+                >
+                  <Ionicons name="trash-outline" size={14} color="#dc2626" />
+                </Pressable>
+              </View>
+            </View>
+          ) : (
+            <View className="items-center px-6">
+              <View className="w-16 h-16 rounded-2xl bg-blue-50 items-center justify-center mb-3">
+                <Ionicons name="cloud-upload-outline" size={28} color="#2563eb" />
+              </View>
+              <Text className="text-[15px] font-bold text-gray-900">
+                Upload your logo
+              </Text>
+              <Text className="text-[12px] text-gray-500 mt-1 text-center">
+                512 × 512 recommended · transparent PNG works best
+              </Text>
+            </View>
+          )}
+        </Pressable>
 
-            <Pressable
-              onPress={handleSave}
-              disabled={loading}
-              className={`flex-1 py-3 items-center justify-center rounded-full ${loading ? 'bg-blue-300' : 'bg-blue-600'}`}
-            >
-              {loading ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <Text className="text-white font-medium text-base">Save Changes</Text>
-              )}
-            </Pressable>
-          </View>
+        {/* Quick tips */}
+        <View className="mt-5 gap-2">
+          {[
+            { icon: "checkmark-circle", text: "Use a square image" },
+            { icon: "checkmark-circle", text: "Transparent background preferred" },
+            { icon: "checkmark-circle", text: "Keep file size under 2MB" },
+          ].map((tip) => (
+            <View key={tip.text} className="flex-row items-center gap-2">
+              <Ionicons
+                name={tip.icon as any}
+                size={14}
+                color="#10b981"
+              />
+              <Text className="text-[12.5px] text-gray-600">{tip.text}</Text>
+            </View>
+          ))}
         </View>
       </View>
-    </Modal>
+
+      <View className="flex-1" />
+
+      <BottomSheetFooter
+        onCancel={onClose}
+        onSave={handleSave}
+        loading={loading}
+      />
+    </BottomSheet>
   );
 }

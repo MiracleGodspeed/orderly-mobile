@@ -7,6 +7,12 @@ import RenewSubscriptionStep from "../components/RenewSubscriptionStep";
 import PaymentMethodStep from "../components/PaymentMethodStep";
 import SubscriptionSuccessStep from "../components/SubscriptionSuccessStep";
 
+type SelectedPlan = {
+  id: number | null;
+  name: string;
+  price: number;
+};
+
 export default function SubscriptionFlowScreen() {
   const navigation = useNavigation();
   const route = useRoute<any>();
@@ -15,10 +21,8 @@ export default function SubscriptionFlowScreen() {
   const [cycle, setCycle] = useState<"Monthly" | "Quarterly" | "Yearly">(
     "Monthly"
   );
-  const [selectedPlan, setSelectedPlan] = useState<{
-    name: string;
-    price: number;
-  }>({
+  const [selectedPlan, setSelectedPlan] = useState<SelectedPlan>({
+    id: null,
     name: route.params?.initialPlanName || "Pro",
     price: 0,
   });
@@ -41,7 +45,7 @@ export default function SubscriptionFlowScreen() {
               if (chosenCycle === "Yearly")
                 finalPrice = Math.round(plan.price * 12 * 0.9);
 
-              setSelectedPlan({ name: plan.name, price: finalPrice });
+              setSelectedPlan({ id: plan.id, name: plan.name, price: finalPrice });
               setCycle(chosenCycle);
               setStep("payment");
             }}
@@ -54,11 +58,8 @@ export default function SubscriptionFlowScreen() {
             plan={selectedPlan}
             billingCycle={cycle}
             onBack={() => setStep("renew")}
-            onPay={() => {
-              // Generate a placeholder reference until the actual gateway
-              // returns one — replace with the value from the API response
-              // when wiring up the real payment integration.
-              setPaymentReference(`TRX-${Date.now().toString().slice(-7)}`);
+            onPaymentVerified={(reference) => {
+              setPaymentReference(reference);
               setStep("success");
             }}
           />

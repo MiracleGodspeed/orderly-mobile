@@ -246,6 +246,36 @@ export interface GetPlansResponse {
   data: ApiSubscriptionPlan[];
 }
 
+export interface CreateVendorSubscriptionPayload {
+  subscriptionPlanId: number;
+  subscriptionDuration: number;
+  durationUnit: "months" | "weeks" | "days" | "hours";
+  paymentMethod: "card" | "bank_transfer" | "saved_card";
+  hasCustomDomain: boolean;
+  callbackUrl: string;
+  amount: number;
+  isTrialPeriod: boolean;
+}
+
+export interface CreateVendorSubscriptionData {
+  /** Either a Paystack checkout URL OR the literal "is-charge-authorization"
+      when the backend has already charged the saved card directly. */
+  authorizationUrl: string;
+  reference?: string;
+}
+
+export interface CreateVendorSubscriptionResponse {
+  message: string;
+  code: string;
+  data: CreateVendorSubscriptionData;
+}
+
+export interface VerifyPaymentData {
+  status: string; // "success" | "failed" | "pending"
+  reference: string;
+  amount?: number;
+}
+
 
 export interface SalesData {
   totalRevenue: number;

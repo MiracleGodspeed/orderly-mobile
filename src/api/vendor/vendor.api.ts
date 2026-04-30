@@ -284,6 +284,53 @@ export const getPaidOrders = async (
   return res.data;
 };
 
+export const createVendorSubscription = async (
+  payload: import("./vendor.types").CreateVendorSubscriptionPayload
+): Promise<import("./vendor.types").CreateVendorSubscriptionData> => {
+  const response = await apiClient.post<import("./vendor.types").CreateVendorSubscriptionResponse>(
+    "/vendor-subscription/create",
+    payload,
+    { validateStatus: () => true }
+  );
+
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to start subscription");
+  }
+  if (!response.data.data?.authorizationUrl) {
+    throw new Error("No authorization URL returned");
+  }
+  return response.data.data;
+};
+
+export const verifyPayment = async (
+  reference: string
+): Promise<import("./vendor.types").VerifyPaymentData> => {
+  const response = await apiClient.get<any>(
+    `/payment/verify/${encodeURIComponent(reference)}`,
+    { validateStatus: () => true }
+  );
+
+  // The verify endpoint may return either the standard envelope OR Paystack's
+  // raw shape. Treat anything where the inner data.status === "success" as
+  // confirmed; otherwise surface the message.
+  const body = response.data;
+  const inner = body?.data ?? body;
+  const status = inner?.status ?? body?.status;
+
+  if (response.status >= 200 && response.status < 300 && status === "success") {
+    return {
+      status: "success",
+      reference: inner?.reference ?? reference,
+      amount: inner?.amount,
+    };
+  }
+
+  return {
+    status: status || "failed",
+    reference,
+  };
+};
+
 export const getSubscriptionHistory = async (params: SubscriptionHistoryParams): Promise<SubscriptionHistory[]> => {
   const response = await apiClient.get<SubscriptionHistoryResponse>(
     "/vendor-subscription/history",

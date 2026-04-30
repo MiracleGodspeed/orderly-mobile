@@ -1,18 +1,35 @@
-import { View, Text, Pressable, ScrollView, Platform } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
+  Platform,
+  ActivityIndicator,
+} from "react-native";
 import { useState } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import * as WebBrowser from "expo-web-browser";
+import { useToast } from "react-native-toast-notifications";
+
+import {
+  createVendorSubscription,
+  verifyPayment,
+} from "../api/vendor/vendor.api";
 
 type PaymentOption = "card" | "bank_transfer";
 
 type Props = {
   plan: {
+    id: number | null;
     name: string;
     price: number;
   };
-  billingCycle: string;
+  billingCycle: "Monthly" | "Quarterly" | "Yearly";
   onBack: () => void;
-  onPay: (paymentOption: PaymentOption) => void;
+  /** Fires after the user has paid AND we've verified the reference with the
+      backend. The reference is what the backend / Paystack assigned. */
+  onPaymentVerified: (reference: string) => void;
 };
 
 const haptic = () => {
@@ -30,6 +47,9 @@ const cycleLabel = (cycle: string) =>
     ? "Billed yearly"
     : `Billed ${cycle.toLowerCase()}`;
 
+const cycleToDuration = (cycle: Props["billingCycle"]) =>
+  cycle === "Yearly" ? 12 : cycle === "Quarterly" ? 3 : 1;
+
 const nextRenewalDate = (cycle: string) => {
   const d = new Date();
   if (cycle === "Quarterly") d.setMonth(d.getMonth() + 3);
@@ -42,19 +62,125 @@ const nextRenewalDate = (cycle: string) => {
   });
 };
 
+// Tiny URL-search-param parser since RN doesn't expose URL on iOS reliably.
+function getRefFromUrl(url: string): string | null {
+  const q = url.split("?")[1];
+  if (!q) return null;
+  for (const pair of q.split("&")) {
+    const [k, v] = pair.split("=");
+    if (k === "reference" || k === "trxref") {
+      return decodeURIComponent(v ?? "");
+    }
+  }
+  return null;
+}
+
+// The web `/vendor/subscription` page already handles `?reference=` to verify
+// the payment; we add `?from=mobile` so it knows to redirect into the app's
+// custom scheme instead of staying on the page.
+const WEB_CALLBACK_URL =
+  "https://orderlystores.com/vendor/subscription?from=mobile";
+
+const APP_DEEPLINK_PREFIX = "orderly://billing/callback";
+
+type Phase = "idle" | "starting" | "paying" | "verifying";
+
 export default function PaymentMethodStep({
   plan,
   billingCycle,
   onBack,
-  onPay,
+  onPaymentVerified,
 }: Props) {
+  const toast = useToast();
   const [selected, setSelected] = useState<PaymentOption>("card");
+  const [phase, setPhase] = useState<Phase>("idle");
 
-  const handlePay = () => {
+  const isBusy = phase !== "idle";
+
+  const handlePay = async () => {
+    if (!plan.id) {
+      toast.show("Pick a plan first", { type: "danger" });
+      return;
+    }
     if (Platform.OS === "ios") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     }
-    onPay(selected);
+
+    try {
+      setPhase("starting");
+      const res = await createVendorSubscription({
+        subscriptionPlanId: plan.id,
+        subscriptionDuration: cycleToDuration(billingCycle),
+        durationUnit: "months",
+        paymentMethod: selected,
+        hasCustomDomain: false,
+        callbackUrl: WEB_CALLBACK_URL,
+        amount: plan.price,
+        isTrialPeriod: false,
+      });
+
+      // Saved-card direct charge — backend already debited, no browser needed.
+      if (res.authorizationUrl === "is-charge-authorization") {
+        setPhase("verifying");
+        if (res.reference) {
+          await verifyPayment(res.reference);
+        }
+        toast.show("Payment confirmed", { type: "success" });
+        onPaymentVerified(res.reference ?? "");
+        setPhase("idle");
+        return;
+      }
+
+      // Open Paystack inside an in-app browser session. The session resolves
+      // the moment the browser is redirected to a URL starting with our
+      // custom scheme (the web callback page bounces to it for us).
+      setPhase("paying");
+      const result = await WebBrowser.openAuthSessionAsync(
+        res.authorizationUrl,
+        APP_DEEPLINK_PREFIX
+      );
+
+      if (result.type !== "success" || !result.url) {
+        // User dismissed the sheet without paying. Stay on the screen.
+        setPhase("idle");
+        return;
+      }
+
+      const reference = getRefFromUrl(result.url);
+      if (!reference) {
+        toast.show("Couldn't read the payment reference. Try again.", {
+          type: "danger",
+        });
+        setPhase("idle");
+        return;
+      }
+
+      // Re-confirm with the backend even though the webhook is the real
+      // source of truth — this gives the user immediate UI feedback.
+      setPhase("verifying");
+      const verify = await verifyPayment(reference);
+
+      if (verify.status === "success") {
+        if (Platform.OS === "ios") {
+          Haptics.notificationAsync(
+            Haptics.NotificationFeedbackType.Success
+          ).catch(() => {});
+        }
+        onPaymentVerified(reference);
+      } else {
+        toast.show(
+          "Payment didn't go through. If you were charged, it'll resolve automatically.",
+          { type: "danger" }
+        );
+      }
+    } catch (err: any) {
+      console.error("Payment flow error:", err);
+      toast.show(err?.message || "Something went wrong starting your payment.", {
+        type: "danger",
+      });
+    } finally {
+      setPhase((p) => (p === "verifying" || p === "paying" ? "idle" : p));
+    }
   };
 
   return (
@@ -65,6 +191,7 @@ export default function PaymentMethodStep({
           <View className="flex-1 pr-3 flex-row items-start gap-2">
             <Pressable
               onPress={onBack}
+              disabled={isBusy}
               className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center active:bg-gray-200 mr-1"
               hitSlop={6}
             >
@@ -164,6 +291,7 @@ export default function PaymentMethodStep({
           title="Card payment"
           description="Visa, Mastercard, Verve — paid securely via Paystack"
           selected={selected === "card"}
+          disabled={isBusy}
           onPress={() => {
             haptic();
             setSelected("card");
@@ -176,6 +304,7 @@ export default function PaymentMethodStep({
           title="Bank transfer"
           description="Transfer directly from your bank — no card needed"
           selected={selected === "bank_transfer"}
+          disabled={isBusy}
           onPress={() => {
             haptic();
             setSelected("bank_transfer");
@@ -209,19 +338,47 @@ export default function PaymentMethodStep({
       >
         <Pressable
           onPress={handlePay}
-          className="h-12 rounded-2xl bg-blue-600 items-center justify-center flex-row gap-2"
+          disabled={isBusy || !plan.id}
+          className={`h-12 rounded-2xl items-center justify-center flex-row gap-2 ${
+            isBusy || !plan.id ? "bg-blue-400" : "bg-blue-600"
+          }`}
           style={{
             shadowColor: "#2563eb",
             shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.25,
+            shadowOpacity: isBusy ? 0 : 0.25,
             shadowRadius: 8,
-            elevation: 4,
+            elevation: isBusy ? 0 : 4,
           }}
         >
-          <Ionicons name="lock-closed" size={14} color="white" />
-          <Text className="text-white font-bold text-[15px]">
-            Pay ₦{plan.price.toLocaleString()}
-          </Text>
+          {phase === "starting" ? (
+            <>
+              <ActivityIndicator size="small" color="white" />
+              <Text className="text-white font-bold text-[15px]">
+                Starting payment…
+              </Text>
+            </>
+          ) : phase === "paying" ? (
+            <>
+              <ActivityIndicator size="small" color="white" />
+              <Text className="text-white font-bold text-[15px]">
+                Waiting for Paystack…
+              </Text>
+            </>
+          ) : phase === "verifying" ? (
+            <>
+              <ActivityIndicator size="small" color="white" />
+              <Text className="text-white font-bold text-[15px]">
+                Confirming your payment…
+              </Text>
+            </>
+          ) : (
+            <>
+              <Ionicons name="lock-closed" size={14} color="white" />
+              <Text className="text-white font-bold text-[15px]">
+                Pay ₦{plan.price.toLocaleString()}
+              </Text>
+            </>
+          )}
         </Pressable>
       </View>
     </View>
@@ -233,6 +390,7 @@ function PaymentOptionCard({
   title,
   description,
   selected,
+  disabled,
   onPress,
   tone,
 }: {
@@ -240,6 +398,7 @@ function PaymentOptionCard({
   title: string;
   description: string;
   selected: boolean;
+  disabled?: boolean;
   onPress: () => void;
   tone: "blue" | "emerald";
 }) {
@@ -251,11 +410,12 @@ function PaymentOptionCard({
   return (
     <Pressable
       onPress={onPress}
+      disabled={disabled}
       className={`flex-row items-center gap-3 px-4 py-3.5 mb-2.5 rounded-2xl border-2 ${
         selected
           ? "border-blue-600 bg-blue-50/40"
           : "border-gray-100 bg-white"
-      }`}
+      } ${disabled ? "opacity-60" : ""}`}
       style={{
         shadowColor: "#0f172a",
         shadowOffset: { width: 0, height: 1 },

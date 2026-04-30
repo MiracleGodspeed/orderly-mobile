@@ -5,6 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
+    "scheme": "orderly",
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
@@ -34,7 +35,8 @@
       },
       "entitlements": {
         "aps-environment": "production"
-      }
+      },
+      "appleTeamId": "X456K7C6SX"
     },
     "android": {
       "adaptiveIcon": {
@@ -76,7 +78,8 @@
           "defaultChannel": "default",
           "sounds": []
         }
-      ]
+      ],
+      "expo-web-browser"
     ],
     "extra": {
       "eas": {

@@ -20,7 +20,11 @@ import { useToast } from "react-native-toast-notifications";
 
 import { RootStackParamList } from "../navigation/types";
 import { useVendor } from "../../context/VendorContext";
-import { getBanks, validateAccount } from "../api/vendor/vendor.api";
+import {
+  getBanks,
+  validateAccount,
+  updateBankAccountInfo,
+} from "../api/vendor/vendor.api";
 import { Bank } from "../api/vendor/vendor.types";
 import { BottomSheet } from "../components/BottomSheet";
 
@@ -42,7 +46,7 @@ type ValidationStatus = "idle" | "validating" | "valid" | "error";
 export default function PayoutSettings() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const toast = useToast();
-  const { storeData, updateVendorSettings } = useVendor();
+  const { storeData, fetchVendorData } = useVendor();
 
   const [banks, setBanks] = useState<Bank[]>([]);
   const [banksLoading, setBanksLoading] = useState(false);
@@ -184,11 +188,16 @@ export default function PayoutSettings() {
     }
     try {
       setIsSaving(true);
-      await updateVendorSettings({
+      // Bank details have a dedicated endpoint on the backend — going through
+      // /update-store-front-settings (which is what the old updateVendorSettings
+      // call did) doesn't actually persist these fields.
+      await updateBankAccountInfo({
         bank: selectedBank.name,
         accountNumber,
         accountName,
       });
+      // Refresh storeData so the connected-account hero card updates immediately.
+      await fetchVendorData();
       toast.show("Payout details saved.", { type: "success" });
     } catch (error: any) {
       console.error("Error saving payment settings:", error);

@@ -3,8 +3,13 @@ import { QueryClient } from "@tanstack/react-query";
 export const queryKeys = {
   orders: (params: { page: number; pageSize: number; search?: string }) =>
     ["orders", params] as const,
-  products: (params: { page: number; pageSize: number; search?: string }) =>
-    ["products", params] as const,
+  products: (params: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    categoryId?: number;
+    lowStockThreshold?: number;
+  }) => ["products", params] as const,
 };
 
 export const queryClient = new QueryClient({

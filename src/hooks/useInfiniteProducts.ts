@@ -5,22 +5,29 @@ import { PRODUCTS_PAGE_SIZE } from "./useProducts";
 interface UseInfiniteProductsParams {
   search?: string;
   pageSize?: number;
+  /** When set, products are scoped to a single vendor-defined catalog category. */
+  categoryId?: number;
 }
 
 export function useInfiniteProducts({
   search,
   pageSize = PRODUCTS_PAGE_SIZE,
+  categoryId,
 }: UseInfiniteProductsParams = {}) {
   const trimmedSearch = search?.trim() || undefined;
 
   return useInfiniteQuery({
-    queryKey: ["products-infinite", { search: trimmedSearch, pageSize }],
+    queryKey: [
+      "products-infinite",
+      { search: trimmedSearch, pageSize, categoryId },
+    ],
     initialPageParam: 1,
     queryFn: async ({ pageParam }) => {
       const page = await getProducts({
         pageIndex: pageParam,
         pageSize,
         search: trimmedSearch,
+        categoryId,
       });
       return { ...page, _requestedPage: pageParam };
     },

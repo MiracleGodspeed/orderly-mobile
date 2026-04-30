@@ -6,8 +6,6 @@ import {
   TextInput,
   RefreshControl,
   Platform,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
 } from "react-native";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -20,25 +18,48 @@ import { useToast } from "react-native-toast-notifications";
 import * as Haptics from "expo-haptics";
 
 import {
-  useInfiniteProducts,
-  useInvalidateInfiniteProducts,
-} from "../hooks/useInfiniteProducts";
-import { useInvalidateProducts } from "../hooks/useProducts";
+  useProducts,
+  useInvalidateProducts,
+  PRODUCTS_PAGE_SIZE,
+} from "../hooks/useProducts";
 import { AppImage, prefetchImage } from "../components/AppImage";
 import { ProductGridSkeleton } from "../components/ProductCardSkeleton";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { EndOfList } from "../components/EndOfList";
+import { Pagination } from "../components/Pagination";
 import { ListSearchBar } from "../components/ListSearchBar";
 import { BottomSheet, BottomSheetFooter } from "../components/BottomSheet";
+import {
+  applyGlobalDiscount,
+  setTransactionChargeBearer,
+  getCatalogCategories,
+} from "../../src/api/vendor/vendor.api";
+import { getDisplayPrice, FeeBearer } from "../lib/pricing";
+import { useVendor } from "../../context/VendorContext";
+import { CatalogCategory } from "../../src/api/vendor/vendor.types";
+import { CategoryManagerSheet } from "../components/CategoryManagerSheet";
+import { CategoryPickerSheet } from "../components/CategoryPickerSheet";
+import { DraftsSheet } from "../components/DraftsSheet";
+import { loadDrafts, ProductDraft } from "../lib/productDrafts";
+import { useFocusEffect } from "@react-navigation/native";
+import { useFeatures } from "../hooks/useFeatures";
+import { FEATURES, FeatureKey } from "../lib/features";
+import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
 
-type FilterType = "all" | "active" | "drafts";
+type FilterType = "all" | "active" | "low_stock";
 
 interface ProductCardProps {
   product: Product;
   onPress: () => void;
+  discountPercent: number;
+  feeBearer: FeeBearer | null | undefined;
 }
 
-function ProductCard({ product, onPress }: ProductCardProps) {
+function ProductCard({
+  product,
+  onPress,
+  discountPercent,
+  feeBearer,
+}: ProductCardProps) {
   const stock = product.stock ?? 0;
   const stockStyle =
     stock === 0
@@ -55,6 +76,15 @@ function ProductCard({ product, onPress }: ProductCardProps) {
       : `${stock} in stock`;
 
   const isDraft = product.status !== 1;
+
+  // Resolve what the vendor (and the customer) actually sees on the card —
+  // discount applied first, then platform fee added on top when feeBearer
+  // is set to "included".
+  const pricing = getDisplayPrice({
+    price: product.price,
+    discountPercent,
+    feeBearer,
+  });
 
   return (
     <Pressable
@@ -99,9 +129,27 @@ function ProductCard({ product, onPress }: ProductCardProps) {
           {product.title}
         </Text>
 
-        <Text className="text-gray-900 font-extrabold text-[17px] tracking-tight">
-          ₦{(product.price ?? 0).toLocaleString()}
-        </Text>
+        {pricing.hasDiscount ? (
+          <View>
+            <View className="flex-row items-center gap-1.5">
+              <Text className="text-gray-400 text-[12px] line-through">
+                ₦{pricing.original.toLocaleString()}
+              </Text>
+              <View className="bg-emerald-100 px-1.5 py-0.5 rounded">
+                <Text className="text-[9.5px] font-extrabold text-emerald-700 tracking-wide">
+                  −{pricing.discountPercent}%
+                </Text>
+              </View>
+            </View>
+            <Text className="text-gray-900 font-extrabold text-[17px] tracking-tight mt-0.5">
+              ₦{pricing.final.toLocaleString()}
+            </Text>
+          </View>
+        ) : (
+          <Text className="text-gray-900 font-extrabold text-[17px] tracking-tight">
+            ₦{pricing.final.toLocaleString()}
+          </Text>
+        )}
 
         <View className="h-px bg-gray-100 my-3" />
 
@@ -120,6 +168,13 @@ function ProductCard({ product, onPress }: ProductCardProps) {
 
 export default function ProductsList() {
   const toast = useToast();
+  const { storeData, fetchVendorData } = useVendor();
+
+  // Real-time discount + fee-bearer from the store record. When either changes
+  // (after Save in the drawers below), every <ProductCard> re-renders with
+  // recomputed prices — no API calls per card, no per-product mutations.
+  const currentDiscountPercent = Number(storeData?.discountOnAllProducts) || 0;
+  const currentFeeBearer: FeeBearer | null = (storeData?.feeBearer as FeeBearer) ?? null;
 
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   // ListSearchBar owns the visible text + debounce; we only see the settled
@@ -137,27 +192,86 @@ export default function ProductsList() {
   const [applyDiscountModalOpen, setApplyDiscountModalOpen] = useState(false);
   const [discountValue, setDiscountValue] = useState("");
 
-  const invalidateInfinite = useInvalidateInfiniteProducts();
+  // Vendor-defined catalog categories: list, selected filter, and the
+  // management sheet open state. Fetched once on mount and refetched
+  // whenever the management sheet reports a change.
+  const [categories, setCategories] = useState<CatalogCategory[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(
+    null
+  );
+  const [categoriesSheetOpen, setCategoriesSheetOpen] = useState(false);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+
+  // Local product drafts (saved via "Save as draft" in the Add modal). We
+  // surface the count + a banner here so vendors can find them without
+  // hunting inside the modal — fixes the confusion of expecting saved
+  // drafts to show under the server-side "Drafts" filter.
+  const [localDraftCount, setLocalDraftCount] = useState(0);
+  const [draftsSheetOpen, setDraftsSheetOpen] = useState(false);
+  const [pendingDraft, setPendingDraft] = useState<ProductDraft | null>(null);
+  const refreshDraftCount = useCallback(async () => {
+    const drafts = await loadDrafts();
+    setLocalDraftCount(drafts.length);
+  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      refreshDraftCount();
+    }, [refreshDraftCount])
+  );
+
+  const refreshCategories = useCallback(async () => {
+    try {
+      const data = await getCatalogCategories();
+      setCategories(data);
+      // If the currently-selected filter no longer exists, reset to All.
+      setSelectedCategoryId((prev) =>
+        prev != null && !data.some((c) => c.id === prev) ? null : prev
+      );
+    } catch (err) {
+      console.error("Failed to load categories:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshCategories();
+  }, [refreshCategories]);
+
   const invalidatePaged = useInvalidateProducts();
   const invalidateAll = useCallback(() => {
-    invalidateInfinite();
     invalidatePaged();
-  }, [invalidateInfinite, invalidatePaged]);
+  }, [invalidatePaged]);
 
-  const {
-    data,
-    isPending,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-    refetch,
-  } = useInfiniteProducts({ search: debouncedSearch });
+  // Threshold the server uses when the Low-stock filter is active. Server
+  // returns products with `stock < LOW_STOCK_THRESHOLD` only when this value
+  // is sent (omitted otherwise so behaviour matches every other caller).
+  const LOW_STOCK_THRESHOLD = 5;
+  const lowStockThreshold =
+    activeFilter === "low_stock" ? LOW_STOCK_THRESHOLD : undefined;
 
-  const allProducts: Product[] = useMemo(
-    () => data?.pages.flatMap((p) => p.data) ?? [],
-    [data]
-  );
-  const totalCount = data?.pages[0]?.totalCount ?? 0;
+  // Page is reset to 1 whenever search, category, or the low-stock filter
+  // changes — otherwise the vendor could land on an out-of-range page (e.g.
+  // searching narrows results from 5 pages to 1, but we were on page 4).
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, selectedCategoryId, lowStockThreshold]);
+
+  const { data, isPending, isFetching, refetch } = useProducts({
+    page,
+    search: debouncedSearch,
+    categoryId: selectedCategoryId ?? undefined,
+    lowStockThreshold,
+  });
+
+  const allProducts: Product[] = useMemo(() => data?.data ?? [], [data]);
+  const totalCount = data?.totalCount ?? 0;
+  // Derived from totalCount + pageSize directly so we never depend on the
+  // API's totalPages field — keeps mobile correct even if a backend
+  // endpoint forgets to compute it (as the orders endpoint did).
+  const totalPages = Math.max(1, Math.ceil(totalCount / PRODUCTS_PAGE_SIZE));
+  const rangeStart =
+    totalCount === 0 ? 0 : (page - 1) * PRODUCTS_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PRODUCTS_PAGE_SIZE, totalCount);
 
   // Pre-warm the disk cache for products the user might tap into next.
   useEffect(() => {
@@ -194,23 +308,49 @@ export default function ProductsList() {
     }
   };
 
+  // "Active" stays a client-side filter over the current page, since the
+  // server doesn't expose a status filter. "low_stock" is server-side now —
+  // the API already returns only matching rows when lowStockThreshold is
+  // sent, so no extra in-memory pass is needed.
   const filteredProducts = useMemo(() => {
-    if (activeFilter === "all") return allProducts;
-    return allProducts.filter((product) => {
-      if (activeFilter === "active") return product.status === 1;
-      if (activeFilter === "drafts") return product.status !== 1;
-      return true;
-    });
+    if (activeFilter === "active")
+      return allProducts.filter((p) => p.status === 1);
+    return allProducts;
   }, [allProducts, activeFilter]);
 
   const activeCount = useMemo(
     () => allProducts.filter((p) => p.status === 1).length,
     [allProducts]
   );
-  const draftCount = useMemo(
-    () => allProducts.filter((p) => p.status !== 1).length,
-    [allProducts]
+
+  // Feature gating — Low-stock filter is paywalled. The handler below opens
+  // the upgrade sheet instead of switching the filter when the active plan
+  // doesn't grant it. Declared here (above the sentinel count query) so
+  // `canUseLowStock` is in scope when we conditionally fetch.
+  const { has: hasFeature } = useFeatures();
+  const canUseLowStock = hasFeature(FEATURES.PRODUCTS_LOW_STOCK);
+  const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(
+    null
   );
+
+  // Pull the *true* low-stock total directly from the server with a tiny
+  // sentinel query (pageSize=1, only `totalCount` is consumed). Without this
+  // we'd be reporting the count of low-stock items on the current page only,
+  // which is misleading once the catalog spans multiple pages.
+  //
+  // Skip the query for vendors who don't have the feature — the server-side
+  // gate would otherwise strip the param and return the full catalog count,
+  // which would mislead the badge.
+  const lowStockCountQuery = useProducts({
+    page: 1,
+    pageSize: 1,
+    lowStockThreshold: canUseLowStock ? LOW_STOCK_THRESHOLD : undefined,
+  });
+  const lowStockCount = !canUseLowStock
+    ? 0
+    : activeFilter === "low_stock"
+    ? totalCount
+    : lowStockCountQuery.data?.totalCount ?? 0;
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -225,30 +365,101 @@ export default function ProductsList() {
     if (Platform.OS === "ios") {
       Haptics.selectionAsync().catch(() => {});
     }
+    if (next === "low_stock" && !canUseLowStock) {
+      setPaywallFeature(FEATURES.PRODUCTS_LOW_STOCK);
+      return;
+    }
     setActiveFilter(next);
   };
 
-  const handleSaveFeeConfiguration = () => {
-    toast.show("Fee configuration saved", { type: "success" });
-    setConfigureFeeModalOpen(false);
-  };
+  const [savingFee, setSavingFee] = useState(false);
+  const handleSaveFeeConfiguration = useCallback(async () => {
+    if (savingFee) return;
+    try {
+      setSavingFee(true);
+      await setTransactionChargeBearer(selectedFeeOption);
+      // Refresh storeData so every <ProductCard> picks up the new fee setting.
+      await fetchVendorData();
+      toast.show("Fee setting updated", { type: "success" });
+      setConfigureFeeModalOpen(false);
+    } catch (err: any) {
+      toast.show(err?.message || "Couldn't save fee setting", {
+        type: "danger",
+      });
+    } finally {
+      setSavingFee(false);
+    }
+  }, [savingFee, selectedFeeOption, fetchVendorData, toast]);
 
-  // Infinite scroll trigger via onScroll instead of FlatList — keeps the
-  // TextInput in the header from being unmounted during data updates.
-  const fetchingRef = useRef(false);
-  fetchingRef.current = isFetchingNextPage;
+  // Discount actions — applying, clearing. Saves via the dedicated endpoint
+  // and refetches storeData so cards re-render with new prices instantly.
+  const [savingDiscount, setSavingDiscount] = useState(false);
+  const handleApplyDiscount = useCallback(async () => {
+    const parsed = Number(discountValue);
+    if (!Number.isFinite(parsed) || parsed < 1 || parsed > 90) return;
+    if (savingDiscount) return;
+    try {
+      setSavingDiscount(true);
+      await applyGlobalDiscount(parsed);
+      await fetchVendorData();
+      toast.show(`Discount of ${parsed}% applied`, { type: "success" });
+      setApplyDiscountModalOpen(false);
+    } catch (err: any) {
+      toast.show(err?.message || "Couldn't apply discount", {
+        type: "danger",
+      });
+    } finally {
+      setSavingDiscount(false);
+    }
+  }, [discountValue, savingDiscount, fetchVendorData, toast]);
 
-  const handleScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      const distanceFromBottom =
-        contentSize.height - (contentOffset.y + layoutMeasurement.height);
-      if (distanceFromBottom < 400 && hasNextPage && !fetchingRef.current) {
-        fetchNextPage();
-      }
-    },
-    [hasNextPage, fetchNextPage]
-  );
+  const handleClearDiscount = useCallback(async () => {
+    if (savingDiscount) return;
+    try {
+      setSavingDiscount(true);
+      await applyGlobalDiscount(0);
+      await fetchVendorData();
+      setDiscountValue("");
+      toast.show("Discount removed", { type: "success" });
+      setApplyDiscountModalOpen(false);
+    } catch (err: any) {
+      toast.show(err?.message || "Couldn't remove discount", {
+        type: "danger",
+      });
+    } finally {
+      setSavingDiscount(false);
+    }
+  }, [savingDiscount, fetchVendorData, toast]);
+
+  // Pre-fill the drawer state from the current store record whenever a
+  // drawer opens, so the vendor sees what's currently set.
+  useEffect(() => {
+    if (applyDiscountModalOpen) {
+      setDiscountValue(
+        currentDiscountPercent > 0 ? String(currentDiscountPercent) : ""
+      );
+    }
+  }, [applyDiscountModalOpen, currentDiscountPercent]);
+  useEffect(() => {
+    if (configureFeeModalOpen && currentFeeBearer) {
+      setSelectedFeeOption(currentFeeBearer);
+    }
+  }, [configureFeeModalOpen, currentFeeBearer]);
+
+  // After paging, scroll back to the top of the product grid so the new page
+  // is visible without an extra swipe up. The scroll is scheduled on the
+  // next macrotask so it runs *after* React commits the new page's render
+  // — calling scrollTo synchronously with setPage occasionally no-ops
+  // because the ScrollView's contentSize is still mid-update.
+  const scrollRef = useRef<ScrollView | null>(null);
+  const handlePageChange = useCallback((next: number) => {
+    setPage(next);
+    const scrollUp = () =>
+      scrollRef.current?.scrollTo({ x: 0, y: 0, animated: true });
+    scrollUp();
+    setTimeout(scrollUp, 0);
+    setTimeout(scrollUp, 120);
+  }, []);
 
   const showInitialSkeleton = isPending && !data;
 
@@ -291,11 +502,15 @@ export default function ProductsList() {
           <Text className="text-[13px] text-gray-500">Active</Text>
         </View>
         <View className="flex-row items-center gap-2">
-          <View className="w-2 h-2 rounded-full bg-gray-400" />
+          <View
+            className={`w-2 h-2 rounded-full ${
+              lowStockCount > 0 ? "bg-amber-500" : "bg-gray-300"
+            }`}
+          />
           <Text className="text-[14px] font-bold text-gray-900">
-            {draftCount}
+            {lowStockCount}
           </Text>
-          <Text className="text-[13px] text-gray-500">Drafts</Text>
+          <Text className="text-[13px] text-gray-500">Low stock</Text>
         </View>
       </View>
     </View>
@@ -324,6 +539,32 @@ export default function ProductsList() {
         </View>
       </View>
 
+      {localDraftCount > 0 && (
+        <Pressable
+          onPress={() => {
+            if (Platform.OS === "ios") {
+              Haptics.selectionAsync().catch(() => {});
+            }
+            setDraftsSheetOpen(true);
+          }}
+          className="mx-5 mb-3 flex-row items-center bg-blue-50 border border-blue-100 rounded-2xl px-4 py-3 active:bg-blue-100"
+        >
+          <View className="w-9 h-9 rounded-xl bg-blue-600 items-center justify-center">
+            <Ionicons name="bookmark" size={15} color="white" />
+          </View>
+          <View className="flex-1 min-w-0 ml-3">
+            <Text className="text-[13.5px] font-extrabold text-blue-900">
+              {localDraftCount} saved draft
+              {localDraftCount === 1 ? "" : "s"} on this device
+            </Text>
+            <Text className="text-[11.5px] text-blue-700/80 mt-0.5" numberOfLines={1}>
+              Pick up where you left off — these aren't published yet.
+            </Text>
+          </View>
+          <Ionicons name="chevron-forward" size={16} color="#1d4ed8" />
+        </Pressable>
+      )}
+
       <View className="mb-4">
         <ScrollView
           horizontal
@@ -335,10 +576,12 @@ export default function ProductsList() {
             [
               { key: "all", label: "All", count: allProducts.length },
               { key: "active", label: "Active", count: activeCount },
-              { key: "drafts", label: "Drafts", count: draftCount },
+              { key: "low_stock", label: "Low stock", count: lowStockCount },
             ] as const
           ).map((filter) => {
             const isActive = activeFilter === filter.key;
+            const isLocked =
+              filter.key === "low_stock" && !canUseLowStock;
             return (
               <Pressable
                 key={filter.key}
@@ -346,12 +589,25 @@ export default function ProductsList() {
                 className={`flex-row items-center gap-2 px-4 h-9 rounded-full border ${
                   isActive
                     ? "bg-gray-900 border-gray-900"
+                    : isLocked
+                    ? "bg-gray-50 border-gray-200"
                     : "bg-white border-gray-200"
                 }`}
               >
+                {isLocked && (
+                  <Ionicons
+                    name="lock-closed"
+                    size={11}
+                    color="#9ca3af"
+                  />
+                )}
                 <Text
                   className={`text-[13px] font-semibold ${
-                    isActive ? "text-white" : "text-gray-700"
+                    isActive
+                      ? "text-white"
+                      : isLocked
+                      ? "text-gray-500"
+                      : "text-gray-700"
                   }`}
                 >
                   {filter.label}
@@ -373,6 +629,95 @@ export default function ProductsList() {
             );
           })}
         </ScrollView>
+      </View>
+
+      {/* Single category-filter trigger. Scales to any number of categories —
+          tapping opens a searchable picker sheet. */}
+      <View className="mb-3 px-5">
+        {(() => {
+          const selectedCategory =
+            selectedCategoryId != null
+              ? categories.find((c) => c.id === selectedCategoryId)
+              : null;
+          const isFiltered = selectedCategory != null;
+          return (
+            <View
+              className="flex-row items-stretch bg-white border border-gray-100 rounded-2xl overflow-hidden"
+              style={{
+                shadowColor: "#0f172a",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 10,
+                elevation: 2,
+              }}
+            >
+              <Pressable
+                onPress={() => {
+                  if (Platform.OS === "ios") {
+                    Haptics.selectionAsync().catch(() => {});
+                  }
+                  setCategoryPickerOpen(true);
+                }}
+                className="flex-1 flex-row items-center px-3.5 py-3"
+              >
+                <View
+                  className={`w-9 h-9 rounded-xl items-center justify-center ${
+                    isFiltered ? "bg-blue-600" : "bg-blue-50"
+                  }`}
+                >
+                  <Ionicons
+                    name={isFiltered ? "pricetag" : "apps-outline"}
+                    size={15}
+                    color={isFiltered ? "white" : "#2563eb"}
+                  />
+                </View>
+                <View className="flex-1 min-w-0 ml-3">
+                  <Text className="text-[10.5px] font-extrabold text-gray-400 uppercase tracking-[1.2px]">
+                    Category
+                  </Text>
+                  <Text
+                    className="text-[14px] font-extrabold text-gray-900 mt-0.5"
+                    numberOfLines={1}
+                  >
+                    {selectedCategory ? selectedCategory.name : "All categories"}
+                  </Text>
+                </View>
+                {isFiltered ? (
+                  <Pressable
+                    onPress={() => {
+                      if (Platform.OS === "ios") {
+                        Haptics.selectionAsync().catch(() => {});
+                      }
+                      setSelectedCategoryId(null);
+                    }}
+                    hitSlop={8}
+                    className="w-8 h-8 rounded-full items-center justify-center bg-gray-50 active:bg-gray-100 mr-1"
+                  >
+                    <Ionicons name="close" size={14} color="#6b7280" />
+                  </Pressable>
+                ) : null}
+                <Ionicons name="chevron-down" size={16} color="#9ca3af" />
+              </Pressable>
+
+              <View className="w-px bg-gray-100" />
+
+              <Pressable
+                onPress={() => {
+                  if (Platform.OS === "ios") {
+                    Haptics.selectionAsync().catch(() => {});
+                  }
+                  setCategoriesSheetOpen(true);
+                }}
+                className="px-4 items-center justify-center active:bg-gray-50"
+              >
+                <Ionicons name="settings-outline" size={16} color="#2563eb" />
+                <Text className="text-[10px] font-extrabold text-blue-600 mt-0.5 uppercase tracking-[0.8px]">
+                  Manage
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })()}
       </View>
     </View>
   );
@@ -425,11 +770,10 @@ export default function ProductsList() {
       />
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 120 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onScroll={handleScroll}
-        scrollEventThrottle={400}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -453,17 +797,24 @@ export default function ProductsList() {
                   key={product.id}
                   product={product}
                   onPress={() => handleProductClick(product)}
+                  discountPercent={currentDiscountPercent}
+                  feeBearer={currentFeeBearer}
                 />
               ))}
             </View>
           )}
 
-          <EndOfList
-            isFetchingMore={isFetchingNextPage}
-            hasNextPage={!!hasNextPage}
-            itemCount={filteredProducts.length}
-          />
         </View>
+
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          isFetching={isFetching}
+          onPageChange={handlePageChange}
+        />
       </ScrollView>
 
       {/* FAB */}
@@ -495,10 +846,29 @@ export default function ProductsList() {
         onClose={() => {
           setShowAddProductModal(false);
           setSelectedProduct(null);
+          setPendingDraft(null);
+          // Refresh draft count after the modal closes — the user may have
+          // saved a new draft or deleted one inside the modal.
+          refreshDraftCount();
         }}
         mode={selectedProduct ? "edit" : "add"}
         productData={selectedProduct}
+        initialDraft={pendingDraft}
         onProductAdded={() => invalidateAll()}
+      />
+
+      <DraftsSheet
+        visible={draftsSheetOpen}
+        onClose={() => {
+          setDraftsSheetOpen(false);
+          refreshDraftCount();
+        }}
+        onLoad={(draft) => {
+          setDraftsSheetOpen(false);
+          setPendingDraft(draft);
+          setSelectedProduct(null);
+          setShowAddProductModal(true);
+        }}
       />
 
    
@@ -639,6 +1009,7 @@ export default function ProductsList() {
           onCancel={() => setConfigureFeeModalOpen(false)}
           onSave={handleSaveFeeConfiguration}
           saveLabel="Save Setting"
+          loading={savingFee}
         />
       </BottomSheet>
 
@@ -808,18 +1179,42 @@ export default function ProductsList() {
                 />
                 <Text className="text-[12px] text-amber-800 leading-[18px] flex-1">
                   This applies to{" "}
-                  <Text className="font-extrabold">all products</Text>. You can
-                  remove the discount anytime by setting it back to 0.
+                  <Text className="font-extrabold">all products</Text>. Tap{" "}
+                  <Text className="font-extrabold">Remove discount</Text> below
+                  to clear it whenever you're done.
                 </Text>
               </View>
+
+              {/* Remove-discount action — only when there's actually one set
+                  on the server right now. Lives inside the body (not the
+                  footer) so vendors notice it before scrolling away. */}
+              {currentDiscountPercent > 0 && (
+                <Pressable
+                  onPress={handleClearDiscount}
+                  disabled={savingDiscount}
+                  className="mt-3 h-12 rounded-2xl border border-rose-100 bg-white items-center justify-center flex-row gap-2 active:bg-rose-50"
+                >
+                  <Ionicons
+                    name="trash-outline"
+                    size={15}
+                    color="#dc2626"
+                  />
+                  <Text className="text-rose-600 text-[14px] font-extrabold">
+                    Remove current {currentDiscountPercent}% discount
+                  </Text>
+                </Pressable>
+              )}
             </ScrollView>
           );
         })()}
 
         <BottomSheetFooter
           onCancel={() => setApplyDiscountModalOpen(false)}
-          onSave={() => setApplyDiscountModalOpen(false)}
-          saveLabel="Apply Discount"
+          onSave={handleApplyDiscount}
+          saveLabel={
+            currentDiscountPercent > 0 ? "Update discount" : "Apply discount"
+          }
+          loading={savingDiscount}
           saveDisabled={
             !discountValue ||
             !Number.isFinite(Number(discountValue)) ||
@@ -828,6 +1223,34 @@ export default function ProductsList() {
           }
         />
       </BottomSheet>
+
+      {/* Category filter picker — searchable, scales to any list size */}
+      <CategoryPickerSheet
+        visible={categoryPickerOpen}
+        onClose={() => setCategoryPickerOpen(false)}
+        categories={categories}
+        selectedCategoryId={selectedCategoryId}
+        onSelect={(id) => setSelectedCategoryId(id)}
+        onManage={() => {
+          setCategoryPickerOpen(false);
+          setCategoriesSheetOpen(true);
+        }}
+      />
+
+      {/* Category management — list, create, rename, delete */}
+      <CategoryManagerSheet
+        visible={categoriesSheetOpen}
+        onClose={() => setCategoriesSheetOpen(false)}
+        onChanged={refreshCategories}
+      />
+
+      {/* Paywall sheet — opened when the vendor taps a gated feature their
+          plan doesn't include. */}
+      <FeaturePaywallSheet
+        visible={paywallFeature != null}
+        onClose={() => setPaywallFeature(null)}
+        feature={paywallFeature}
+      />
     </View>
   );
 }

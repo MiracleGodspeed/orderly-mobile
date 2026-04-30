@@ -11,20 +11,21 @@ import {
   RefreshControl,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import Header from '../components/Header';
 import BottomNav from '../components/BottomNav';
+import { BrandLoader } from '../components/BrandLoader';
 import MenuOverlay from '../components/MenuOverlay';
 import StoreSetupProgress from '../components/StoreSetupProgress';
 import { StoreSetupModal, type SetupStepId } from '../components/StoreSetupModal';
+import { setupProgressPct } from '../lib/setupProgress';
 import { CustomDateRangeModal } from '../components/CustomDateRangeModal';
 import { DurationPickerModal } from '../components/DurationPickerModal';
 import { Ionicons, Feather, MaterialIcons, Octicons } from '@expo/vector-icons';
 import Modal from 'react-native-modal';
 import * as Haptics from 'expo-haptics';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { useVendor } from '../../context/VendorContext';
 import { useOrders } from '../hooks/useOrders';
@@ -33,6 +34,10 @@ import { useStorePerformance } from '../hooks/useStorePerformance';
 import { AppImage } from '../components/AppImage';
 import { TrendBadge } from '../components/TrendBadge';
 import { formatNaira, getGreeting, computeTrend } from '../lib/format';
+import { CustomDomainModal } from '../components/CustomDomainModal';
+import { FeaturePaywallSheet } from '../components/FeaturePaywallSheet';
+import { useFeatures } from '../hooks/useFeatures';
+import { FEATURES, FeatureKey } from '../lib/features';
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -78,7 +83,6 @@ export default function Home() {
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [trialModalVisible, setTrialModalVisible] = useState(false);
   const [unreadNotificationsCount] = useState(2);
-  const [completedSteps, setCompletedSteps] = useState<string[]>([]);
 
   const [durationModalVisible, setDurationModalVisible] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState<number | undefined>(30);
@@ -90,11 +94,37 @@ export default function Home() {
   );
   const [dateTo, setDateTo] = useState<Date>(new Date());
 
-  const { storeData, checklistItems } = useVendor();
+  const { storeData, checklistItems, fetchVendorData } = useVendor();
+
+  // Tracks user-initiated period changes only — flipped true in the duration
+  // handlers below, cleared once the performance refetch settles. Lets the
+  // overlay loader appear for explicit toggles WITHOUT showing for silent
+  // background refetches (focus refresh, staleTime revalidation, etc).
+  const [isPeriodChanging, setIsPeriodChanging] = useState(false);
+
+  // Refetch the storefront record (and with it `vendorOnboardProgressResponse`,
+  // which drives the setup checklist) every time Home regains focus. Without
+  // this, completing a checklist step on another screen — adding a product,
+  // setting up bank details, customizing the storefront — leaves the home
+  // progress bar stale until the user fully restarts the app. Mirrors the
+  // implicit "reload the page" pattern the web relies on.
+  useFocusEffect(
+    useCallback(() => {
+      fetchVendorData().catch(() => {});
+    }, [fetchVendorData])
+  );
 
   // Cached, dedup'd data via TanStack Query — no per-focus re-fetch flicker.
-  const { data: ordersData, refetch: refetchOrders } = useOrders({ page: 1 });
-  const { data: productsData, refetch: refetchProducts } = useProducts({ page: 1 });
+  const {
+    data: ordersData,
+    refetch: refetchOrders,
+    isFetching: ordersFetching,
+  } = useOrders({ page: 1 });
+  const {
+    data: productsData,
+    refetch: refetchProducts,
+    isFetching: productsFetching,
+  } = useProducts({ page: 1 });
 
   const performanceArgs = useMemo(
     () =>
@@ -103,13 +133,38 @@ export default function Home() {
         : { from: dateFrom.toISOString(), to: dateTo.toISOString() },
     [selectedDuration, dateFrom, dateTo]
   );
-  const { data: performanceData, refetch: refetchPerformance } =
-    useStorePerformance(performanceArgs);
+  const {
+    data: performanceData,
+    refetch: refetchPerformance,
+    isFetching: performanceFetching,
+  } = useStorePerformance(performanceArgs);
 
   // Manual pull-to-refresh state — only true while the user is dragging
   // through a refresh, NOT during background revalidation. TanStack Query's
   // `staleTime` (60s) already handles "is this fresh enough" silently.
   const [refreshing, setRefreshing] = useState(false);
+
+  // Show the brand-aware loader overlay whenever any of the home-relevant
+  // backends are working. Hide it during pull-to-refresh — RefreshControl
+  // already shows a spinner up top, two indicators feels noisy. Trigger ONLY
+  // for events the vendor explicitly cares about:
+  //   1. Cold start — no data on screen yet AND something is being fetched
+  //   2. Period change — flipped true by the duration handlers
+  // We deliberately do NOT include vendorLoading or focus-driven refetches —
+  // navigating back to Home should never flash the overlay.
+  const hasInitialData = !!ordersData && !!productsData && !!performanceData;
+  const isInitialFetching =
+    !hasInitialData &&
+    (performanceFetching || ordersFetching || productsFetching);
+  const showBrandLoader = (isInitialFetching || isPeriodChanging) && !refreshing;
+
+  // Clear the period-change flag the moment the performance refetch settles.
+  // Without this the overlay would linger past the actual state change.
+  useEffect(() => {
+    if (isPeriodChanging && !performanceFetching) {
+      setIsPeriodChanging(false);
+    }
+  }, [isPeriodChanging, performanceFetching]);
 
   // Slides auto-advance.
   useEffect(() => {
@@ -120,22 +175,6 @@ export default function Home() {
       flatListRef.current?.scrollToIndex({ index: nextSlide, animated: true });
     }, 4000);
     return () => clearInterval(timer);
-  }, []);
-
-  // Hydrate setup progress from disk so the modal reflects what the vendor
-  // already ticked off in earlier sessions.
-  useEffect(() => {
-    AsyncStorage.getItem('store_setup_steps')
-      .then((raw) => {
-        if (!raw) return;
-        try {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) setCompletedSteps(parsed);
-        } catch {
-          // ignore malformed payload
-        }
-      })
-      .catch(() => {});
   }, []);
 
   const totalProductCount = productsData?.totalCount ?? 0;
@@ -158,10 +197,9 @@ export default function Home() {
     return typeof name === 'string' ? name.split(' ')[0] : '';
   }, [storeData]);
 
-  const completedCount = checklistItems.filter((i) => i.completed).length;
-  const progressPercentage = Math.floor(
-    (completedCount / Math.max(checklistItems.length, 1)) * 100
-  );
+  // Single source of truth shared with StoreSetupModal — see lib/setupProgress.
+  // Just signing up = 25% baseline; each of the 3 checklist steps adds 25%.
+  const progressPercentage = setupProgressPct(checklistItems);
 
   const openSetupModal = useCallback(() => setSetupModalOpen(true), []);
   const closeSetupModal = useCallback(() => setSetupModalOpen(false), []);
@@ -176,6 +214,21 @@ export default function Home() {
     tap();
     navigation.navigate('ProductsList', { openAddProduct: true } as any);
   }, [navigation, tap]);
+
+  // Custom-domain quick action — gated behind STORE_CUSTOM_DOMAIN. Locked
+  // vendors get the upgrade sheet instead of the search modal.
+  const { has: hasFeature } = useFeatures();
+  const canUseCustomDomain = true //hasFeature(FEATURES.STORE_CUSTOM_DOMAIN); 
+  const [showDomainModal, setShowDomainModal] = useState(false);
+  const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(null);
+  const handleOpenDomain = useCallback(() => {
+    tap();
+    if (!canUseCustomDomain) {
+      setPaywallFeature(FEATURES.STORE_CUSTOM_DOMAIN);
+      return;
+    }
+    setShowDomainModal(true);
+  }, [canUseCustomDomain, tap]);
 
   const handleQuickAction = useCallback(
     (screen: keyof RootStackParamList, params?: any) => {
@@ -198,23 +251,21 @@ export default function Home() {
         refetchOrders(),
         refetchProducts(),
         refetchPerformance(),
+        // Pulls fresh `vendorOnboardProgressResponse` so the setup checklist
+        // reflects whatever the user just did before opening the app today.
+        fetchVendorData(),
       ]);
     } finally {
       setRefreshing(false);
     }
-  }, [refetchOrders, refetchProducts, refetchPerformance]);
+  }, [refetchOrders, refetchProducts, refetchPerformance, fetchVendorData]);
 
-  const markStepCompleted = useCallback((step: string) => {
-    setCompletedSteps((prev) => {
-      const updated = prev.includes(step) ? prev : [...prev, step];
-      AsyncStorage.setItem('store_setup_steps', JSON.stringify(updated));
-      return updated;
-    });
-  }, []);
-
+  // Step completion is tracked by the server via VendorContext.checklistItems.
+  // Tapping a step here just navigates the user to where they finish it; the
+  // backend will update vendorOnboardProgressResponse when they actually do
+  // the work, and the next fetchVendorData() picks it up.
   const handleSetupStepPress = useCallback(
     (step: SetupStepId) => {
-      markStepCompleted(step);
       closeSetupModal();
       if (step === 'customize-store') {
         navigation.navigate('ManageStore');
@@ -224,7 +275,7 @@ export default function Home() {
         navigation.navigate('PayoutSettings');
       }
     },
-    [markStepCompleted, closeSetupModal, navigation]
+    [closeSetupModal, navigation]
   );
 
   const handleCustomRangeBack = useCallback(() => {
@@ -233,6 +284,7 @@ export default function Home() {
   }, []);
 
   const handleDurationSelect = useCallback((value: number, label: string) => {
+    setIsPeriodChanging(true);
     setSelectedDuration(value);
     setDurationLabel(label);
     setDurationModalVisible(false);
@@ -250,6 +302,7 @@ export default function Home() {
         day: 'numeric',
         year: 'numeric',
       });
+    setIsPeriodChanging(true);
     setDateFrom(nextFrom);
     setDateTo(nextTo);
     setSelectedDuration(undefined);
@@ -305,7 +358,7 @@ export default function Home() {
           {progressPercentage < 100 && (
             <View className="mb-4">
               <StoreSetupProgress
-                progress={progressPercentage === 0 ? 25 : progressPercentage}
+                progress={progressPercentage}
                 onContinue={openSetupModal}
               />
             </View>
@@ -336,7 +389,7 @@ export default function Home() {
                   </View>
                   <View className="bg-blue-50 px-2 py-0.5 rounded-full">
                     <Text className="text-[10.5px] text-blue-700 font-bold" numberOfLines={1}>
-                      orderly.app/{storeData?.slugUrl || 'store'}
+                      {storeData?.slugUrl + ".orderlystores.com" || 'store'}
                     </Text>
                   </View>
                 </View>
@@ -488,16 +541,17 @@ export default function Home() {
               tint: string;
               iconColor: string;
               badge?: number;
+              locked?: boolean;
               onPress: () => void;
             }> = [
-              {
-                key: 'add-product',
-                label: 'Add product',
-                icon: 'add',
-                tint: '#dbeafe',
-                iconColor: '#2563eb',
-                onPress: handleAddProduct,
-              },
+              // {
+              //   key: 'add-product',
+              //   label: 'Add product',
+              //   icon: 'add',
+              //   tint: '#dbeafe',
+              //   iconColor: '#2563eb',
+              //   onPress: handleAddProduct,
+              // },
               {
                 key: 'products',
                 label: 'Products',
@@ -518,7 +572,7 @@ export default function Home() {
               },
               {
                 key: 'analytics',
-                label: 'Analytics',
+                label: 'Reports',
                 icon: 'bar-chart-outline',
                 tint: '#ede9fe',
                 iconColor: '#7c3aed',
@@ -540,6 +594,16 @@ export default function Home() {
                 tint: '#cffafe',
                 iconColor: '#0891b2',
                 onPress: () => handleQuickAction('ManageStore'),
+              },
+              {
+                key: 'domain',
+                label: 'Domain',
+                icon: 'planet-outline',
+                tint: '#fae8ff',
+                iconColor: '#a21caf',
+                locked: !canUseCustomDomain,
+                // locked: false,
+                onPress: handleOpenDomain,
               },
               {
                 key: 'delivery',
@@ -591,6 +655,23 @@ export default function Home() {
                             <Text className="text-white text-[10px] font-extrabold">
                               {tile.badge > 99 ? '99+' : tile.badge}
                             </Text>
+                          </View>
+                        ) : tile.locked ? (
+                          <View
+                            className="absolute -top-1 -right-1 w-[18px] h-[18px] rounded-full bg-white border border-gray-200 items-center justify-center"
+                            style={{
+                              shadowColor: '#0f172a',
+                              shadowOffset: { width: 0, height: 1 },
+                              shadowOpacity: 0.08,
+                              shadowRadius: 2,
+                              elevation: 1,
+                            }}
+                          >
+                            <Ionicons
+                              name="lock-closed"
+                              size={9}
+                              color="#475569"
+                            />
                           </View>
                         ) : null}
                       </View>
@@ -675,11 +756,10 @@ export default function Home() {
         </View>
       </ScrollView>
 
-      {/* Setup modal */}
+      {/* Setup modal — derives completion state from VendorContext directly */}
       <StoreSetupModal
         visible={setupModalOpen}
         onClose={closeSetupModal}
-        completedSteps={completedSteps}
         onStepPress={handleSetupStepPress}
       />
 
@@ -770,7 +850,24 @@ export default function Home() {
         initialTo={dateTo}
         onApply={handleCustomRangeApply}
       />
+
+      {/* Custom-domain search + buy */}
+      <CustomDomainModal
+        visible={showDomainModal}
+        onClose={() => setShowDomainModal(false)}
+      />
+
+      {/* Paywall sheet — opens when a gated quick action is tapped */}
+      <FeaturePaywallSheet
+        visible={paywallFeature != null}
+        onClose={() => setPaywallFeature(null)}
+        feature={paywallFeature}
+      />
       <BottomNav />
+
+      {/* Brand-aware fetch overlay. Sits at the top of the tree so it floats
+          above modals, sheets, and the bottom nav. Self-fades; mounted always. */}
+      <BrandLoader visible={showBrandLoader} />
     </View>
   );
 }

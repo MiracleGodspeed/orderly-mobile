@@ -87,11 +87,148 @@ export const updateStorefrontSettings = async (payload: any): Promise<UpdateStor
   return response.data;
 };
 
+/**
+ * Bank/payout details have their own dedicated endpoint on the backend
+ * (separate from the general storefront-settings update). The web client
+ * uses this same endpoint via Endpoint.updateBankAccountInfo. Going through
+ * /update-store-front-settings doesn't persist these fields.
+ */
+export const updateBankAccountInfo = async (payload: {
+  bank: string;
+  accountNumber: string;
+  accountName: string;
+}): Promise<{ message: string; code: string }> => {
+  const response = await apiClient.post<{ message: string; code: string }>(
+    "/storefront/update-vendor-profile-details",
+    payload,
+    { validateStatus: () => true }
+  );
+
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to update bank details");
+  }
+
+  return response.data;
+};
+
+// ----- Vendor-defined catalog categories -------------------------------------
+
+export const getCatalogCategories = async (): Promise<
+  import("./vendor.types").CatalogCategory[]
+> => {
+  const response = await apiClient.get<
+    import("./vendor.types").GetCatalogCategoriesResponse
+  >(
+    "/catalog/get-catalog-categories-by-id",
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(
+      response.data.message || "Failed to fetch catalog categories"
+    );
+  }
+  return response.data.data ?? [];
+};
+
+export const createCatalogCategory = async (payload: {
+  name: string;
+  description?: string;
+}): Promise<{ message: string; code: string }> => {
+  const response = await apiClient.post<{ message: string; code: string }>(
+    "/catalog/create-catalog-category",
+    payload,
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to create category");
+  }
+  return response.data;
+};
+
+/**
+ * Backend route is `/catalog/modify-category` — historically the web's helper
+ * is named `deleteCategory` even though it's actually a rename. We name it
+ * accurately here.
+ */
+export const renameCatalogCategory = async (
+  id: number,
+  name: string
+): Promise<{ message: string; code: string }> => {
+  const response = await apiClient.post<{ message: string; code: string }>(
+    `/catalog/modify-category?id=${encodeURIComponent(
+      String(id)
+    )}&name=${encodeURIComponent(name)}`,
+    null,
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to rename category");
+  }
+  return response.data;
+};
+
+export const deleteCatalogCategory = async (
+  id: number
+): Promise<{ message: string; code: string }> => {
+  const response = await apiClient.post<{ message: string; code: string }>(
+    `/catalog/delete-category?id=${encodeURIComponent(String(id))}`,
+    null,
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to delete category");
+  }
+  return response.data;
+};
+
+/**
+ * Set / clear the store-wide discount applied to every product. Pass 0 (or
+ * any value <= 0) to remove an existing discount.
+ */
+export const applyGlobalDiscount = async (
+  discountValue: number
+): Promise<{ message: string; code: string }> => {
+  const response = await apiClient.post<{ message: string; code: string }>(
+    `/storefront/apply-global-discount?discountValue=${encodeURIComponent(
+      String(discountValue)
+    )}`,
+    null,
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to update discount");
+  }
+  return response.data;
+};
+
+/**
+ * Set who absorbs the transaction fee — `customer` (added at checkout),
+ * `vendor` (deducted from settlement), or `included` (already baked into
+ * the listed price).
+ */
+export const setTransactionChargeBearer = async (
+  bearer: "vendor" | "customer" | "included"
+): Promise<{ message: string; code: string }> => {
+  const response = await apiClient.post<{ message: string; code: string }>(
+    `/storefront/set-transaction-charge-bearer?chargeBearer=${encodeURIComponent(
+      bearer
+    )}`,
+    null,
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to update fee setting");
+  }
+  return response.data;
+};
+
 type GetProductsParams = {
   pageIndex?: number;
   pageSize?: number;
   search?: string;
   categoryId?: number;
+  /** When set, the server returns only products with `stock < lowStockThreshold`. */
+  lowStockThreshold?: number;
 };
 
 export const getProducts = async (params?: GetProductsParams): Promise<GetProductsResponse> => {
@@ -121,7 +258,10 @@ export const createProduct = async (
   const formData = new FormData();
 
   formData.append("Title", payload.title);
-  formData.append("Category", payload.category);
+  if (payload.catalogCategoryId != null) {
+    // Backend expects the ID as a string in form-data (it's a long server-side).
+    formData.append("CatalogCategoryId", String(payload.catalogCategoryId));
+  }
   formData.append("Description", payload.description);
   formData.append("OriginalPrice", String(payload.originalPrice));
   formData.append("Price", String(payload.price));
@@ -190,7 +330,9 @@ export const updateProduct = async (
   const formData = new FormData();
 
   formData.append("Title", payload.title);
-  formData.append("Category", payload.category);
+  if (payload.catalogCategoryId != null) {
+    formData.append("CatalogCategoryId", String(payload.catalogCategoryId));
+  }
   formData.append("Description", payload.description);
   formData.append("OriginalPrice", String(payload.originalPrice));
   formData.append("Price", String(payload.price));
@@ -446,4 +588,111 @@ export const validateAccount = async (
   }
 
   return body.data as ValidateAccountData;
+};
+
+// ─── Custom domains ──────────────────────────────────────────────────────────
+
+export interface DomainAvailability {
+  domainName: string;
+  tld: string;
+  available: boolean;
+  priceNgn: number | null;
+  unavailableReason: string | null;
+}
+
+export interface DomainSearchResult {
+  query: string;
+  results: DomainAvailability[];
+}
+
+export interface InitiateDomainPurchaseRequest {
+  domainName: string;
+  tld: string;
+  years?: number;
+  callbackUrl?: string;
+}
+
+export interface InitiateDomainPurchaseResult {
+  orderId: number;
+  domainName: string;
+  priceNgn: number;
+  paymentReference: string;
+  authorizationUrl: string;
+}
+
+export interface MyDomain {
+  id: number;
+  domainName: string;
+  status: string;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
+export const searchDomains = async (
+  name: string,
+  tlds?: string[]
+): Promise<DomainSearchResult> => {
+  const params: Record<string, string> = { name };
+  if (tlds && tlds.length > 0) params.tlds = tlds.join(",");
+  const response = await apiClient.get<{
+    code: string;
+    message: string;
+    data: DomainSearchResult;
+  }>("/domain/search", { params, validateStatus: () => true });
+
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Domain search failed");
+  }
+  return response.data.data;
+};
+
+export const initiateDomainPurchase = async (
+  payload: InitiateDomainPurchaseRequest
+): Promise<InitiateDomainPurchaseResult> => {
+  const response = await apiClient.post<{
+    code: string;
+    message: string;
+    data: InitiateDomainPurchaseResult;
+  }>("/domain/purchase", payload, { validateStatus: () => true });
+
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Could not start domain purchase");
+  }
+  return response.data.data;
+};
+
+export const getMyDomains = async (): Promise<MyDomain[]> => {
+  const response = await apiClient.get<{
+    code: string;
+    message: string;
+    data: MyDomain[];
+  }>("/domain/my-domains", { validateStatus: () => true });
+
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Could not load your domains");
+  }
+  return response.data.data;
+};
+
+/**
+ * Returns the feature keys the current vendor's subscription grants.
+ * `keys` is null when the plan grants UNLIMITED access — the client should
+ * treat null as "every gate passes".
+ */
+export interface MyFeaturesData {
+  keys: string[] | null;
+  planName: string | null;
+}
+
+export const getMyFeatures = async (): Promise<MyFeaturesData> => {
+  const response = await apiClient.get<{
+    code: string;
+    message: string;
+    data: MyFeaturesData;
+  }>("/vendor-subscription/me/features", { validateStatus: () => true });
+
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Failed to load features");
+  }
+  return response.data.data;
 };

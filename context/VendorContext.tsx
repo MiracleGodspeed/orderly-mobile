@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, ReactNode, useEffect, useRef } from "react";
+import React, { createContext, useContext, useState, ReactNode, useEffect, useRef, useCallback } from "react";
 import { getStorefrontDetails, updateStorefrontSettings } from "../src/api/vendor/vendor.api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Image } from "react-native";
@@ -169,7 +169,10 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
     return processed;
   };
 
-  const fetchVendorData = async () => {
+  // Stable reference (empty deps): callers like Home's useFocusEffect can
+  // depend on this safely without re-firing on every VendorProvider render.
+  // It only reads stable setters and stable imports — no state from closure.
+  const fetchVendorData = useCallback(async () => {
     setLoading(true);
     try {
       const response = await getStorefrontDetails();
@@ -218,7 +221,7 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   const updateVendorSettings = async (updates: Partial<StoreData>) => {
     if (!storeData) return;

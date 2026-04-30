@@ -229,7 +229,7 @@ export default function OnboardingScreen() {
   return (
     <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
       {/* Header */}
-      <View className="px-6 pt-2 pb-1 flex-row items-center justify-between">
+      <View className="px-6 pt-2 mb-5 pb-1 flex-row items-center justify-between">
         <View className="w-16">
           <AppImage
             source={LOGO}

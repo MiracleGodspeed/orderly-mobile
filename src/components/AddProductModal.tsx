@@ -24,13 +24,27 @@ import { runOnJS } from "react-native-reanimated";
 import {
   createProduct,
   updateProduct,
+  getCatalogCategories,
 } from "../../src/api/vendor/vendor.api";
 import {
   CreateProductPayload,
   Product,
+  CatalogCategory,
 } from "../../src/api/vendor/vendor.types";
 import { AppImage } from "./AppImage";
 import KeyboardScreen from "./KeyboardScreen";
+import { useVendor } from "../../context/VendorContext";
+import { DraftsSheet } from "./DraftsSheet";
+import {
+  appendDraft,
+  ProductDraft,
+  loadDrafts,
+  MAX_DRAFTS,
+} from "../lib/productDrafts";
+import { useFeatures } from "../hooks/useFeatures";
+import { FEATURES, FeatureKey } from "../lib/features";
+import { FeaturePaywallSheet } from "./FeaturePaywallSheet";
+import { SelectionDrawer } from "./SelectionDrawer";
 
 interface Props {
   visible: boolean;
@@ -38,6 +52,9 @@ interface Props {
   mode?: "add" | "edit";
   productData?: Product | null;
   onProductAdded?: () => void;
+  /** Optional draft to hydrate the form from when opened in "add" mode —
+   *  lets ProductsList deep-link straight into editing a saved draft. */
+  initialDraft?: ProductDraft | null;
 }
 
 const SECTION_LABEL =
@@ -81,12 +98,23 @@ export default function AddProductModal({
   mode = "add",
   productData,
   onProductAdded,
+  initialDraft,
 }: Props) {
   const toast = useToast();
+  const { fetchVendorData } = useVendor();
 
   const [productImages, setProductImages] = useState<string[]>([]);
   const [productName, setProductName] = useState("");
-  const [category, setCategory] = useState("");
+  // Category is now an ID (linked to a CatalogCategory row), not a free
+  // string. Null = uncategorised. Hydrated from productData.catalogCategoryId
+  // on edit, or the saved draft's catalogCategoryId field.
+  const [catalogCategoryId, setCatalogCategoryId] = useState<number | null>(
+    null
+  );
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
+  const [vendorCategories, setVendorCategories] = useState<CatalogCategory[]>(
+    []
+  );
   const [price, setPrice] = useState("");
   const [stockQuantity, setStockQuantity] = useState("");
   const [productDescription, setProductDescription] = useState("");
@@ -113,37 +141,98 @@ export default function AddProductModal({
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Hydrate when editing
+  // Feature gating — secondary photo slot is paywalled. Tapping it when
+  // locked opens the upgrade sheet instead of the image picker.
+  const { has: hasFeature } = useFeatures();
+  const canUseSecondaryImage = hasFeature(FEATURES.PRODUCTS_SECONDARY_IMAGE);
+  const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(
+    null
+  );
+
+  // Drafts — local-only (AsyncStorage), capped at MAX_DRAFTS like web.
+  const [draftsSheetOpen, setDraftsSheetOpen] = useState(false);
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [draftCount, setDraftCount] = useState(0);
+  // Refresh the draft count + vendor categories whenever the modal opens.
+  // Categories are needed for the dropdown options; we load them every open
+  // so a freshly-added category in the manager sheet shows up immediately.
   useEffect(() => {
+    if (!visible) return;
+    let cancelled = false;
+    (async () => {
+      const [drafts, categories] = await Promise.all([
+        loadDrafts(),
+        getCatalogCategories().catch(() => [] as CatalogCategory[]),
+      ]);
+      if (!cancelled) {
+        setDraftCount(drafts.length);
+        setVendorCategories(categories);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  // Single source of truth for form hydration. We deliberately collapsed
+  // what used to be two effects (one for edit-hydrate, one for visibility
+  // reset) — they raced when the parent set `selectedProduct` BEFORE
+  // flipping `visible` to true: the edit-hydrate ran while still hidden,
+  // then the visibility effect immediately reset, and the modal opened
+  // empty because `productData` never changed reference again.
+  //
+  // Now the rule is simple: nothing happens until the modal becomes
+  // visible. When it opens, we hydrate based on intent (productData for
+  // edit, initialDraft for resumed-draft Add, blank for fresh Add). When
+  // it closes, we reset.
+  useEffect(() => {
+    if (!visible) {
+      resetForm();
+      return;
+    }
     if (mode === "edit" && productData) {
-      setProductName(productData.title);
-      setCategory(productData.category);
-      setPrice(String(productData.price));
-      setStockQuantity(String(productData.stock));
-      setProductDescription(productData.description);
+      // Coerce every text field to a string — the server occasionally
+      // returns null for description/category and `.trim()` would blow up.
+      setProductName(productData.title ?? "");
+      setCatalogCategoryId(productData.catalogCategoryId ?? null);
+      setPrice(productData.price != null ? String(productData.price) : "");
+      setStockQuantity(
+        productData.stock != null ? String(productData.stock) : ""
+      );
+      setProductDescription(productData.description ?? "");
 
       const existingImages: string[] = [];
       if (productData.image) existingImages.push(productData.image);
       if (productData.image2) existingImages.push(productData.image2);
       setProductImages(existingImages);
 
-      if (productData.sizeOptions?.length) setSizes(productData.sizeOptions);
-      if (productData.colourOptions?.length)
-        setColors(productData.colourOptions);
-      if (productData.features?.length) setFeatures(productData.features);
-
-      if (
-        (productData.sizeOptions && productData.sizeOptions.length) ||
-        (productData.colourOptions && productData.colourOptions.length)
-      ) {
-        setEnableVariants(true);
-      }
+      setSizes(productData.sizeOptions ?? []);
+      setColors(productData.colourOptions ?? []);
+      setFeatures(productData.features ?? []);
+      setEnableVariants(
+        !!(
+          (productData.sizeOptions && productData.sizeOptions.length) ||
+          (productData.colourOptions && productData.colourOptions.length)
+        )
+      );
+      return;
     }
-  }, [mode, productData]);
-
-  useEffect(() => {
-    if (!visible) resetForm();
-  }, [visible]);
+    if (mode === "add" && initialDraft) {
+      setProductName(initialDraft.productName ?? "");
+      setCatalogCategoryId(initialDraft.catalogCategoryId ?? null);
+      setPrice(initialDraft.price ?? "");
+      setStockQuantity(initialDraft.stockQuantity ?? "");
+      setProductDescription(initialDraft.productDescription ?? "");
+      setProductImages(initialDraft.productImages ?? []);
+      setSizes(initialDraft.sizes ?? []);
+      setColors(initialDraft.colors ?? []);
+      setFeatures(initialDraft.features ?? []);
+      setEnableVariants(!!initialDraft.enableVariants);
+      return;
+    }
+    // Fresh Add — clean slate.
+    resetForm();
+  }, [visible, mode, productData, initialDraft]);
 
   useEffect(() => {
     (async () => {
@@ -267,25 +356,27 @@ export default function AddProductModal({
     };
     let isValid = true;
 
-    if (!productName.trim()) {
+    // Defensive `?? ""` on every field — state can land on null briefly if
+    // the server returns null for a hydrated-then-cleared field.
+    if (!(productName ?? "").trim()) {
       newErrors.productName = "Product name is required";
       isValid = false;
     }
-    if (!price.trim()) {
+    if (!(price ?? "").trim()) {
       newErrors.price = "Price is required";
       isValid = false;
     } else if (parseFloat(price) <= 0) {
       newErrors.price = "Price must be greater than 0";
       isValid = false;
     }
-    if (!stockQuantity.trim()) {
+    if (!(stockQuantity ?? "").trim()) {
       newErrors.stockQuantity = "Stock quantity is required";
       isValid = false;
     } else if (parseInt(stockQuantity) < 0) {
       newErrors.stockQuantity = "Stock cannot be negative";
       isValid = false;
     }
-    if (!productDescription.trim()) {
+    if (!(productDescription ?? "").trim()) {
       newErrors.productDescription = "Product description is required";
       isValid = false;
     }
@@ -298,10 +389,72 @@ export default function AddProductModal({
     setErrors((prev) => ({ ...prev, [field]: "" }));
   };
 
+  // Saving the in-progress form to local storage. Validation is intentionally
+  // permissive — drafts represent half-finished work, so we allow saving with
+  // missing fields. The only hard rule is "have at least *something* worth
+  // saving" so we don't litter the drawer with empty entries.
+  const handleSaveDraft = async () => {
+    if (savingDraft) return;
+    const hasAnything =
+      (productName ?? "").trim() ||
+      (productDescription ?? "").trim() ||
+      (price ?? "").trim() ||
+      productImages.length > 0;
+    if (!hasAnything) {
+      toast.show("Add a name, photo, or description before saving a draft", {
+        type: "info",
+      });
+      return;
+    }
+    try {
+      setSavingDraft(true);
+      const updated = await appendDraft({
+        productName,
+        catalogCategoryId,
+        price,
+        stockQuantity,
+        productDescription,
+        productImages,
+        sizes,
+        colors,
+        features,
+        enableVariants,
+      });
+      setDraftCount(updated.length);
+      toast.show("Draft saved", { type: "success" });
+      if (Platform.OS === "ios") {
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Success
+        ).catch(() => {});
+      }
+      resetForm();
+      onClose();
+    } catch (err: any) {
+      toast.show(err?.message || "Couldn't save draft", { type: "danger" });
+    } finally {
+      setSavingDraft(false);
+    }
+  };
+
+  const handleLoadDraft = (draft: ProductDraft) => {
+    setProductName(draft.productName ?? "");
+    setCatalogCategoryId(draft.catalogCategoryId ?? null);
+    setPrice(draft.price ?? "");
+    setStockQuantity(draft.stockQuantity ?? "");
+    setProductDescription(draft.productDescription ?? "");
+    setProductImages(draft.productImages ?? []);
+    setSizes(draft.sizes ?? []);
+    setColors(draft.colors ?? []);
+    setFeatures(draft.features ?? []);
+    setEnableVariants(!!draft.enableVariants);
+    setDraftsSheetOpen(false);
+    toast.show("Draft loaded", { type: "success" });
+  };
+
   const resetForm = () => {
     setProductImages([]);
     setProductName("");
-    setCategory("");
+    setCatalogCategoryId(null);
     setPrice("");
     setStockQuantity("");
     setProductDescription("");
@@ -329,9 +482,9 @@ export default function AddProductModal({
       setLoading(true);
       const basePrice = parseFloat(price);
       const payload: CreateProductPayload = {
-        title: productName.trim(),
-        category: category.trim() || "Uncategorized",
-        description: productDescription.trim(),
+        title: (productName ?? "").trim(),
+        catalogCategoryId,
+        description: (productDescription ?? "").trim(),
         originalPrice: basePrice,
         price: basePrice,
         stock: parseInt(stockQuantity),
@@ -374,6 +527,10 @@ export default function AddProductModal({
       } else {
         await createProduct(payload);
         toast.show("Product created", { type: "success" });
+        // Creating the first product flips vendorOnboardProgressResponse on
+        // the server. Refetch so checklistItems (and the onboarding progress
+        // bar that reads from it) reflect the new state.
+        fetchVendorData().catch(() => {});
       }
 
       if (Platform.OS === "ios") {
@@ -425,13 +582,41 @@ export default function AddProductModal({
                       : "Showcase your product to customers"}
                   </Text>
                 </View>
-                <Pressable
-                  onPress={onClose}
-                  className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center active:bg-gray-200"
-                  hitSlop={6}
-                >
-                  <Ionicons name="close" size={18} color="#374151" />
-                </Pressable>
+                <View className="flex-row items-center gap-2">
+                  {mode === "add" && (
+                    <Pressable
+                      onPress={() => {
+                        haptic();
+                        setDraftsSheetOpen(true);
+                      }}
+                      className="h-9 px-3 rounded-full bg-blue-50 border border-blue-100 flex-row items-center gap-1.5 active:bg-blue-100"
+                      hitSlop={6}
+                    >
+                      <Ionicons
+                        name="document-text-outline"
+                        size={13}
+                        color="#1d4ed8"
+                      />
+                      <Text className="text-[12px] font-extrabold text-blue-700">
+                        Drafts
+                      </Text>
+                      {draftCount > 0 && (
+                        <View className="bg-blue-600 min-w-[16px] h-[16px] px-1 rounded-full items-center justify-center">
+                          <Text className="text-white text-[10px] font-extrabold">
+                            {draftCount}
+                          </Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  )}
+                  <Pressable
+                    onPress={onClose}
+                    className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center active:bg-gray-200"
+                    hitSlop={6}
+                  >
+                    <Ionicons name="close" size={18} color="#374151" />
+                  </Pressable>
+                </View>
               </View>
             </View>
 
@@ -446,11 +631,22 @@ export default function AddProductModal({
                 {[0, 1].map((slot) => {
                   const uri = productImages[slot];
                   const isPrimary = slot === 0;
+                  const isLocked = !isPrimary && !canUseSecondaryImage;
                   return (
                     <Pressable
                       key={slot}
-                      onPress={() => pickImage(slot)}
-                      className="flex-1 aspect-square rounded-2xl overflow-hidden bg-white border border-dashed border-gray-200"
+                      onPress={() => {
+                        if (isLocked) {
+                          setPaywallFeature(FEATURES.PRODUCTS_SECONDARY_IMAGE);
+                          return;
+                        }
+                        pickImage(slot);
+                      }}
+                      className={`flex-1 aspect-square rounded-2xl overflow-hidden border border-dashed ${
+                        isLocked
+                          ? "bg-gray-50 border-gray-200"
+                          : "bg-white border-gray-200"
+                      }`}
                     >
                       {uri ? (
                         <View className="w-full h-full">
@@ -471,6 +667,22 @@ export default function AddProductModal({
                           >
                             <Ionicons name="trash-outline" size={14} color="#dc2626" />
                           </Pressable>
+                        </View>
+                      ) : isLocked ? (
+                        <View className="flex-1 items-center justify-center px-3">
+                          <View className="w-10 h-10 rounded-full bg-white items-center justify-center mb-2 border border-gray-200">
+                            <Ionicons
+                              name="lock-closed"
+                              size={16}
+                              color="#9ca3af"
+                            />
+                          </View>
+                          <Text className="text-[12px] font-extrabold text-gray-700 text-center">
+                            Secondary photo
+                          </Text>
+                          <Text className="text-[10.5px] text-blue-600 font-bold text-center mt-0.5">
+                            Upgrade to unlock
+                          </Text>
                         </View>
                       ) : (
                         <View className="flex-1 items-center justify-center px-3">
@@ -494,7 +706,9 @@ export default function AddProductModal({
                 })}
               </View>
               <Text className="text-[11px] text-gray-400 mb-5 ml-1">
-                Square images look best · max 2 photos
+                {canUseSecondaryImage
+                  ? "Square images look best · max 2 photos"
+                  : "Square images look best · upgrade for a second photo"}
               </Text>
 
               {/* PRODUCT DETAILS */}
@@ -532,16 +746,60 @@ export default function AddProductModal({
               )}
 
               <Text className={FIELD_LABEL}>Category</Text>
-              <View className="flex-row items-center bg-white rounded-2xl px-4 h-12 mb-5 border border-gray-200">
-                <Ionicons name="folder-open-outline" size={16} color="#9ca3af" />
-                <TextInput
-                  value={category}
-                  onChangeText={setCategory}
-                  className="flex-1 ml-3 text-[15px] text-gray-900 h-full"
-                  placeholder="Electronics, Clothing, Food..."
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
+              {(() => {
+                const selectedCategory = vendorCategories.find(
+                  (c) => c.id === catalogCategoryId
+                );
+                const hasCategories = vendorCategories.length > 0;
+                return (
+                  <Pressable
+                    onPress={() => {
+                      if (Platform.OS === "ios") {
+                        Haptics.selectionAsync().catch(() => {});
+                      }
+                      setCategoryPickerOpen(true);
+                    }}
+                    className="flex-row items-center bg-white rounded-2xl px-4 h-12 mb-5 border border-gray-200 active:bg-gray-50"
+                  >
+                    <Ionicons
+                      name="folder-open-outline"
+                      size={16}
+                      color="#9ca3af"
+                    />
+                    <Text
+                      className={`flex-1 ml-3 text-[15px] ${
+                        selectedCategory
+                          ? "text-gray-900 font-semibold"
+                          : "text-gray-400"
+                      }`}
+                      numberOfLines={1}
+                    >
+                      {selectedCategory
+                        ? selectedCategory.name
+                        : hasCategories
+                        ? "Select a category"
+                        : "No categories yet — add one in Products"}
+                    </Text>
+                    {catalogCategoryId != null && (
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          setCatalogCategoryId(null);
+                        }}
+                        hitSlop={8}
+                        className="w-7 h-7 rounded-full items-center justify-center mr-1 active:bg-gray-100"
+                      >
+                        <Ionicons name="close" size={14} color="#9ca3af" />
+                      </Pressable>
+                    )}
+                    <Ionicons
+                      name="chevron-down"
+                      size={16}
+                      color="#9ca3af"
+                    />
+                  </Pressable>
+                );
+              })()}
 
               {/* PRICING */}
               <Text className={SECTION_LABEL}>Pricing & Stock</Text>
@@ -895,7 +1153,7 @@ export default function AddProductModal({
 
             {/* Sticky footer */}
             <View
-              className="flex-row items-center px-5 pt-3 pb-7 border-t border-gray-100 bg-white gap-3"
+              className="px-5 pt-3 pb-7 border-t border-gray-100 bg-white"
               style={{
                 shadowColor: "#0f172a",
                 shadowOffset: { width: 0, height: -3 },
@@ -904,6 +1162,23 @@ export default function AddProductModal({
                 elevation: 6,
               }}
             >
+              {mode === "add" && (
+                <Pressable
+                  onPress={handleSaveDraft}
+                  disabled={loading || savingDraft}
+                  className="h-11 rounded-2xl border border-blue-200 bg-blue-50 items-center justify-center flex-row gap-2 mb-2.5 active:bg-blue-100"
+                >
+                  {savingDraft ? (
+                    <ActivityIndicator size="small" color="#1d4ed8" />
+                  ) : (
+                    <Ionicons name="bookmark-outline" size={14} color="#1d4ed8" />
+                  )}
+                  <Text className="text-blue-700 font-extrabold text-[13.5px]">
+                    {savingDraft ? "Saving draft…" : "Save as draft"}
+                  </Text>
+                </Pressable>
+              )}
+              <View className="flex-row items-center gap-3">
               <Pressable
                 onPress={onClose}
                 disabled={loading}
@@ -947,6 +1222,7 @@ export default function AddProductModal({
                   </>
                 )}
               </Pressable>
+              </View>
             </View>
           </View>
         </KeyboardScreen>
@@ -1054,6 +1330,34 @@ export default function AddProductModal({
             </View>
           </View>
         )}
+
+        <DraftsSheet
+          visible={draftsSheetOpen}
+          onClose={() => setDraftsSheetOpen(false)}
+          onLoad={handleLoadDraft}
+        />
+
+        <FeaturePaywallSheet
+          visible={paywallFeature != null}
+          onClose={() => setPaywallFeature(null)}
+          feature={paywallFeature}
+        />
+
+        <SelectionDrawer
+          visible={categoryPickerOpen}
+          onClose={() => setCategoryPickerOpen(false)}
+          title="Choose category"
+          searchPlaceholder="Search categories"
+          options={vendorCategories.map((c) => ({
+            value: String(c.id),
+            label: c.name,
+          }))}
+          emptyMessage="You haven't added any categories yet."
+          onSelect={(value) => {
+            const id = Number(value);
+            if (Number.isFinite(id)) setCatalogCategoryId(id);
+          }}
+        />
       </SafeAreaView>
     </Modal>
   );

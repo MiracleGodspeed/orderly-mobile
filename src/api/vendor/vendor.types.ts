@@ -25,6 +25,23 @@ export interface GetCategoriesResponse {
   data: Category[];
 }
 
+/**
+ * Vendor-defined categories used to group products INSIDE a single store
+ * (e.g. "Summer Collection", "Featured"). Distinct from the platform-level
+ * `Category` above which is used during onboarding.
+ */
+export interface CatalogCategory {
+  id: number;
+  name: string;
+  description?: string | null;
+}
+
+export interface GetCatalogCategoriesResponse {
+  message: string;
+  code: string;
+  data: CatalogCategory[];
+}
+
 export interface StorefrontDetailsData {
   storeId: string;
   storeName: string;
@@ -61,7 +78,11 @@ export interface Product {
   id: string;
   storeId: string;
   title: string;
+  /** Human-readable category name from the legacy free-text field. Display only. */
   category: string;
+  /** ID of the linked CatalogCategory. Use this to pre-select the category dropdown on edit. */
+  catalogCategoryId?: number | null;
+  catalogCategoryName?: string | null;
   description: string;
   originalPrice: number;
   percentDiscount: number | null;
@@ -102,7 +123,10 @@ export interface GetProductsResponse {
 
 export interface CreateProductPayload {
   title: string;
-  category: string;
+  /** Vendor-defined catalog category ID. The backend expects this as
+   *  `CatalogCategoryId` (long). Null/undefined leaves the product
+   *  uncategorised. */
+  catalogCategoryId?: number | null;
   description: string;
   originalPrice: number;
   price: number;
@@ -277,11 +301,19 @@ export interface VerifyPaymentData {
 }
 
 
+export interface BestSellingProduct {
+  productId: string;
+  productName: string;
+  totalQuantitySold: number;
+  category: string | null;
+  unitPrice: number;
+}
+
 export interface SalesData {
   totalRevenue: number;
   totalOrders: number;
   totalCustomers: number;
-  bestSellingProducts: any | null;
+  bestSellingProducts: BestSellingProduct[] | null;
   topCustomers: any | null;
 }
 

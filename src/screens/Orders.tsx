@@ -5,8 +5,6 @@ import {
   RefreshControl,
   Platform,
   ScrollView,
-  NativeSyntheticEvent,
-  NativeScrollEvent,
 } from "react-native";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { useNavigation } from "@react-navigation/native";
@@ -16,11 +14,11 @@ import * as Haptics from "expo-haptics";
 
 import { RootStackParamList } from "../navigation/types";
 import { Order } from "../api/vendor/vendor.types";
-import { useInfiniteOrders } from "../hooks/useInfiniteOrders";
+import { useOrders, ORDERS_PAGE_SIZE } from "../hooks/useOrders";
 import { OrdersListSkeleton } from "../components/OrderRowSkeleton";
 import { prefetchImage } from "../components/AppImage";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { EndOfList } from "../components/EndOfList";
+import { Pagination } from "../components/Pagination";
 import { ListSearchBar } from "../components/ListSearchBar";
 import { formatRelativeTime } from "../lib/format";
 
@@ -212,20 +210,27 @@ export default function Orders() {
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [refreshing, setRefreshing] = useState(false);
 
-  const {
-    data,
-    isPending,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-    refetch,
-  } = useInfiniteOrders({ search: debouncedSearch });
+  // Reset to page 1 whenever the search text changes — otherwise the vendor
+  // can land on an out-of-range page (e.g. searching narrows 5 pages → 1).
+  const [page, setPage] = useState(1);
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
 
-  const allOrders: Order[] = useMemo(
-    () => data?.pages.flatMap((p) => p.data) ?? [],
-    [data]
-  );
-  const totalCount = data?.pages[0]?.totalCount ?? 0;
+  const { data, isPending, isFetching, refetch } = useOrders({
+    page,
+    search: debouncedSearch,
+  });
+
+  const allOrders: Order[] = useMemo(() => data?.data ?? [], [data]);
+  const totalCount = data?.totalCount ?? 0;
+  // Derived from totalCount + pageSize directly — the backend's totalPages
+  // field has historically been unreliable (returned 1 even with 91 records),
+  // so we recompute from the trustworthy totalCount instead.
+  const totalPages = Math.max(1, Math.ceil(totalCount / ORDERS_PAGE_SIZE));
+  const rangeStart =
+    totalCount === 0 ? 0 : (page - 1) * ORDERS_PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * ORDERS_PAGE_SIZE, totalCount);
 
   // Preload order-item thumbnails so OrderDetails opens instantly.
   useEffect(() => {
@@ -293,22 +298,20 @@ export default function Orders() {
     setActiveFilter(next);
   };
 
-  // ScrollView-based infinite scroll: trigger the next page when the user
-  // gets within 400px of the bottom.
-  const fetchingRef = useRef(false);
-  fetchingRef.current = isFetchingNextPage;
-
-  const handleScroll = useCallback(
-    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
-      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
-      const distanceFromBottom =
-        contentSize.height - (contentOffset.y + layoutMeasurement.height);
-      if (distanceFromBottom < 400 && hasNextPage && !fetchingRef.current) {
-        fetchNextPage();
-      }
-    },
-    [hasNextPage, fetchNextPage]
-  );
+  // After paging, scroll back to the top so the new page is visible without
+  // an extra swipe up. We schedule the scroll on the next macrotask so it
+  // runs *after* React commits the new page's render — calling scrollTo
+  // synchronously with setPage occasionally no-ops because the ScrollView's
+  // contentSize is still mid-update.
+  const scrollRef = useRef<ScrollView | null>(null);
+  const handlePageChange = useCallback((next: number) => {
+    setPage(next);
+    const scrollUp = () =>
+      scrollRef.current?.scrollTo({ x: 0, y: 0, animated: true });
+    scrollUp();
+    setTimeout(scrollUp, 0);
+    setTimeout(scrollUp, 120);
+  }, []);
 
   const showInitialSkeleton = isPending && !data;
 
@@ -447,11 +450,10 @@ export default function Orders() {
       <ScreenHeader title="Orders" />
 
       <ScrollView
+        ref={scrollRef}
         contentContainerStyle={{ paddingBottom: 40 }}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
-        onScroll={handleScroll}
-        scrollEventThrottle={400}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -485,12 +487,17 @@ export default function Orders() {
             ))
           )}
 
-          <EndOfList
-            isFetchingMore={isFetchingNextPage}
-            hasNextPage={!!hasNextPage}
-            itemCount={filteredOrders.length}
-          />
         </View>
+
+        <Pagination
+          page={page}
+          totalPages={totalPages}
+          totalCount={totalCount}
+          rangeStart={rangeStart}
+          rangeEnd={rangeEnd}
+          isFetching={isFetching}
+          onPageChange={handlePageChange}
+        />
       </ScrollView>
     </View>
   );

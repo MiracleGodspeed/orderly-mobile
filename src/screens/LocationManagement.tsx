@@ -6,8 +6,10 @@ import {
   TextInput,
   Platform,
   ActivityIndicator,
+  NativeSyntheticEvent,
+  NativeScrollEvent,
 } from "react-native";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
@@ -126,6 +128,49 @@ export default function LocationManagement() {
       getStateName(l.stateId).toLowerCase().includes(term)
     );
   }, [activeStates, stateSearch]);
+
+  // Progressive rendering for vendors with many delivery states. We render
+  // the first STATES_PAGE_SIZE cards on mount and reveal more in batches as
+  // the user scrolls near the bottom — each card is heavy (it expands to a
+  // list of LGA rows with TextInputs), so eager-rendering 30+ cards on a
+  // cold open noticeably stalls the screen.
+  const STATES_PAGE_SIZE = 2;
+  const [visibleStateCount, setVisibleStateCount] =
+    useState(STATES_PAGE_SIZE);
+  // Reset the window when the search/list changes — otherwise switching from
+  // a 30-state filter to a 5-state filter would leave the count stuck.
+  useEffect(() => {
+    setVisibleStateCount(STATES_PAGE_SIZE);
+  }, [stateSearch]);
+  const visibleStates = useMemo(
+    () => filteredActiveStates.slice(0, visibleStateCount),
+    [filteredActiveStates, visibleStateCount]
+  );
+  const hasMoreStates = visibleStateCount < filteredActiveStates.length;
+  const fetchingMoreRef = useRef(false);
+  const handleListScroll = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const { contentOffset, contentSize, layoutMeasurement } = e.nativeEvent;
+      const distanceFromBottom =
+        contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      if (
+        distanceFromBottom < 400 &&
+        hasMoreStates &&
+        !fetchingMoreRef.current
+      ) {
+        fetchingMoreRef.current = true;
+        // setTimeout gives RN a frame to commit the current scroll before we
+        // mount another batch — keeps the scroll smooth.
+        setTimeout(() => {
+          setVisibleStateCount((prev) =>
+            Math.min(prev + STATES_PAGE_SIZE, filteredActiveStates.length)
+          );
+          fetchingMoreRef.current = false;
+        }, 0);
+      }
+    },
+    [hasMoreStates, filteredActiveStates.length]
+  );
 
   const totalAreas = useMemo(
     () =>
@@ -621,6 +666,8 @@ export default function LocationManagement() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 140 }}
         keyboardShouldPersistTaps="handled"
+        onScroll={handleListScroll}
+        scrollEventThrottle={400}
       >
         {/* Branded hero */}
         <View
@@ -759,7 +806,17 @@ export default function LocationManagement() {
               </Pressable>
             </View>
           ) : (
-            filteredActiveStates.map(renderStateCard)
+            <>
+              {visibleStates.map(renderStateCard)}
+              {hasMoreStates && (
+                <View className="items-center py-4">
+                  <ActivityIndicator size="small" color="#2563eb" />
+                  <Text className="text-[12px] text-gray-500 mt-2 font-semibold">
+                    Loading more states…
+                  </Text>
+                </View>
+              )}
+            </>
           )}
         </View>
       </ScrollView>

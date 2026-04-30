@@ -3,6 +3,8 @@ import { View, Text, Pressable, ScrollView, Platform } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { BottomSheet } from "./BottomSheet";
+import { useVendor } from "../../context/VendorContext";
+import { setupProgressPct } from "../lib/setupProgress";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
@@ -50,7 +52,6 @@ const STEPS: Step[] = [
 interface Props {
   visible: boolean;
   onClose: () => void;
-  completedSteps: string[];
   onStepPress: (step: SetupStepId) => void;
 }
 
@@ -60,18 +61,18 @@ const haptic = () => {
   }
 };
 
-function StoreSetupModalImpl({
-  visible,
-  onClose,
-  completedSteps,
-  onStepPress,
-}: Props) {
-  const completedCount = useMemo(
-    () => STEPS.filter((s) => completedSteps.includes(s.id)).length,
-    [completedSteps]
+function StoreSetupModalImpl({ visible, onClose, onStepPress }: Props) {
+  // Server-driven completion. Single source of truth — the home progress card
+  // reads from the same place, so the two displays can never disagree.
+  const { checklistItems } = useVendor();
+
+  const completedIds = useMemo(
+    () => new Set(checklistItems.filter((i) => i.completed).map((i) => i.id)),
+    [checklistItems]
   );
+  const completedCount = completedIds.size;
   const total = STEPS.length;
-  const pct = Math.round((completedCount / total) * 100);
+  const pct = setupProgressPct(checklistItems);
   const remaining = total - completedCount;
   const allDone = remaining === 0;
 
@@ -156,7 +157,7 @@ function StoreSetupModalImpl({
 
         {/* Steps */}
         {STEPS.map((step) => {
-          const isDone = completedSteps.includes(step.id);
+          const isDone = completedIds.has(step.id);
           return (
             <Pressable
               key={step.id}

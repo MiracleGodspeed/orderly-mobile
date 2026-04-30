@@ -75,11 +75,10 @@ function getRefFromUrl(url: string): string | null {
   return null;
 }
 
-// The web `/vendor/subscription` page already handles `?reference=` to verify
-// the payment; we add `?from=mobile` so it knows to redirect into the app's
-// custom scheme instead of staying on the page.
-const WEB_CALLBACK_URL =
-  "https://orderlystores.com/vendor/subscription?from=mobile";
+// Public web bounce that flips Paystack's HTTPS redirect into our `orderly://`
+// scheme. Lives at /app-callback (NOT a protected vendor route — paying users
+// aren't logged in on the web, so an auth guard would intercept them).
+const WEB_CALLBACK_URL = "https://orderlystores.com/app-callback";
 
 const APP_DEEPLINK_PREFIX = "orderly://billing/callback";
 

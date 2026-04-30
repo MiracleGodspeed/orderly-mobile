@@ -143,6 +143,7 @@ export default function OnboardingScreen() {
   const handleSkip = () => {
     haptic();
     navigation.navigate("EmailSignUp");
+    // navigation.navigate("Splash");
   };
 
   const isLast = currentIndex === slides.length - 1;

@@ -53,5 +53,6 @@ export type RootStackParamList = {
   LegalPolicies: undefined;
   NotificationProfile: undefined;
   LocationManagement: undefined;
+  CustomDomain: undefined;
 
 };

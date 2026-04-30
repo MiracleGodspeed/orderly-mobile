@@ -176,28 +176,69 @@ export default function SplashScreen({ navigation }: any) {
             />
           </Animated.View>
 
-          <Animated.View style={[taglineStyle, { marginTop: 24, alignItems: "center" }]}>
-            {/* <Text
+          <Animated.View
+            style={[
+              taglineStyle,
+              { marginTop: 28, alignItems: "center", paddingHorizontal: 32 },
+            ]}
+          >
+            {/* Eyebrow — light, tracked. Anchors the brand without
+                competing with the logo. */}
+            <Text
+              style={{
+                color: "rgba(255,255,255,0.6)",
+                fontSize: 11,
+                fontWeight: "700",
+                letterSpacing: 2.4,
+                textTransform: "uppercase",
+                fontFamily: "PlusJakartaSans_700Bold",
+              }}
+            >
+              Vendor app
+            </Text>
+
+            {/* Primary tagline — confident, two lines, tight tracking. */}
+            <Text
               style={{
                 color: "white",
-                fontSize: 28,
+                fontSize: 26,
                 fontWeight: "800",
-                letterSpacing: -0.5,
+                letterSpacing: -0.6,
+                lineHeight: 32,
+                marginTop: 10,
+                textAlign: "center",
                 fontFamily: "PlusJakartaSans_800ExtraBold",
               }}
             >
-              Orderly
-            </Text> */}
+              Sell anything,{"\n"}beautifully.
+            </Text>
+
+            {/* Subtle divider — visual breath between headline and the
+                feature row that grounds it. */}
+            <View
+              style={{
+                width: 32,
+                height: 2,
+                borderRadius: 1,
+                backgroundColor: "rgba(255,255,255,0.35)",
+                marginTop: 18,
+              }}
+            />
+
+            {/* Feature trio — what the app actually delivers. Tracked,
+                muted, small enough to read as supporting copy. */}
             <Text
               style={{
-                color: "rgba(255,255,255,0.75)",
-                fontSize: 14,
-                fontWeight: "500",
-                marginTop: 6,
-                letterSpacing: 0.2,
+                color: "rgba(255,255,255,0.7)",
+                fontSize: 12.5,
+                fontWeight: "600",
+                letterSpacing: 0.6,
+                marginTop: 14,
+                textAlign: "center",
+                fontFamily: "PlusJakartaSans_600SemiBold",
               }}
             >
-              Sell anything, beautifully.
+              Storefronts  ·  Payments  ·  Insights
             </Text>
           </Animated.View>
         </View>

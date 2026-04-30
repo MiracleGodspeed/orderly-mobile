@@ -13,6 +13,11 @@ interface Props {
   onClose: () => void;
   /** The gated feature the vendor tried to access. */
   feature: FeatureKey | null;
+  /** Optional. Called when the user taps the upgrade CTA, before the sheet
+   *  closes and navigation runs. Lets the parent dismiss its own
+   *  modal/sheet so the vendor lands cleanly on the billing screen
+   *  (instead of returning to a now-irrelevant form). */
+  onUpgrade?: () => void;
 }
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -29,12 +34,18 @@ const haptic = () => {
  * `FEATURE_META` so the sheet stays generic — to add a new gated feature,
  * register it in `features.ts` and this sheet handles it automatically.
  */
-export function FeaturePaywallSheet({ visible, onClose, feature }: Props) {
+export function FeaturePaywallSheet({
+  visible,
+  onClose,
+  feature,
+  onUpgrade,
+}: Props) {
   const navigation = useNavigation<Nav>();
   const meta = feature ? FEATURE_META[feature] : null;
 
   const handleUpgrade = () => {
     haptic();
+    onUpgrade?.();
     onClose();
     navigation.navigate("SubscriptionBilling" as any);
   };

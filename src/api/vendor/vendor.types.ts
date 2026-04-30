@@ -313,6 +313,10 @@ export interface SalesData {
   totalRevenue: number;
   totalOrders: number;
   totalCustomers: number;
+  /** Public-storefront visits in the selected period. Deduped on write
+   *  (30-min window per IP+store) so this represents distinct visitor
+   *  sessions, not raw page loads. */
+  totalVisits: number;
   bestSellingProducts: BestSellingProduct[] | null;
   topCustomers: any | null;
 }

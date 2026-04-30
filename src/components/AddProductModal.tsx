@@ -1341,6 +1341,7 @@ export default function AddProductModal({
           visible={paywallFeature != null}
           onClose={() => setPaywallFeature(null)}
           feature={paywallFeature}
+          onUpgrade={onClose}
         />
 
         <SelectionDrawer

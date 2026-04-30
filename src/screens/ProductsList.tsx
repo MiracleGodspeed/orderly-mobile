@@ -40,8 +40,14 @@ import { CategoryManagerSheet } from "../components/CategoryManagerSheet";
 import { CategoryPickerSheet } from "../components/CategoryPickerSheet";
 import { DraftsSheet } from "../components/DraftsSheet";
 import { loadDrafts, ProductDraft } from "../lib/productDrafts";
-import { useFocusEffect } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../navigation/types";
 import { useFeatures } from "../hooks/useFeatures";
+import {
+  useSubscriptionUsage,
+  useInvalidateSubscriptionUsage,
+} from "../hooks/useSubscriptionUsage";
 import { FEATURES, FeatureKey } from "../lib/features";
 import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
 
@@ -168,6 +174,8 @@ function ProductCard({
 
 export default function ProductsList() {
   const toast = useToast();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { storeData, fetchVendorData } = useVendor();
 
   // Real-time discount + fee-bearer from the store record. When either changes
@@ -237,9 +245,19 @@ export default function ProductsList() {
   }, [refreshCategories]);
 
   const invalidatePaged = useInvalidateProducts();
+  const invalidateUsage = useInvalidateSubscriptionUsage();
   const invalidateAll = useCallback(() => {
     invalidatePaged();
-  }, [invalidatePaged]);
+    // Counts shown in the hero card (and the cap gate) drift after each
+    // create/delete — keep them honest by re-fetching on every mutation.
+    invalidateUsage();
+  }, [invalidatePaged, invalidateUsage]);
+
+  // Plan limits — drives the "X of Y" display in the hero and the
+  // upgrade-banner shown at the cap. `catalogItemLimit == null` means the
+  // plan is unlimited and we skip the gauge entirely.
+  const { data: usageData } = useSubscriptionUsage();
+  const catalogLimit = usageData?.catalogItemLimit ?? null;
 
   // Threshold the server uses when the Low-stock filter is active. Server
   // returns products with `stock < LOW_STOCK_THRESHOLD` only when this value
@@ -484,12 +502,43 @@ export default function ProductsList() {
         </View>
       </View>
 
-      <Text className="text-[44px] leading-[52px] font-extrabold text-gray-900 tracking-tight">
-        {totalCount}
-      </Text>
+      <View className="flex-row items-baseline">
+        <Text className="text-[44px] leading-[52px] font-extrabold text-gray-900 tracking-tight">
+          {totalCount}
+        </Text>
+        {catalogLimit != null && (
+          <Text className="text-[18px] leading-[24px] font-bold text-gray-400 ml-1.5 tracking-tight">
+            / {catalogLimit}
+          </Text>
+        )}
+      </View>
       <Text className="text-[13px] text-gray-500 mt-1">
-        across your catalog
+        {catalogLimit != null
+          ? `${Math.max(0, catalogLimit - totalCount)} ${
+              catalogLimit - totalCount === 1 ? "slot" : "slots"
+            } left on ${usageData?.planName ?? "your plan"}`
+          : "across your catalog"}
       </Text>
+
+      {catalogLimit != null && totalCount >= catalogLimit && (
+        <Pressable
+          onPress={() => {
+            if (Platform.OS === "ios") {
+              Haptics.selectionAsync().catch(() => {});
+            }
+            // The Subscription tab is part of the bottom nav — reusing the
+            // existing screen avoids a deep-link from the limit banner.
+            navigation.navigate("SubscriptionBilling");
+          }}
+          className="mt-3 flex-row items-center gap-2 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2.5"
+        >
+          <Ionicons name="alert-circle" size={14} color="#b45309" />
+          <Text className="flex-1 text-[12px] font-bold text-amber-800">
+            You've hit your product limit. Upgrade to add more.
+          </Text>
+          <Ionicons name="chevron-forward" size={14} color="#b45309" />
+        </Pressable>
+      )}
 
       <View className="h-px bg-gray-100 my-4" />
 

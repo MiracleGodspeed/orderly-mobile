@@ -34,7 +34,6 @@ import { useStorePerformance } from '../hooks/useStorePerformance';
 import { AppImage } from '../components/AppImage';
 import { TrendBadge } from '../components/TrendBadge';
 import { formatNaira, getGreeting, computeTrend } from '../lib/format';
-import { CustomDomainModal } from '../components/CustomDomainModal';
 import { FeaturePaywallSheet } from '../components/FeaturePaywallSheet';
 import { useFeatures } from '../hooks/useFeatures';
 import { FEATURES, FeatureKey } from '../lib/features';
@@ -152,7 +151,17 @@ export default function Home() {
   //   2. Period change — flipped true by the duration handlers
   // We deliberately do NOT include vendorLoading or focus-driven refetches —
   // navigating back to Home should never flash the overlay.
-  const hasInitialData = !!ordersData && !!productsData && !!performanceData;
+  // `storeData` and `checklistItems` are part of the initial data set —
+  // without them the setup progress card flashes a misleading 25% baseline
+  // (because setupProgressPct on an empty checklist returns just the
+  // baseline). Holding the overlay until those resolve keeps the first
+  // paint correct.
+  const hasInitialData =
+    !!ordersData &&
+    !!productsData &&
+    !!performanceData &&
+    !!storeData &&
+    checklistItems.length > 0;
   const isInitialFetching =
     !hasInitialData &&
     (performanceFetching || ordersFetching || productsFetching);
@@ -180,6 +189,7 @@ export default function Home() {
   const totalProductCount = productsData?.totalCount ?? 0;
   const totalOrderCount = ordersData?.totalCount ?? 0;
   const totalCustomers = performanceData?.sales?.totalCustomers ?? 0;
+  const totalVisits = performanceData?.sales?.totalVisits ?? 0;
 
   // Derive a trend chip from currentMonth vs lastMonth (or whichever the
   // selected duration most resembles).
@@ -216,10 +226,9 @@ export default function Home() {
   }, [navigation, tap]);
 
   // Custom-domain quick action — gated behind STORE_CUSTOM_DOMAIN. Locked
-  // vendors get the upgrade sheet instead of the search modal.
+  // vendors get the upgrade sheet instead of the dedicated screen.
   const { has: hasFeature } = useFeatures();
-  const canUseCustomDomain = true //hasFeature(FEATURES.STORE_CUSTOM_DOMAIN); 
-  const [showDomainModal, setShowDomainModal] = useState(false);
+  const canUseCustomDomain = true //hasFeature(FEATURES.STORE_CUSTOM_DOMAIN);
   const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(null);
   const handleOpenDomain = useCallback(() => {
     tap();
@@ -227,8 +236,8 @@ export default function Home() {
       setPaywallFeature(FEATURES.STORE_CUSTOM_DOMAIN);
       return;
     }
-    setShowDomainModal(true);
-  }, [canUseCustomDomain, tap]);
+    navigation.navigate('CustomDomain');
+  }, [canUseCustomDomain, navigation, tap]);
 
   const handleQuickAction = useCallback(
     (screen: keyof RootStackParamList, params?: any) => {
@@ -355,7 +364,7 @@ export default function Home() {
             {firstName ? `, ${firstName}` : ''} 👋
           </Text>
 
-          {progressPercentage < 100 && (
+          {checklistItems.length > 0 && progressPercentage < 100 && (
             <View className="mb-4">
               <StoreSetupProgress
                 progress={progressPercentage}
@@ -472,7 +481,7 @@ export default function Home() {
                   <MaterialIcons name="storefront" size={18} color="#2563eb" />
                 ),
                 tint: '#dbeafe',
-                value: totalCustomers,
+                value: totalVisits,
                 label: 'Visits',
               },
               {
@@ -849,12 +858,6 @@ export default function Home() {
         initialFrom={dateFrom}
         initialTo={dateTo}
         onApply={handleCustomRangeApply}
-      />
-
-      {/* Custom-domain search + buy */}
-      <CustomDomainModal
-        visible={showDomainModal}
-        onClose={() => setShowDomainModal(false)}
       />
 
       {/* Paywall sheet — opens when a gated quick action is tapped */}

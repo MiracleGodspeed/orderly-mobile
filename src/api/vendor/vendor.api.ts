@@ -696,3 +696,35 @@ export const getMyFeatures = async (): Promise<MyFeaturesData> => {
   }
   return response.data.data;
 };
+
+/**
+ * Subset of the server's SubscriptionUsageDto that the mobile UI cares
+ * about. `catalogItemLimit == null` means the plan is unlimited.
+ */
+export interface MySubscriptionUsage {
+  planName: string | null;
+  catalogItemLimit: number | null;
+  currentCatalogItemCount: number;
+}
+
+export const getMySubscriptionUsage = async (): Promise<MySubscriptionUsage> => {
+  const response = await apiClient.get<{
+    code: string;
+    message: string;
+    data: {
+      planName?: string | null;
+      catalogItemLimit?: number | null;
+      currentCatalogItemCount?: number | null;
+    };
+  }>("/vendor-subscription/me/usage", { validateStatus: () => true });
+
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Failed to load subscription usage");
+  }
+  const d = response.data.data ?? {};
+  return {
+    planName: d.planName ?? null,
+    catalogItemLimit: d.catalogItemLimit ?? null,
+    currentCatalogItemCount: d.currentCatalogItemCount ?? 0,
+  };
+};

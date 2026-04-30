@@ -236,14 +236,34 @@ export default function RenewSubscriptionStep({
 
               <View className="flex-row items-start justify-between gap-3">
                 <View className="flex-row items-start gap-3 flex-1 min-w-0">
-                  <View
-                    className={`w-11 h-11 rounded-xl items-center justify-center ${tone.iconBg}`}
-                  >
-                    <Ionicons
-                      name={tone.icon}
-                      size={20}
-                      color={tone.iconColor}
-                    />
+                  {/* Icon disk + selection badge anchored to it. Keeping
+                      the indicator on the left side frees the price column
+                      on the right from any overlap regardless of price
+                      length. */}
+                  <View className="relative">
+                    <View
+                      className={`w-11 h-11 rounded-xl items-center justify-center ${tone.iconBg}`}
+                    >
+                      <Ionicons
+                        name={tone.icon}
+                        size={20}
+                        color={tone.iconColor}
+                      />
+                    </View>
+                    {isSelected && (
+                      <View
+                        className="absolute -bottom-1 -right-1 w-5 h-5 rounded-full bg-blue-600 items-center justify-center border-2 border-white"
+                        style={{
+                          shadowColor: "#2563eb",
+                          shadowOffset: { width: 0, height: 2 },
+                          shadowOpacity: 0.3,
+                          shadowRadius: 4,
+                          elevation: 3,
+                        }}
+                      >
+                        <Ionicons name="checkmark" size={11} color="white" />
+                      </View>
+                    )}
                   </View>
                   <View className="flex-1 min-w-0">
                     <Text className="text-[16px] font-extrabold text-gray-900 mb-0.5">
@@ -263,6 +283,16 @@ export default function RenewSubscriptionStep({
                   <Text className="text-[10.5px] text-gray-500 mt-0.5">
                     {cycleLabel(billingCycle)}
                   </Text>
+                  {/* Yearly savings reinforcement — vendors think in
+                      money, not percentages, so we show the absolute
+                      naira amount they save vs. paying monthly × 12. */}
+                  {billingCycle === "Yearly" && plan.price > 0 && (
+                    <View className="mt-1.5 px-2 py-0.5 rounded-md bg-emerald-50 border border-emerald-100">
+                      <Text className="text-[10px] font-extrabold text-emerald-700 tracking-wide">
+                        Save ₦{Math.round(plan.price * 1.2).toLocaleString()}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -280,28 +310,16 @@ export default function RenewSubscriptionStep({
                           color="#059669"
                         />
                       </View>
-                      <Text className="text-[12.5px] text-gray-700 leading-[18px] flex-1">
+                      <Text
+                        className="text-[12.5px] text-gray-700 leading-[18px] flex-1"
+                        numberOfLines={2}
+                      >
                         {feature}
                       </Text>
                     </View>
                   ))}
                 </View>
               )}
-
-              {/* Selection indicator */}
-              <View className="absolute top-5 right-5">
-                <View
-                  className={`w-6 h-6 rounded-full items-center justify-center ${
-                    isSelected
-                      ? "bg-blue-600"
-                      : "border-2 border-gray-200 bg-white"
-                  }`}
-                >
-                  {isSelected && (
-                    <Ionicons name="checkmark" size={14} color="white" />
-                  )}
-                </View>
-              </View>
             </Pressable>
           );
         })}

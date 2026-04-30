@@ -13,7 +13,7 @@ import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
 import { useToast } from "react-native-toast-notifications";
 
-import { BottomSheet } from "./BottomSheet";
+import { ScreenHeader } from "../components/ScreenHeader";
 import {
   searchDomains,
   initiateDomainPurchase,
@@ -22,11 +22,6 @@ import {
   MyDomain,
 } from "../api/vendor/vendor.api";
 import { verifyPayment } from "../api/vendor/vendor.api";
-
-interface Props {
-  visible: boolean;
-  onClose: () => void;
-}
 
 const haptic = () => {
   if (Platform.OS === "ios") {
@@ -55,7 +50,7 @@ const getRefFromUrl = (url: string): string | null => {
 
 const formatNgn = (amount: number) => `₦${amount.toLocaleString()}`;
 
-export function CustomDomainModal({ visible, onClose }: Props) {
+export default function CustomDomain() {
   const toast = useToast();
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
@@ -81,7 +76,6 @@ export function CustomDomainModal({ visible, onClose }: Props) {
 
   // Fire the actual search whenever the debounced query settles.
   useEffect(() => {
-    if (!visible) return;
     const sld = debouncedQuery.replace(/\..*$/, ""); // strip any pasted TLD
     if (!sld || sld.length < 2) {
       setResults([]);
@@ -104,17 +98,11 @@ export function CustomDomainModal({ visible, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery, visible]);
+  }, [debouncedQuery]);
 
-  // Refresh "my domains" each time the sheet opens so the just-purchased
-  // entry shows up after the WebBrowser session returns.
+  // Load "my domains" on mount so the list is populated by the time the user
+  // lands on the screen.
   useEffect(() => {
-    if (!visible) {
-      setQuery("");
-      setResults([]);
-      setSearchError(null);
-      return;
-    }
     let cancelled = false;
     (async () => {
       try {
@@ -130,7 +118,7 @@ export function CustomDomainModal({ visible, onClose }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [visible]);
+  }, []);
 
   const refreshMyDomains = async () => {
     try {
@@ -212,14 +200,11 @@ export function CustomDomainModal({ visible, onClose }: Props) {
   }, [results]);
 
   return (
-    <BottomSheet
-      visible={visible}
-      onClose={onClose}
-      title="Custom domain"
-      subtitle="Find and own your storefront's web address"
-      height="92%"
-    >
+    <View className="flex-1 bg-gray-50">
+      <ScreenHeader title="Custom domain" />
+
       <ScrollView
+        className="flex-1"
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 36 }}
@@ -344,7 +329,11 @@ export function CustomDomainModal({ visible, onClose }: Props) {
                           }`}
                         >
                           <Ionicons
-                            name={item.available ? "checkmark-circle" : "close-circle"}
+                            name={
+                              item.available
+                                ? "checkmark-circle"
+                                : "close-circle"
+                            }
                             size={16}
                             color={item.available ? "#059669" : "#9ca3af"}
                           />
@@ -358,7 +347,11 @@ export function CustomDomainModal({ visible, onClose }: Props) {
                           </Text>
                           {item.available ? (
                             <Text className="text-[11.5px] font-bold text-emerald-700 mt-0.5">
-                              Available · {item.priceNgn != null ? formatNgn(item.priceNgn) : "—"} / yr
+                              Available ·{" "}
+                              {item.priceNgn != null
+                                ? formatNgn(item.priceNgn)
+                                : "—"}{" "}
+                              / yr
                             </Text>
                           ) : (
                             <Text className="text-[11.5px] text-gray-500 mt-0.5">
@@ -419,7 +412,8 @@ export function CustomDomainModal({ visible, onClose }: Props) {
                 No domains yet
               </Text>
               <Text className="text-[11.5px] text-gray-500 mt-0.5 text-center max-w-[260px]">
-                Buy your first domain above. We'll connect it to your storefront.
+                Buy your first domain above. We'll connect it to your
+                storefront.
               </Text>
             </View>
           ) : (
@@ -427,10 +421,22 @@ export function CustomDomainModal({ visible, onClose }: Props) {
               {myDomains.map((d) => {
                 const tone =
                   d.status === "Active"
-                    ? { bg: "bg-emerald-50", text: "text-emerald-700", border: "border-emerald-100" }
+                    ? {
+                        bg: "bg-emerald-50",
+                        text: "text-emerald-700",
+                        border: "border-emerald-100",
+                      }
                     : d.status === "Failed"
-                    ? { bg: "bg-rose-50", text: "text-rose-700", border: "border-rose-100" }
-                    : { bg: "bg-amber-50", text: "text-amber-700", border: "border-amber-100" };
+                    ? {
+                        bg: "bg-rose-50",
+                        text: "text-rose-700",
+                        border: "border-rose-100",
+                      }
+                    : {
+                        bg: "bg-amber-50",
+                        text: "text-amber-700",
+                        border: "border-amber-100",
+                      };
                 return (
                   <View
                     key={d.id}
@@ -447,13 +453,16 @@ export function CustomDomainModal({ visible, onClose }: Props) {
                         {d.domainName}
                       </Text>
                       <Text className="text-[11px] text-gray-500 mt-0.5">
-                        Purchased {new Date(d.createdAt).toLocaleDateString()}
+                        Purchased{" "}
+                        {new Date(d.createdAt).toLocaleDateString()}
                       </Text>
                     </View>
                     <View
                       className={`px-2 py-0.5 rounded-md ${tone.bg} border ${tone.border}`}
                     >
-                      <Text className={`text-[10px] font-extrabold ${tone.text}`}>
+                      <Text
+                        className={`text-[10px] font-extrabold ${tone.text}`}
+                      >
                         {d.status}
                       </Text>
                     </View>
@@ -467,11 +476,12 @@ export function CustomDomainModal({ visible, onClose }: Props) {
         <View className="bg-blue-50/60 border border-blue-100 rounded-2xl px-4 py-3 flex-row items-start gap-3 mt-5">
           <Ionicons name="information-circle" size={16} color="#2563eb" />
           <Text className="text-[12px] text-blue-800 leading-[17px] flex-1">
-            Domains take a few minutes to provision after payment. We'll notify
-            you when yours is ready and connect it to your storefront automatically.
+            Domains take a few minutes to provision after payment. We'll
+            notify you when yours is ready and connect it to your storefront
+            automatically.
           </Text>
         </View>
       </ScrollView>
-    </BottomSheet>
+    </View>
   );
 }

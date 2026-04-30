@@ -12,7 +12,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.orderly.stores",
+      "bundleIdentifier": "com.orderlystores.vendor",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "GIDClientID": "912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f.apps.googleusercontent.com",
@@ -21,10 +21,16 @@
             "CFBundleURLSchemes": [
               "com.googleusercontent.apps.912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f"
             ]
+          },
+          {
+            "CFBundleURLSchemes": [
+              "com.googleusercontent.apps.912473645778-idbsu2n6j9jtjk6em1g1eo817ia74h3f"
+            ]
           }
         ],
         "NSPhotoLibraryUsageDescription": "We need access to your photos so you can upload banner images for your store.",
-        "NSCameraUsageDescription": "We need camera access so you can take photos for your store."
+        "NSCameraUsageDescription": "We need camera access so you can take photos for your store.",
+        "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
         "aps-environment": "production"
@@ -37,8 +43,11 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.orderly.stores",
-      "useNextNotificationsApi": true
+      "package": "com.orderlystores.vendor",
+      "useNextNotificationsApi": true,
+      "permissions": [
+        "android.permission.RECORD_AUDIO"
+      ]
     },
     "notification": {
       "color": "#265CC7",

@@ -10,6 +10,8 @@
 export const FEATURES = {
   PRODUCTS_LOW_STOCK: "products.low_stock",
   PRODUCTS_SECONDARY_IMAGE: "products.secondary_image",
+  PRODUCTS_VARIANTS: "products.variants",
+  PRODUCTS_CATEGORIES: "products.categories",
   ANALYTICS_VISITS: "analytics.visits",
   CUSTOMERS_TAGS: "customers.tags",
   STORE_CUSTOM_DOMAIN: "store.custom_domain",
@@ -35,6 +37,16 @@ export const FEATURE_META: Record<
     label: "Multiple product photos",
     description:
       "Show shoppers more than one photo per product — different angles, details, and use cases drive higher conversion.",
+  },
+  [FEATURES.PRODUCTS_VARIANTS]: {
+    label: "Product variants",
+    description:
+      "Offer your products in multiple sizes and colors with unique pricing per combination — perfect for clothing, accessories, and tiered offerings.",
+  },
+  [FEATURES.PRODUCTS_CATEGORIES]: {
+    label: "Custom categories",
+    description:
+      "Organize your catalog with your own categories so shoppers can find exactly what they're looking for.",
   },
   [FEATURES.ANALYTICS_VISITS]: {
     label: "Visitor analytics",

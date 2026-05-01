@@ -1,325 +1,491 @@
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  Pressable,
   StatusBar,
   ActivityIndicator,
-  FlatList
+  ScrollView,
+  RefreshControl,
+  Platform,
 } from "react-native";
-import { useState, useEffect } from "react";
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useToast } from 'react-native-toast-notifications';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
+import { useToast } from "react-native-toast-notifications";
 
+import { RootStackParamList } from "../navigation/types";
+import { AppNotification, NotificationType } from "../api/vendor/vendor.types";
+import {
+  getNotifications,
+  markAllNotificationsAsRead,
+  markNotificationAsRead,
+} from "../api/vendor/vendor.api";
+import { formatRelativeTime } from "../lib/format";
+import { ScreenHeader } from "../components/ScreenHeader";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-interface Notification {
-  id: string;
-  type: 'order' | 'stock' | 'payout' | 'performance' | 'subscription';
-  icon: string;
+type IoniconName = React.ComponentProps<typeof Ionicons>["name"];
+
+interface TypeStyle {
+  icon: IoniconName;
   iconColor: string;
   iconBg: string;
-  title: string;
-  description: string;
-  timestamp: string;
-  isRead: boolean;
+  accent: string;
+  label: string;
 }
 
-export default function Notifications() {
-   const toast = useToast();
+const TYPE_STYLES: Record<string, TypeStyle> = {
+  order: {
+    icon: "bag-handle",
+    iconColor: "#0d9488",
+    iconBg: "#ccfbf1",
+    accent: "#14b8a6",
+    label: "Order",
+  },
+  stock: {
+    icon: "warning",
+    iconColor: "#b45309",
+    iconBg: "#fef3c7",
+    accent: "#f59e0b",
+    label: "Stock",
+  },
+  payout: {
+    icon: "checkmark-circle",
+    iconColor: "#047857",
+    iconBg: "#d1fae5",
+    accent: "#10b981",
+    label: "Payout",
+  },
+  performance: {
+    icon: "trending-up",
+    iconColor: "#1d4ed8",
+    iconBg: "#dbeafe",
+    accent: "#3b82f6",
+    label: "Insights",
+  },
+  subscription: {
+    icon: "star",
+    iconColor: "#7c3aed",
+    iconBg: "#ede9fe",
+    accent: "#a855f7",
+    label: "Plan",
+  },
+};
+const FALLBACK_STYLE: TypeStyle = {
+  icon: "information-circle",
+  iconColor: "#1d4ed8",
+  iconBg: "#dbeafe",
+  accent: "#3b82f6",
+  label: "Update",
+};
+const styleFor = (type: NotificationType) =>
+  TYPE_STYLES[type as string] ?? FALLBACK_STYLE;
 
+const ROUTE_FALLBACK: Record<string, keyof RootStackParamList> = {
+  order: "Orders",
+  stock: "ProductsList",
+  payout: "PayoutSettings",
+  performance: "ReportsAnalytics",
+  subscription: "SubscriptionBilling",
+};
+
+// Same date-group logic Orders uses, kept consistent across the app so
+// the section headers feel familiar.
+const getDateGroup = (iso: string) => {
+  const today = new Date();
+  const created = new Date(iso);
+  const diffDays =
+    (today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
+  if (diffDays < 1) return "Today";
+  if (diffDays < 2) return "Yesterday";
+  if (diffDays < 7) return "This Week";
+  if (diffDays < 30) return "This Month";
+  return "Earlier";
+};
+const SECTION_ORDER = ["Today", "Yesterday", "This Week", "This Month", "Earlier"];
+
+const haptic = () => {
+  if (Platform.OS === "ios") {
+    Haptics.selectionAsync().catch(() => {});
+  }
+};
+
+export default function Notifications() {
+  const toast = useToast();
   const navigation = useNavigation<ScreenNavigationProp>();
 
   const [loading, setLoading] = useState(true);
-  const [activeFilter, setActiveFilter] = useState<'all' | 'unread'>('all');
-  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<"all" | "unread">("all");
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [markingAllRead, setMarkingAllRead] = useState(false);
+
+  const fetchNotifications = useCallback(
+    async (silent = false) => {
+      try {
+        if (!silent) setLoading(true);
+        const result = await getNotifications({ pageIndex: 1, pageSize: 50 });
+        setNotifications(result.data);
+      } catch (err: any) {
+        console.error("Failed to load notifications:", err);
+        if (!silent) {
+          toast.show(err?.message || "Couldn't load notifications", {
+            type: "danger",
+          });
+        }
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [toast]
+  );
 
   useEffect(() => {
     fetchNotifications();
-  }, []);
+  }, [fetchNotifications]);
 
-  const fetchNotifications = async () => {
+  const onPullRefresh = useCallback(async () => {
+    setRefreshing(true);
     try {
-      setLoading(true);
-
-      const mockNotifications: Notification[] = [
-        {
-          id: '1',
-          type: 'order',
-          icon: 'shopping-bag',
-          iconColor: '#14b8a6',
-          iconBg: '#ccfbf1',
-          title: 'New Order #1044',
-          description: '$129.99 from Sarah Johnson',
-          timestamp: '2 mins ago',
-          isRead: false
-        },
-        {
-          id: '2',
-          type: 'stock',
-          icon: 'warning',
-          iconColor: '#f59e0b',
-          iconBg: '#fef3c7',
-          title: 'Low Stock Warning',
-          description: 'Premium Wireless Headphones is down to 2 items',
-          timestamp: '1 hour ago',
-          isRead: false
-        },
-        {
-          id: '3',
-          type: 'payout',
-          icon: 'check-circle',
-          iconColor: '#10b981',
-          iconBg: '#d1fae5',
-          title: 'Payout Scheduled',
-          description: '$1,240.50 will be sent to your bank account tomorrow',
-          timestamp: '4 hours ago',
-          isRead: true
-        },
-        {
-          id: '4',
-          type: 'performance',
-          icon: 'info',
-          iconColor: '#3b82f6',
-          iconBg: '#dbeafe',
-          title: 'Store Performance',
-          description: 'Your store views are up 24% this week!',
-          timestamp: '1 day ago',
-          isRead: true
-        },
-        {
-          id: '5',
-          type: 'order',
-          icon: 'shopping-bag',
-          iconColor: '#14b8a6',
-          iconBg: '#ccfbf1',
-          title: 'New Order #1043',
-          description: '$49.99 from Mike Smith',
-          timestamp: '1 day ago',
-          isRead: true
-        },
-        {
-          id: '6',
-          type: 'subscription',
-          icon: 'warning',
-          iconColor: '#f59e0b',
-          iconBg: '#fef3c7',
-          title: 'Subscription Renewed',
-          description: 'Your Pro Plan has been renewed successfully',
-          timestamp: '2 days ago',
-          isRead: true
-        }
-      ];
-
-      setNotifications(mockNotifications);
-    } catch (error) {
-      console.error('Error fetching notifications:', error);
-    //   Toast.show({
-    //     type: 'error',
-    //     text1: 'Error',
-    //     text2: 'Failed to load notifications',
-    //   });
+      await fetchNotifications(true);
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
-  };
+  }, [fetchNotifications]);
 
-  const filteredNotifications = notifications.filter(notification => {
-    if (activeFilter === 'unread') {
-      return !notification.isRead;
-    }
-    return true;
-  });
+  const filteredNotifications = useMemo(
+    () =>
+      activeFilter === "unread"
+        ? notifications.filter((n) => !n.isRead)
+        : notifications,
+    [notifications, activeFilter]
+  );
 
-  const unreadCount = notifications.filter(n => !n.isRead).length;
+  const sections = useMemo(() => {
+    const grouped: Record<string, AppNotification[]> = {};
+    filteredNotifications.forEach((n) => {
+      const key = getDateGroup(n.createdAt);
+      if (!grouped[key]) grouped[key] = [];
+      grouped[key].push(n);
+    });
+    return SECTION_ORDER.filter((g) => grouped[g]?.length).map((title) => ({
+      title,
+      data: grouped[title],
+    }));
+  }, [filteredNotifications]);
+
+  const unreadCount = useMemo(
+    () => notifications.filter((n) => !n.isRead).length,
+    [notifications]
+  );
 
   const handleMarkAllRead = async () => {
+    if (markingAllRead || unreadCount === 0) return;
+    haptic();
     try {
       setMarkingAllRead(true);
-
-     
-      setNotifications(notifications.map(n => ({ ...n, isRead: true })));
-
-    //   Toast.show({
-    //     type: 'success',
-    //     text1: 'Success',
-    //     text2: 'All notifications marked as read',
-    //   });
-    } catch (error) {
-      console.error('Error marking all as read:', error);
-    //   Toast.show({
-    //     type: 'error',
-    //     text1: 'Error',
-    //     text2: 'Failed to mark notifications as read',
-    //   });
+      await markAllNotificationsAsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      toast.show("All caught up", { type: "success" });
+    } catch (err: any) {
+      toast.show(err?.message || "Couldn't mark all as read", {
+        type: "danger",
+      });
     } finally {
       setMarkingAllRead(false);
     }
   };
 
-  const handleNotificationPress = async (notification: Notification) => {
+  const handleNotificationPress = async (notification: AppNotification) => {
+    haptic();
     if (!notification.isRead) {
-      setNotifications(
-        notifications.map(n =>
+      setNotifications((prev) =>
+        prev.map((n) =>
           n.id === notification.id ? { ...n, isRead: true } : n
         )
       );
-      
-      
+      markNotificationAsRead(notification.id).catch(() => {
+        // Best-effort — local state already updated.
+      });
     }
 
-    switch (notification.type) {
-      case 'order':
-        // Toast.show({
-        //   type: 'info',
-        //   text1: 'Order Details',
-        //   text2: 'Order details screen coming soon',
-        // });
-        break;
-      case 'stock':
-        navigation.navigate('ProductsList');
-        break;
-      case 'payout':
-        navigation.navigate('PayoutSettings');
-        break;
-      case 'performance':
-        // Toast.show({
-        //   type: 'info',
-        //   text1: 'Analytics',
-        //   text2: 'Analytics screen coming soon',
-        // });
-        break;
-      case 'subscription':
-        navigation.navigate('SubscriptionBilling');
-        break;
+    const route =
+      notification.route ||
+      ROUTE_FALLBACK[notification.type as string] ||
+      null;
+    if (!route) return;
+
+    let params: any = undefined;
+    if (notification.routeParams) {
+      try {
+        params = JSON.parse(notification.routeParams);
+      } catch {
+        // Bad JSON — navigate without params.
+      }
     }
+    navigation.navigate(route as any, params);
   };
 
-  const renderNotificationItem = ({ item }: { item: Notification }) => (
-    <Pressable
-      onPress={() => handleNotificationPress(item)}
-      className={`flex-row px-4 py-4 border-b border-gray-100 ${
-        !item.isRead ? 'bg-blue-50' : 'bg-white'
-      }`}
-      android_ripple={{ color: '#f3f4f6' }}
-    >
-      <View
-        className="w-10 h-10 rounded-full items-center justify-center mr-3 mt-0.5"
-        style={{ backgroundColor: item.iconBg }}
+  const renderRow = (item: AppNotification) => {
+    const style = styleFor(item.type);
+    return (
+      <Pressable
+        key={item.id}
+        onPress={() => handleNotificationPress(item)}
+        className="bg-white rounded-2xl mb-2 overflow-hidden border border-gray-100 active:bg-gray-50"
+        style={{
+          shadowColor: "#0f172a",
+          shadowOffset: { width: 0, height: 1 },
+          shadowOpacity: 0.04,
+          shadowRadius: 4,
+          elevation: 1,
+        }}
       >
-        <MaterialIcons name={item.icon as any} size={20} color={item.iconColor} />
-      </View>
+        <View className="flex-row">
+          {/* Type-tinted accent strip on the left — color-codes the row at
+              a glance without taking the icon disk's job. */}
+          <View
+            style={{ backgroundColor: style.accent, width: 4 }}
+          />
+          <View className="flex-row flex-1 p-3.5">
+            <View
+              className="w-11 h-11 rounded-2xl items-center justify-center mr-3"
+              style={{ backgroundColor: style.iconBg }}
+            >
+              <Ionicons name={style.icon} size={20} color={style.iconColor} />
+            </View>
 
-      <View className="flex-1 mr-2">
-        <View className="flex-row items-start justify-between mb-1">
-          <Text className={`text-base flex-1 ${item.isRead ? 'text-gray-900' : 'text-gray-900 font-semibold'}`}>
-            {item.title}
-          </Text>
-          <Text className="text-xs text-gray-500 ml-2">{item.timestamp}</Text>
+            <View className="flex-1 mr-2">
+              <View className="flex-row items-center justify-between mb-0.5">
+                <View className="flex-row items-center gap-1.5 flex-1 min-w-0">
+                  <Text
+                    className={`text-[10px] font-extrabold uppercase tracking-[1.2px]`}
+                    style={{ color: style.accent }}
+                  >
+                    {style.label}
+                  </Text>
+                  {!item.isRead && (
+                    <View className="w-1.5 h-1.5 rounded-full bg-blue-600" />
+                  )}
+                </View>
+                <Text className="text-[11px] text-gray-400 font-medium">
+                  {formatRelativeTime(item.createdAt)}
+                </Text>
+              </View>
+              <Text
+                className={`text-[14.5px] tracking-tight ${
+                  item.isRead
+                    ? "text-gray-900 font-semibold"
+                    : "text-gray-900 font-extrabold"
+                }`}
+                numberOfLines={2}
+              >
+                {item.title}
+              </Text>
+              <Text
+                className="text-[12.5px] text-gray-500 leading-[18px] mt-1"
+                numberOfLines={3}
+              >
+                {item.message}
+              </Text>
+            </View>
+
+            <Ionicons
+              name="chevron-forward"
+              size={14}
+              color="#cbd5e1"
+              style={{ alignSelf: "center" }}
+            />
+          </View>
         </View>
-        <Text className="text-sm text-gray-600 leading-5">
-          {item.description}
-        </Text>
+      </Pressable>
+    );
+  };
+
+  const HeroCard = (
+    <View
+      className="mx-5 mt-4 mb-4 rounded-3xl overflow-hidden px-5 py-5"
+      style={{ backgroundColor: "#194eb8" }}
+    >
+      <View className="flex-row items-start justify-between">
+        <View className="flex-1 pr-3">
+          <View className="flex-row items-center gap-2 mb-2">
+            <View className="w-10 h-10 rounded-2xl bg-white/15 border border-white/15 items-center justify-center">
+              <Ionicons name="notifications" size={18} color="white" />
+            </View>
+            <Text className="text-white/80 text-[10.5px] font-extrabold uppercase tracking-[1.4px]">
+              Inbox
+            </Text>
+          </View>
+          {unreadCount > 0 ? (
+            <>
+              <Text className="text-white text-[28px] font-extrabold tracking-tight leading-[32px]">
+                {unreadCount} new{" "}
+                <Text className="text-white/80">
+                  update{unreadCount === 1 ? "" : "s"}
+                </Text>
+              </Text>
+              <Text className="text-white/75 text-[12.5px] mt-1">
+                Tap a card to open the relevant screen
+              </Text>
+            </>
+          ) : (
+            <>
+              <Text className="text-white text-[24px] font-extrabold tracking-tight leading-[28px]">
+                You're all caught up
+              </Text>
+              <Text className="text-white/75 text-[12.5px] mt-1">
+                We'll let you know when something happens
+              </Text>
+            </>
+          )}
+        </View>
       </View>
 
-      {!item.isRead && (
-        <View className="w-2 h-2 bg-teal-500 rounded-full mt-2" />
+      {unreadCount > 0 && (
+        <Pressable
+          onPress={handleMarkAllRead}
+          disabled={markingAllRead}
+          className="mt-4 self-start flex-row items-center gap-1.5 bg-white/15 border border-white/20 rounded-full px-3 h-8 active:bg-white/20"
+        >
+          {markingAllRead ? (
+            <ActivityIndicator size="small" color="white" />
+          ) : (
+            <Ionicons name="checkmark-done" size={13} color="white" />
+          )}
+          <Text className="text-white text-[12px] font-extrabold">
+            {markingAllRead ? "Marking…" : "Mark all read"}
+          </Text>
+        </Pressable>
       )}
-    </Pressable>
+    </View>
+  );
+
+  const FilterChips = (
+    <View className="flex-row px-5 mb-3">
+      {(
+        [
+          { key: "all", label: "All", count: notifications.length },
+          { key: "unread", label: "Unread", count: unreadCount },
+        ] as const
+      ).map((filter) => {
+        const isActive = activeFilter === filter.key;
+        return (
+          <Pressable
+            key={filter.key}
+            onPress={() => {
+              haptic();
+              setActiveFilter(filter.key);
+            }}
+            className={`flex-row items-center gap-2 px-4 h-9 rounded-full border mr-2 ${
+              isActive
+                ? "bg-gray-900 border-gray-900"
+                : "bg-white border-gray-200"
+            }`}
+          >
+            <Text
+              className={`text-[13px] font-semibold ${
+                isActive ? "text-white" : "text-gray-700"
+              }`}
+            >
+              {filter.label}
+            </Text>
+            {filter.count > 0 && (
+              <View
+                className={`px-1.5 rounded-full ${
+                  isActive ? "bg-white/20" : "bg-gray-100"
+                }`}
+              >
+                <Text
+                  className={`text-[11px] font-bold ${
+                    isActive ? "text-white" : "text-gray-600"
+                  }`}
+                >
+                  {filter.count}
+                </Text>
+              </View>
+            )}
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+
+  const EmptyState = (
+    <View className="items-center px-8 py-16">
+      <View className="w-20 h-20 bg-blue-50 rounded-2xl items-center justify-center mb-5">
+        <Ionicons
+          name={
+            activeFilter === "unread"
+              ? "checkmark-done-circle"
+              : "notifications-outline"
+          }
+          size={36}
+          color="#2563eb"
+        />
+      </View>
+      <Text className="text-gray-900 text-lg font-bold mb-1.5">
+        {activeFilter === "unread" ? "No unread notifications" : "Nothing yet"}
+      </Text>
+      <Text className="text-gray-500 text-center text-sm leading-5 max-w-xs">
+        {activeFilter === "unread"
+          ? "You've read everything — nice."
+          : "We'll notify you about orders, payouts, and other store activity."}
+      </Text>
+    </View>
   );
 
   if (loading) {
     return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+      <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+        <ScreenHeader title="Notifications" />
         <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#3b82f6" />
+          <ActivityIndicator size="large" color="#2563eb" />
         </View>
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-white" edges={['top']}>
+    <View className="flex-1 bg-gray-50">
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <ScreenHeader title="Notifications" />
 
-      <View className="flex-row items-center justify-between px-4 py-3 border-b border-gray-200">
-        <View className="flex-row items-center flex-1">
-          <Pressable className="mr-3" onPress={() => navigation.goBack()}>
-            <MaterialIcons name="arrow-back" size={24} color="#000" />
-          </Pressable>
-          <Text className="text-lg font-medium text-gray-900">Notifications</Text>
-        </View>
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onPullRefresh}
+            tintColor="#2563eb"
+          />
+        }
+      >
+        {HeroCard}
+        {FilterChips}
 
-        {unreadCount > 0 && (
-          <Pressable 
-            onPress={handleMarkAllRead}
-            disabled={markingAllRead}
-          >
-            {markingAllRead ? (
-              <ActivityIndicator size="small" color="#3b82f6" />
-            ) : (
-              <Text className="text-blue-600 font-medium">Mark all read</Text>
-            )}
-          </Pressable>
-        )}
-      </View>
-
-      <View className="flex-row px-4 py-3 border-b border-gray-100">
-        <Pressable
-          onPress={() => setActiveFilter('all')}
-          className={`px-4 py-2 rounded-full mr-2 ${
-            activeFilter === 'all' ? 'bg-gray-900' : 'bg-white border border-gray-300'
-          }`}
-        >
-          <Text className={`font-medium ${activeFilter === 'all' ? 'text-white' : 'text-gray-700'}`}>
-            All
-          </Text>
-        </Pressable>
-
-        <Pressable
-          onPress={() => setActiveFilter('unread')}
-          className={`flex-row items-center px-4 py-2 rounded-full ${
-            activeFilter === 'unread' ? 'bg-gray-900' : 'bg-white border border-gray-300'
-          }`}
-        >
-          <Text className={`font-medium ${activeFilter === 'unread' ? 'text-white' : 'text-gray-700'}`}>
-            Unread
-          </Text>
-          {unreadCount > 0 && (
-            <View className={`ml-2 px-2 py-0.5 rounded-full ${
-              activeFilter === 'unread' ? 'bg-red-600' : 'bg-red-500'
-            }`}>
-              <Text className="text-white text-xs font-semibold">{unreadCount}</Text>
-            </View>
+        <View className="px-5">
+          {sections.length === 0 ? (
+            EmptyState
+          ) : (
+            sections.map((section) => (
+              <View key={section.title} className="mt-3">
+                <Text className="text-[11px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-2 px-1">
+                  {section.title}
+                </Text>
+                {section.data.map(renderRow)}
+              </View>
+            ))
           )}
-        </Pressable>
-      </View>
-
-      {filteredNotifications.length === 0 ? (
-        <View className="flex-1 justify-center items-center px-6">
-          <MaterialIcons name="notifications-none" size={64} color="#9ca3af" />
-          <Text className="text-gray-500 text-lg mt-4">No notifications</Text>
-          <Text className="text-gray-400 text-sm mt-2 text-center">
-            {activeFilter === 'unread' 
-              ? "You're all caught up!" 
-              : "You don't have any notifications yet"}
-          </Text>
         </View>
-      ) : (
-        <FlatList
-          data={filteredNotifications}
-          renderItem={renderNotificationItem}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 20 }}
-        />
-      )}
-    </SafeAreaView>
+      </ScrollView>
+    </View>
   );
 }

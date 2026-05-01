@@ -13,6 +13,8 @@ import {
   GetPlansResponse, ApiSubscriptionPlan,
   StorePerformanceReportResponse, StorePerformanceReportData,
   Bank, GetBanksResponse, ValidateAccountData,
+  AppNotification, GetNotificationsResponse, UnreadCountResponse,
+  VendorCustomer, GetVendorCustomersResponse,
 } from "./vendor.types";
 
 
@@ -252,6 +254,29 @@ export const getProducts = async (params?: GetProductsParams): Promise<GetProduc
   return response.data;
 };
 
+// ASP.NET Core's FromForm model binder accepts object arrays via indexed
+// field names (`VariantPrices[0].Size=...`). Sending JSON instead would
+// require a different binder on the API side; this keeps everything in
+// one multipart upload along with the image files.
+function appendVariantPrices(
+  formData: FormData,
+  variants: import("./vendor.types").VariantPrice[] | undefined
+) {
+  // Always send a sentinel so the backend can distinguish "vendor cleared
+  // all overrides" from "vendor didn't touch them". Sending nothing leaves
+  // it null on the server, which also means cleared — same effect, but
+  // explicit `[]` is clearer in network logs.
+  if (!variants || variants.length === 0) return;
+  variants.forEach((v, i) => {
+    formData.append(`VariantPrices[${i}].Size`, v.size ?? "");
+    formData.append(`VariantPrices[${i}].Color`, v.color ?? "");
+    formData.append(`VariantPrices[${i}].Price`, String(v.price ?? 0));
+    if (v.stock != null) {
+      formData.append(`VariantPrices[${i}].Stock`, String(v.stock));
+    }
+  });
+}
+
 export const createProduct = async (
   payload: CreateProductPayload
 ) => {
@@ -287,6 +312,10 @@ export const createProduct = async (
   payload.sizeOptions?.forEach((item) =>
     formData.append("SizeOptions", item)
   );
+
+  // Per-variant price overrides — ASP.NET Core's form-data model binder
+  // expects indexed fields (`VariantPrices[i].Field`) for object arrays.
+  appendVariantPrices(formData, payload.variantPrices);
 
   // Images
   if (payload.imageFile1) {
@@ -357,6 +386,8 @@ export const updateProduct = async (
   payload.sizeOptions?.forEach((item) =>
     formData.append("SizeOptions", item)
   );
+
+  appendVariantPrices(formData, payload.variantPrices);
 
   if (payload.imageFile1) {
     formData.append("ImageFile1", {
@@ -726,5 +757,159 @@ export const getMySubscriptionUsage = async (): Promise<MySubscriptionUsage> => 
     planName: d.planName ?? null,
     catalogItemLimit: d.catalogItemLimit ?? null,
     currentCatalogItemCount: d.currentCatalogItemCount ?? 0,
+  };
+};
+
+// =============================================================
+// In-app notifications (bell screen). Distinct from push: these
+// are persisted rows on the server, paginated, and survive across
+// devices and reinstalls.
+// =============================================================
+
+interface RawNotification {
+  id: string;
+  type?: string;
+  title: string;
+  message: string;
+  isRead?: boolean;
+  IsRead?: boolean;
+  createdAt: string;
+  route?: string | null;
+  routeParams?: string | null;
+}
+
+const normalizeNotification = (n: RawNotification): AppNotification => ({
+  id: n.id,
+  type: (n.type as AppNotification["type"]) || "order",
+  title: n.title,
+  message: n.message,
+  // Backend may serialize as IsRead (PascalCase) or isRead — accept both.
+  isRead: (n.isRead ?? n.IsRead) === true,
+  createdAt: n.createdAt,
+  route: n.route ?? null,
+  routeParams: n.routeParams ?? null,
+});
+
+export const getNotifications = async (params?: {
+  pageIndex?: number;
+  pageSize?: number;
+  unreadOnly?: boolean;
+}): Promise<{
+  data: AppNotification[];
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}> => {
+  const response = await apiClient.get<GetNotificationsResponse>(
+    "/notifications/get-all",
+    {
+      params: {
+        pageIndex: params?.pageIndex ?? 1,
+        pageSize: params?.pageSize ?? 20,
+        unreadOnly: params?.unreadOnly ?? false,
+      },
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Failed to load notifications");
+  }
+  return {
+    data: (response.data.data ?? []).map(
+      (n: any) => normalizeNotification(n as RawNotification)
+    ),
+    pageIndex: response.data.pageIndex ?? 1,
+    pageSize: response.data.pageSize ?? 20,
+    totalCount: response.data.totalCount ?? 0,
+    totalPages: response.data.totalPages ?? 0,
+  };
+};
+
+export const getUnreadNotificationCount = async (): Promise<number> => {
+  const response = await apiClient.get<UnreadCountResponse>(
+    "/notifications/unread-count",
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    return 0; // Soft-fail — bell badge isn't critical
+  }
+  return Number(response.data.data) || 0;
+};
+
+export const markNotificationAsRead = async (id: string): Promise<void> => {
+  const response = await apiClient.post<{ code: string; message: string }>(
+    "/notifications/mark-as-read",
+    null,
+    { params: { id }, validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't mark as read");
+  }
+};
+
+export const markAllNotificationsAsRead = async (): Promise<number> => {
+  const response = await apiClient.post<{ code: string; message: string; data: number }>(
+    "/notifications/mark-all-as-read",
+    null,
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't mark all as read");
+  }
+  return Number(response.data.data) || 0;
+};
+
+// =============================================================
+// Vendor customers — every shopper that ever placed an order on
+// the vendor's storefront. Paginated + searchable.
+// =============================================================
+
+export const getVendorCustomers = async (params?: {
+  pageIndex?: number;
+  pageSize?: number;
+  search?: string;
+}): Promise<{
+  data: VendorCustomer[];
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}> => {
+  const response = await apiClient.get<GetVendorCustomersResponse>(
+    "/storefront/get-customers-by-store-id",
+    {
+      params: {
+        pageIndex: params?.pageIndex ?? 1,
+        pageSize: params?.pageSize ?? 20,
+        search: params?.search?.trim() || undefined,
+      },
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't load customers");
+  }
+
+  // Server returns the entity verbatim (PascalCase via JSON serializer
+  // settings, but most envs return camelCase). Pass through.
+  return {
+    data: (response.data.data ?? []).map((c: any) => ({
+      id: String(c.id),
+      name: c.name ?? "",
+      email: c.email ?? "",
+      phoneNumber: c.phoneNumber ?? "",
+      backupPhone: c.backupPhone ?? null,
+      deliveryAddress: c.deliveryAddress ?? null,
+      lastSeen: c.lastSeen ?? null,
+      note: c.note ?? null,
+      createdAt: c.createdAt ?? "",
+    })),
+    pageIndex: response.data.pageIndex ?? 1,
+    pageSize: response.data.pageSize ?? 20,
+    totalCount: response.data.totalCount ?? 0,
+    totalPages: response.data.totalPages ?? 0,
   };
 };

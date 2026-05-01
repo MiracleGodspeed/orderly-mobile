@@ -9,6 +9,7 @@ import {
   FlatList,
   Platform,
   RefreshControl,
+  Share,
 } from 'react-native';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
@@ -19,6 +20,7 @@ import BottomNav from '../components/BottomNav';
 import { BrandLoader } from '../components/BrandLoader';
 import MenuOverlay from '../components/MenuOverlay';
 import StoreSetupProgress from '../components/StoreSetupProgress';
+import { TrialBanner } from '../components/TrialBanner';
 import { StoreSetupModal, type SetupStepId } from '../components/StoreSetupModal';
 import { setupProgressPct } from '../lib/setupProgress';
 import { CustomDateRangeModal } from '../components/CustomDateRangeModal';
@@ -191,15 +193,43 @@ export default function Home() {
   const totalCustomers = performanceData?.sales?.totalCustomers ?? 0;
   const totalVisits = performanceData?.sales?.totalVisits ?? 0;
 
-  // Derive a trend chip from currentMonth vs lastMonth (or whichever the
-  // selected duration most resembles).
+  // Pick the period pair that best matches the vendor's currently-selected
+  // duration so the chip's percentage actually corresponds to the headline
+  // revenue number above it. For custom date ranges there's no defensible
+  // comparison pair, so we hide the chip rather than mislead.
   const revenueTrend = useMemo(() => {
     const trend = performanceData?.growthTrend;
     if (!trend) return null;
-    const current = trend.currentMonth?.totalRevenue ?? 0;
-    const previous = trend.lastMonth?.totalRevenue ?? 0;
-    return computeTrend(current, previous);
-  }, [performanceData]);
+
+    let current: number | null = null;
+    let previous: number | null = null;
+    let label: string | null = null;
+
+    if (selectedDuration === 1) {
+      current = trend.today?.totalRevenue ?? 0;
+      previous = trend.yesterday?.totalRevenue ?? 0;
+      label = "vs yesterday";
+    } else if (selectedDuration === 7) {
+      current = trend.currentWeek?.totalRevenue ?? 0;
+      previous = trend.lastWeek?.totalRevenue ?? 0;
+      label = "vs last week";
+    } else if (selectedDuration === 30 || selectedDuration === 90) {
+      // No quarterly pair on the API; 90d falls back to month-over-month
+      // which is the closest defensible comparison.
+      current = trend.currentMonth?.totalRevenue ?? 0;
+      previous = trend.lastMonth?.totalRevenue ?? 0;
+      label = "vs last month";
+    } else if (selectedDuration === 365) {
+      current = trend.currentYear?.totalRevenue ?? 0;
+      previous = trend.lastYear?.totalRevenue ?? 0;
+      label = "vs last year";
+    }
+    // selectedDuration === undefined (custom date range) → leave nulls,
+    // which causes the chip to be hidden below.
+
+    if (current === null || previous === null) return null;
+    return { ...computeTrend(current, previous), label };
+  }, [performanceData, selectedDuration]);
 
   const greeting = useMemo(() => getGreeting(), []);
   const firstName = useMemo(() => {
@@ -224,6 +254,38 @@ export default function Home() {
     tap();
     navigation.navigate('ProductsList', { openAddProduct: true } as any);
   }, [navigation, tap]);
+
+  // Storefront share — opens the OS share sheet so the vendor can fire
+  // their store URL into WhatsApp, Instagram, X, Messages, etc. with a
+  // pre-filled invite line. RN's built-in `Share` API surfaces every
+  // installed app that can handle text/URL, so we don't need to
+  // hardcode app-specific deep links.
+  const handleShareStore = useCallback(async () => {
+    tap();
+    const slug = storeData?.slugUrl;
+    if (!slug) {
+      // Vendor hasn't published yet — share would expose a 404. Better
+      // to nudge them to set up the storefront first.
+      navigation.navigate('ManageStore');
+      return;
+    }
+    const storeName = storeData?.storeName || 'my store';
+    const url = `https://${slug}.orderlystores.com`;
+    const message = `Shop at ${storeName} — ${url}`;
+    try {
+      await Share.share(
+        // iOS uses `url` separately so the recipient can save the link;
+        // Android collapses to `message` so we include the URL inline
+        // there. RN handles both shapes off this single object.
+        Platform.OS === 'ios' ? { message, url } : { message },
+        { dialogTitle: `Share ${storeName}` }
+      );
+    } catch {
+      // User dismissing the share sheet rejects the promise on iOS — not
+      // an error worth surfacing. Real failures (Android) are rare and
+      // also non-actionable from the UI.
+    }
+  }, [storeData?.slugUrl, storeData?.storeName, navigation, tap]);
 
   // Custom-domain quick action — gated behind STORE_CUSTOM_DOMAIN. Locked
   // vendors get the upgrade sheet instead of the dedicated screen.
@@ -349,6 +411,10 @@ export default function Home() {
           />
         }
       >
+        {/* Trial banner — only renders when the vendor is on a trial.
+            Sits above the greeting so it's the first thing they see. */}
+        <TrialBanner />
+
         {/* Greeting + store identity */}
         <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl border border-gray-100 p-4 overflow-hidden"
           style={{
@@ -408,7 +474,7 @@ export default function Home() {
             <TouchableOpacity
               className="w-10 h-10 bg-white rounded-full items-center justify-center border border-gray-200"
               activeOpacity={0.7}
-              onPress={tap}
+              onPress={handleShareStore}
               style={{
                 shadowColor: '#0f172a',
                 shadowOffset: { width: 0, height: 1 },
@@ -468,7 +534,7 @@ export default function Home() {
 
           {revenueTrend && revenueTrend.direction !== 'flat' ? (
             <View className="flex-row justify-center mt-3 mb-5">
-              <TrendBadge trend={revenueTrend} label="vs last month" />
+              <TrendBadge trend={revenueTrend} label={revenueTrend.label ?? undefined} />
             </View>
           ) : (
             <View className="mb-5 mt-3" />
@@ -594,7 +660,7 @@ export default function Home() {
                 tint: '#d1fae5',
                 iconColor: '#059669',
                 badge: totalCustomers,
-                onPress: () => handleQuickAction('ManageStore'),
+                onPress: () => handleQuickAction('Customers'),
               },
               {
                 key: 'website',

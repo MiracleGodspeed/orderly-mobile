@@ -5,7 +5,7 @@ import {
   Pressable,
   ScrollView,
   Linking,
-  Platform,
+  Alert,
 } from "react-native";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
@@ -24,53 +24,133 @@ type ScreenNavigationProp = NativeStackNavigationProp<
 type Props = NativeStackScreenProps<RootStackParamList, "OrderDetails">;
 type OrderDetailsRouteProp = Props['route'];
 
-export type OrderStatus =
-  | "Paid"
-  | "Pending"
-  | "Shipped"
-  | "Completed"
-  | "Cancelled";
+// Returns true when a hex color is light enough that it'd disappear on
+// the white card background — used to decide whether the swatch needs
+// a thin border. Standard luminance approximation; covers white/cream/
+// pastel cases without going overboard.
+const isLightHex = (hex: string): boolean => {
+  const value = (hex || "").replace("#", "");
+  if (value.length !== 6) return false;
+  const r = parseInt(value.slice(0, 2), 16);
+  const g = parseInt(value.slice(2, 4), 16);
+  const b = parseInt(value.slice(4, 6), 16);
+  if ([r, g, b].some(Number.isNaN)) return false;
+  return (r * 0.299 + g * 0.587 + b * 0.114) > 200;
+};
+
+// Normalises a phone number to E.164 digits (no plus, no spaces) so
+// `tel:` and WhatsApp links resolve consistently regardless of how the
+// customer typed it. Default dial code is Nigeria (234) since that's
+// where Orderly's vendors operate; pass another code if needed.
+//
+// Handles every common input shape:
+//   "+2348061234567"      → "2348061234567"
+//   "002348061234567"     → "2348061234567"
+//   "0806 123 4567"       → "2348061234567"
+//   "08061234567"         → "2348061234567"
+//   "8061234567"          → "2348061234567"
+//   "2348061234567"       → "2348061234567"  (already E.164)
+const normalizePhone = (raw: string, defaultDialCode = "234"): string => {
+  if (!raw) return "";
+  // Keep only digits + a leading + (any other characters — spaces, dashes,
+  // parentheses, the literal word "ext" — are stripped).
+  const cleaned = raw.trim().replace(/[^\d+]/g, "");
+  if (!cleaned) return "";
+  if (cleaned.startsWith("+")) return cleaned.slice(1);
+  if (cleaned.startsWith("00")) return cleaned.slice(2);
+  if (cleaned.startsWith("0")) return defaultDialCode + cleaned.slice(1);
+  // No prefix at all. If it already looks like an international number
+  // (>= 11 digits), trust it — otherwise prepend the default country code.
+  if (cleaned.length >= 11) return cleaned;
+  return defaultDialCode + cleaned;
+};
+
+export type OrderStatus = "Pending" | "Paid" | "Shipped";
 
 const mapStatus = (status: string): OrderStatus => {
-  switch (status.toLowerCase()) {
+  switch ((status || "").toLowerCase()) {
     case "success":
+    case "paid":
       return "Paid";
+    case "shipped":
+      return "Shipped";
     case "pending":
-      return "Pending";
     default:
       return "Pending";
   }
 };
 
-const getStatusColor = (status: OrderStatus) => {
-  switch (status) {
-    case "Paid":
-      return "bg-green-100 text-green-700";
-    case "Pending":
-      return "bg-orange-100 text-orange-700";
-    case "Shipped":
-      return "bg-purple-100 text-purple-700";
-    case "Completed":
-      return "bg-blue-100 text-blue-700";
-    case "Cancelled":
-      return "bg-red-100 text-red-700";
-    default:
-      return "bg-gray-100 text-gray-700";
-  }
+// Status visual tones — keeps color decisions in one place instead of
+// inline className gymnastics, and makes the chip / dot / action pill
+// all share the same accent per status.
+const STATUS_TONE: Record<
+  OrderStatus,
+  { dot: string; bg: string; border: string; text: string; accent: string }
+> = {
+  Paid: {
+    dot: "bg-emerald-500",
+    bg: "bg-emerald-50",
+    border: "border-emerald-100",
+    text: "text-emerald-700",
+    accent: "#059669",
+  },
+  Pending: {
+    dot: "bg-amber-500",
+    bg: "bg-amber-50",
+    border: "border-amber-100",
+    text: "text-amber-700",
+    accent: "#d97706",
+  },
+  Shipped: {
+    dot: "bg-violet-500",
+    bg: "bg-violet-50",
+    border: "border-violet-100",
+    text: "text-violet-700",
+    accent: "#262826",
+  },
 };
 
+// Forward action — the next status the vendor would advance to.
 const getNextAction = (status: OrderStatus) => {
   switch (status) {
     case "Pending":
-      return { label: "Mark as Paid", next: "Paid" as OrderStatus, icon: "checkmark-circle-outline" };
+      return {
+        label: "Mark as Paid",
+        next: "Paid" as OrderStatus,
+        icon: "checkmark-circle-outline" as const,
+      };
     case "Paid":
-      return { label: "Mark as Shipped", next: "Shipped" as OrderStatus, icon: "bicycle-outline" };
+      return {
+        label: "Mark as Shipped",
+        next: "Shipped" as OrderStatus,
+        icon: "bicycle-outline" as const,
+      };
+    default:
+      return null; // Shipped is the final state — no forward action.
+  }
+};
+
+// Backward action — lets the vendor undo a mistaken status change.
+// Pending has no previous step; the rest revert one step on the journey.
+const getPrevAction = (status: OrderStatus) => {
+  switch (status) {
+    case "Paid":
+      return { label: "Move back to Pending", prev: "Pending" as OrderStatus };
     case "Shipped":
-      return { label: "Mark as Completed", next: "Completed" as OrderStatus, icon: "flag-outline" };
+      return { label: "Move back to Paid", prev: "Paid" as OrderStatus };
     default:
       return null;
   }
 };
+
+// Linear progression a healthy order moves through.
+const STATUS_JOURNEY: OrderStatus[] = ["Pending", "Paid", "Shipped"];
+
+const formatNgn = (amount: number) =>
+  `₦${Number(amount).toLocaleString(undefined, {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 
 const getInitials = (name: string): string => {
   if (!name) return "??";
@@ -107,273 +187,592 @@ export default function OrderDetailsScreen() {
   const [status, setStatus] = useState<OrderStatus>(mapStatus(order.status));
 
   const action = getNextAction(status);
+  const prevAction = getPrevAction(status);
 
   const handleCall = () => {
-    if (order.buyerPhone) {
-        Linking.openURL(`tel:${order.buyerPhone}`);
-    } else {
-        toast.show("No phone number available", { type: "warning" });
+    if (!order.buyerPhone) {
+      toast.show("No phone number available", { type: "warning" });
+      return;
     }
+    const phone = normalizePhone(order.buyerPhone);
+    if (!phone) {
+      toast.show("Phone number looks invalid", { type: "warning" });
+      return;
+    }
+    // Prepending the + makes the dialler treat it as an international
+    // number on iOS regardless of the SIM region — important for
+    // diaspora vendors calling Nigerian customers (or vice versa).
+    Linking.openURL(`tel:+${phone}`).catch(() => {
+      toast.show("Couldn't open phone app", { type: "warning" });
+    });
   };
 
-  const handleWhatsApp = () => {
-      if (order.buyerPhone) {
-          // Remove '+' or special chars for whatsapp link if needed, but usually tel link handles it differently.
-          // For whatsapp specifically:
-          const phone = order.buyerPhone.replace(/[^\d]/g, '');
-          const url = `whatsapp://send?phone=${phone}`;
-          Linking.openURL(url).catch(() => {
-              toast.show("WhatsApp not installed", { type: "warning" });
-          });
-      } else {
-          toast.show("No phone number available", { type: "warning" });
+  const handleWhatsApp = async () => {
+    if (!order.buyerPhone) {
+      toast.show("No phone number available", { type: "warning" });
+      return;
+    }
+    const phone = normalizePhone(order.buyerPhone);
+    if (!phone) {
+      toast.show("Phone number looks invalid", { type: "warning" });
+      return;
+    }
+    // WhatsApp's deep-link spec requires international digits with NO
+    // leading + and NO spaces — exactly what `normalizePhone` returns.
+    // Try the app deep link first; fall back to wa.me which handles
+    // both "open the app" and "show install prompt" gracefully when
+    // WhatsApp isn't installed.
+    const deepLink = `whatsapp://send?phone=${phone}`;
+    const webLink = `https://wa.me/${phone}`;
+    try {
+      const canOpen = await Linking.canOpenURL(deepLink);
+      if (canOpen) {
+        await Linking.openURL(deepLink);
+        return;
       }
+    } catch {
+      // canOpenURL rejected — fall through to web fallback.
+    }
+    try {
+      await Linking.openURL(webLink);
+    } catch {
+      toast.show("Couldn't open WhatsApp", { type: "warning" });
+    }
   };
 
   const avatarColor = getAvatarColor(order.buyerName);
   const initials = getInitials(order.buyerName);
+  const tone = STATUS_TONE[status];
+  const isPaid = status === "Paid" || status === "Shipped";
+  const journeyIndex = STATUS_JOURNEY.indexOf(status);
+  const subtotal = order.totalPrice - (order.deliveryCharge || 0);
+
+  const formattedDate = new Date(order.createdAt).toLocaleString("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 
   return (
     <View className="bg-gray-50 flex-1">
       <ScreenHeader title="Order Details" />
 
-      <ScrollView className="flex-1" showsVerticalScrollIndicator={false}>
-       {/* Order Summary Card */}
-       <View className="px-5 py-6 bg-white mb-2 shadow-sm">
-            <View className="flex-row justify-between items-start mb-4">
-                <View>
-                    <Text className="text-sm font-medium text-gray-500 mb-1">Order Number</Text>
-                    <Text className="text-2xl font-bold text-gray-900">#{order.orderNumber}</Text>
-                </View>
-                <View
-                    className={`px-3 py-1.5 rounded-full ${getStatusColor(status)}`}
-                >
-                    <Text className={`text-xs font-bold ${
-                        getStatusColor(status).includes("text-")
-                            ? getStatusColor(status).split(" ").find((c) => c.startsWith("text-"))
-                            : "text-gray-700"
-                    }`}>
-                        {status.toUpperCase()}
-                    </Text>
-                </View>
+      <ScrollView
+        className="flex-1"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 140 }}
+      >
+        {/* === BRANDED HERO === */}
+        <View
+          className="mx-5 mt-4 mb-4 rounded-3xl overflow-hidden px-5 pt-5 pb-6"
+          style={{ backgroundColor: "#194eb8" }}
+        >
+          {/* Decorative soft circle — same language as Home/LocationManagement. */}
+          <View
+            style={{
+              position: "absolute",
+              top: -40,
+              right: -40,
+              width: 140,
+              height: 140,
+              borderRadius: 70,
+              backgroundColor: "rgba(255,255,255,0.06)",
+            }}
+          />
+
+          <View className="flex-row items-start justify-between mb-2">
+            <View className="flex-1 pr-3">
+              <Text className="text-white/70 text-[10.5px] font-extrabold uppercase tracking-[1.4px]">
+                Order
+              </Text>
+              <Text className="text-white text-[18px] font-extrabold tracking-tight mt-0.5">
+                #{order.orderNumber}
+              </Text>
             </View>
-            
-            <View className="flex-row items-center gap-2">
-                <Ionicons name="calendar-outline" size={16} color="#6b7280" />
-                <Text className="text-sm text-gray-600">
-                    {new Date(order.createdAt).toLocaleString('en-US', {
-                        weekday: 'short',
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                        hour: 'numeric',
-                        minute: '2-digit',
-                        hour12: true
-                    })}
-                </Text>
+
+            <View
+              className="flex-row items-center gap-1.5 bg-white/15 border border-white/20 rounded-full px-2.5 py-1"
+            >
+              <View className={`w-1.5 h-1.5 rounded-full ${tone.dot}`} />
+              <Text className="text-white text-[10.5px] font-extrabold tracking-wide uppercase">
+                {status}
+              </Text>
             </View>
-       </View>
+          </View>
 
-       {/* Customer Section */}
-       <View className="px-5 py-4">
-            <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 pl-1">
-                Customer Details
-            </Text>
+          <Text className="text-white/85 text-[28px] font-extrabold tracking-tight mt-3">
+            {formatNgn(order.totalPrice)}
+          </Text>
+          <View className="flex-row items-center gap-1.5 mt-1">
+            <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.7)" />
+            <Text className="text-white/70 text-[12px]">{formattedDate}</Text>
+          </View>
+        </View>
 
-            <View className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
-                <View className="flex-row items-center mb-5">
-                    <View 
-                        className="w-12 h-12 rounded-full items-center justify-center mr-4 shadow-inner"
-                        style={{ backgroundColor: avatarColor }}
-                    >
-                        <Text className="text-white font-bold text-lg">
-                            {initials}
-                        </Text>
-                    </View>
-                    <View className="flex-1">
-                        <Text className="text-lg font-bold text-gray-900 mb-0.5">
-                            {order.buyerName}
-                        </Text>
-                        <Text className="text-sm text-gray-500">
-                            {order.fulfillmentType === 'delivery' ? 'Delivery Order' : 'Pickup Order'}
-                        </Text>
-                    </View>
-                </View>
-
-                {order.fulfillmentType === 'delivery' && (
-                    <View className="flex-row items-start mb-4 bg-gray-50 p-3 rounded-xl">
-                        <Ionicons name="location-outline" size={20} color="#4b5563" style={{ marginTop: 2 }} />
-                        <View className="ml-3 flex-1">
-                            <Text className="text-xs text-gray-500 mb-0.5 font-medium uppercase">Delivery Address</Text>
-                            <Text className="text-sm text-gray-900 leading-5">
-                                {order.deliveryAddress}
-                            </Text>
-                            {(order.lga || order.state) && (
-                                <Text className="text-sm text-gray-600 mt-0.5">
-                                    {order.lga ? `${order.lga}, ` : ''}{order.state}
-                                </Text>
-                            )}
-                        </View>
-                    </View>
-                )}
-
-                <View className="flex-row gap-3">
-                    <Pressable 
-                        onPress={handleCall}
-                        className="flex-1 flex-row items-center justify-center py-3 px-3 bg-white border border-gray-200 rounded-xl active:bg-gray-50 transition-colors"
-                    >
-                        <Ionicons name="call-outline" size={18} color="#374151" />
-                        <Text className="text-sm text-gray-700 ml-2 font-semibold">
-                            Call
-                        </Text>
-                    </Pressable>
-
-                    <Pressable 
-                        onPress={handleWhatsApp}
-                        className="flex-1 flex-row items-center justify-center py-3 px-3 bg-green-50 border border-green-200 rounded-xl active:bg-green-100 transition-colors"
-                    >
-                        <Ionicons name="logo-whatsapp" size={18} color="#16a34a" />
-                        <Text className="text-sm text-green-700 ml-2 font-semibold">
-                            WhatsApp
-                        </Text>
-                    </Pressable>
-                </View>
-                
-                <View className="mt-4 pt-4 border-t border-gray-100 flex-row items-center">
-                    <Ionicons name="mail-outline" size={16} color="#6b7280" />
-                    <Text className="text-sm text-gray-600 ml-2 flex-1" numberOfLines={1}>
-                        {order.buyerEmail}
-                    </Text>
-                </View>
-            </View>
-       </View>
-
-       {/* Items Section */}
-       <View className="px-5 py-2">
-            <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 pl-1">
-                Order Items ({order.catalogItems.length})
-            </Text>
-
-            <View className="bg-white rounded-2xl overflow-hidden shadow-sm border border-gray-100">
-                {order.catalogItems.map((item: any, index: number) => (
-                    <View key={item.id || index} className={`p-4 flex-row ${index !== order.catalogItems.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                        <View className="w-16 h-16 bg-gray-100 rounded-lg mr-4 overflow-hidden border border-gray-200">
-                            <AppImage
-                                uri={item.image}
-                                style={{ width: "100%", height: "100%" }}
+        {/* === STATUS JOURNEY STEPPER === */}
+        {journeyIndex >= 0 && (
+          <View className="px-5 mb-4">
+            <View
+              className="bg-white border border-gray-100 rounded-2xl px-4 py-3.5"
+              style={{
+                shadowColor: "#0f172a",
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.04,
+                shadowRadius: 6,
+                elevation: 1,
+              }}
+            >
+              <View className="flex-row items-center justify-between">
+                {STATUS_JOURNEY.map((step, idx) => {
+                  const isDone = idx < journeyIndex;
+                  const isCurrent = idx === journeyIndex;
+                  const stepTone = STATUS_TONE[step];
+                  return (
+                    <React.Fragment key={step}>
+                      <View className="items-center" style={{ width: 56 }}>
+                        <View
+                          className={`w-7 h-7 rounded-full items-center justify-center ${
+                            isCurrent
+                              ? stepTone.bg
+                              : isDone
+                              ? "bg-emerald-100"
+                              : "bg-gray-100"
+                          }`}
+                          style={
+                            isCurrent
+                              ? {
+                                  borderWidth: 2,
+                                  borderColor: stepTone.accent,
+                                }
+                              : undefined
+                          }
+                        >
+                          {isDone ? (
+                            <Ionicons
+                              name="checkmark"
+                              size={14}
+                              color="#059669"
                             />
-                        </View>
-
-                        <View className="flex-1 justify-center">
-                            <Text className="text-base font-semibold text-gray-900 mb-1" numberOfLines={2}>
-                                {item.name}
+                          ) : isCurrent ? (
+                            <View
+                              className={`w-2 h-2 rounded-full ${stepTone.dot}`}
+                            />
+                          ) : (
+                            <Text className="text-[10px] font-extrabold text-gray-400">
+                              {idx + 1}
                             </Text>
-                            <View className="flex-row items-center gap-3">
-                                <View className="bg-gray-100 px-2 py-0.5 rounded text-xs">
-                                    <Text className="text-xs text-gray-600">Qty: {item.quantity}</Text>
-                                </View>
-                                {(item.size || item.color) && (
-                                     <Text className="text-xs text-gray-400">
-                                        {[item.size, item.color].filter(Boolean).join(' • ')}
-                                     </Text>
-                                )}
-                            </View>
+                          )}
                         </View>
-
-                        <View className="justify-center items-end pl-2">
-                            <Text className="text-base font-bold text-gray-900">
-                                ₦{Number(item.price * item.quantity).toLocaleString(undefined, {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                })}
-                            </Text>
-                            {item.quantity > 1 && (
-                                <Text className="text-xs text-gray-400 mt-0.5">
-                                    ₦{Number(item.price).toLocaleString()} ea
-                                </Text>
-                            )}
-                        </View>
-                    </View>
-                ))}
-            </View>
-       </View>
-
-       {/* Payment Section */}
-        <View className="px-5 py-4 mb-24">
-            <Text className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3 pl-1">
-                Payment Summary
-            </Text>
-            
-            <View className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <View className="flex-row items-center justify-between mb-3">
-                    <Text className="text-sm text-gray-600">Subtotal</Text>
-                    <Text className="text-sm font-medium text-gray-900">
-                    ₦{Number(order.totalPrice - (order.deliveryCharge || 0)).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                    })}
-                    </Text>
-                </View>
-                
-                {order.deliveryCharge > 0 && (
-                     <View className="flex-row items-center justify-between mb-3">
-                        <Text className="text-sm text-gray-600">Delivery Fee</Text>
-                        <Text className="text-sm font-medium text-gray-900">
-                        ₦{Number(order.deliveryCharge).toLocaleString(undefined, {
-                            minimumFractionDigits: 2,
-                            maximumFractionDigits: 2,
-                        })}
+                        <Text
+                          className={`text-[12px] font-bold mt-1.5 tracking-wide ${
+                            isCurrent
+                              ? stepTone.text
+                              : isDone
+                              ? "text-emerald-700"
+                              : "text-gray-400"
+                          }`}
+                        >
+                          {step}
                         </Text>
-                    </View>
-                )}
-
-                <View className="flex-row items-center justify-between mt-2 pt-4 border-t border-dashed border-gray-200">
-                    <Text className="text-base font-bold text-gray-900">Total Amount</Text>
-                    <Text className="text-xl font-extrabold text-blue-600">
-                    ₦{Number(order.totalPrice).toLocaleString(undefined, {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                    })}
-                    </Text>
-                </View>
-                
-                <View className="flex-row items-center justify-between mt-4 pt-4 border-t border-gray-100">
-                    <View className="flex-row items-center gap-2">
-                        <Ionicons name={status === 'Paid' || status === 'Shipped' || status === 'Completed' ? "card" : "cash-outline"} size={18} color="#6b7280" />
-                        <Text className="text-sm text-gray-600">Payment Status</Text>
-                    </View>
-                    <View className={`px-2 py-0.5 rounded ${status === 'Paid' || status === 'Shipped' || status === 'Completed' ? 'bg-green-100' : 'bg-orange-100'}`}>
-                         <Text className={`text-xs font-bold ${status === 'Paid' || status === 'Shipped' || status === 'Completed' ? 'text-green-700' : 'text-orange-700'}`}>
-                            {status === 'Paid' || status === 'Shipped' || status === 'Completed' ? 'PAID' : 'PENDING'}
-                         </Text>
-                    </View>
-                </View>
+                      </View>
+                      {idx < STATUS_JOURNEY.length - 1 && (
+                        <View
+                          className={`flex-1 h-px mx-1 ${
+                            idx < journeyIndex ? "bg-emerald-200" : "bg-gray-200"
+                          }`}
+                          style={{ marginTop: -16 }}
+                        />
+                      )}
+                    </React.Fragment>
+                  );
+                })}
+              </View>
             </View>
+          </View>
+        )}
+
+        {/* === CUSTOMER === */}
+        <View className="px-5 mb-4">
+          <Text className="text-[10.5px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-2 pl-1">
+            Customer
+          </Text>
+
+          <View
+            className="bg-white rounded-2xl border border-gray-100 overflow-hidden"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 10,
+              elevation: 2,
+            }}
+          >
+            <View className="px-4 py-4 flex-row items-center">
+              <View className="relative">
+                <View
+                  className="w-12 h-12 rounded-full items-center justify-center"
+                  style={{
+                    backgroundColor: avatarColor,
+                    shadowColor: avatarColor,
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.3,
+                    shadowRadius: 8,
+                    elevation: 3,
+                  }}
+                >
+                  <Text className="text-white font-extrabold text-[15px]">
+                    {initials}
+                  </Text>
+                </View>
+              </View>
+              <View className="flex-1 ml-3 min-w-0">
+                <Text
+                  className="text-[16px] font-extrabold text-gray-900 tracking-tight"
+                  numberOfLines={1}
+                >
+                  {order.buyerName}
+                </Text>
+                <View className="flex-row items-center gap-1 mt-0.5">
+                  <Ionicons
+                    name={
+                      order.fulfillmentType === "delivery"
+                        ? "bicycle"
+                        : "storefront-outline"
+                    }
+                    size={12}
+                    color="#64748b"
+                  />
+                  <Text className="text-[12px] text-gray-500 font-semibold">
+                    {order.fulfillmentType === "delivery"
+                      ? "Delivery order"
+                      : "Pickup order"}
+                  </Text>
+                </View>
+              </View>
+            </View>
+
+            {/* Quick actions — three icon pills, each with its own tint. */}
+            <View className="px-4 pb-4 flex-row gap-2">
+              <Pressable
+                onPress={handleCall}
+                className="flex-1 flex-row items-center justify-center gap-1.5 h-11 rounded-2xl bg-gray-50 border border-gray-100 active:bg-gray-100"
+              >
+                <Ionicons name="call" size={15} color="#374151" />
+                <Text className="text-[13px] font-extrabold text-gray-800">
+                  Call
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={handleWhatsApp}
+                className="flex-1 flex-row items-center justify-center gap-1.5 h-11 rounded-2xl bg-emerald-50 border border-emerald-100 active:bg-emerald-100"
+              >
+                <Ionicons name="logo-whatsapp" size={15} color="#059669" />
+                <Text className="text-[13px] font-extrabold text-emerald-700">
+                  WhatsApp
+                </Text>
+              </Pressable>
+              {order.buyerEmail ? (
+                <Pressable
+                  onPress={() =>
+                    Linking.openURL(`mailto:${order.buyerEmail}`).catch(() => {
+                      toast.show("Couldn't open email app", { type: "warning" });
+                    })
+                  }
+                  className="w-11 h-11 rounded-2xl items-center justify-center bg-blue-50 border border-blue-100 active:bg-blue-100"
+                >
+                  <Ionicons name="mail" size={15} color="#2563eb" />
+                </Pressable>
+              ) : null}
+            </View>
+
+            {/* Email row */}
+            {order.buyerEmail ? (
+              <View className="px-4 py-3 border-t border-gray-100 flex-row items-center gap-2">
+                <Ionicons name="mail-outline" size={13} color="#94a3b8" />
+                <Text
+                  className="text-[12.5px] text-gray-600 flex-1"
+                  numberOfLines={1}
+                >
+                  {order.buyerEmail}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Delivery address */}
+            {order.fulfillmentType === "delivery" ? (
+              <View className="px-4 py-3 border-t border-gray-100 bg-blue-50/30">
+                <View className="flex-row items-start gap-2">
+                  <View className="w-7 h-7 rounded-lg bg-blue-100 items-center justify-center mt-0.5">
+                    <Ionicons name="location" size={13} color="#2563eb" />
+                  </View>
+                  <View className="flex-1 min-w-0">
+                    <Text className="text-[10px] font-extrabold text-blue-700 uppercase tracking-[1px] mb-0.5">
+                      Delivery address
+                    </Text>
+                    <Text className="text-[13px] text-gray-900 leading-[18px]">
+                      {order.deliveryAddress}
+                    </Text>
+                    {(order.lga || order.state) && (
+                      <Text className="text-[12px] text-gray-500 mt-0.5">
+                        {order.lga ? `${order.lga}, ` : ""}
+                        {order.state}
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+            ) : null}
+          </View>
+        </View>
+
+        {/* === ITEMS === */}
+        <View className="px-5 mb-4">
+          <View className="flex-row items-center justify-between mb-2 pl-1">
+            <Text className="text-[10.5px] font-extrabold text-gray-400 uppercase tracking-[1.2px]">
+              Items
+            </Text>
+            <View className="bg-gray-100 rounded-full px-2 py-0.5">
+              <Text className="text-[10.5px] font-extrabold text-gray-600">
+                {order.catalogItems.length}
+              </Text>
+            </View>
+          </View>
+
+          <View
+            className="bg-white rounded-2xl overflow-hidden border border-gray-100"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 10,
+              elevation: 2,
+            }}
+          >
+            {order.catalogItems.map((item: any, index: number) => (
+              <View
+                key={item.id || index}
+                className={`px-4 py-3.5 flex-row ${
+                  index !== order.catalogItems.length - 1
+                    ? "border-b border-gray-50"
+                    : ""
+                }`}
+              >
+                <View className="w-16 h-16 bg-gray-50 rounded-xl mr-3 overflow-hidden border border-gray-100">
+                  <AppImage
+                    uri={item.image}
+                    style={{ width: "100%", height: "100%" }}
+                  />
+                </View>
+
+                <View className="flex-1 justify-center min-w-0">
+                  <Text
+                    className="text-[14.5px] font-extrabold text-gray-900 tracking-tight mb-1"
+                    numberOfLines={2}
+                  >
+                    {item.name}
+                  </Text>
+                  <View className="flex-row items-center gap-1.5 flex-wrap">
+                    <View className="bg-gray-100 px-2 py-0.5 rounded-md">
+                      <Text className="text-[11px] font-extrabold text-gray-600">
+                        ×{item.quantity}
+                      </Text>
+                    </View>
+                    {item.size ? (
+                      <View className="bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-md">
+                        <Text className="text-[11px] font-extrabold text-violet-700">
+                          {item.size}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {item.color ? (
+                      <View className="flex-row items-center gap-1 bg-gray-50 border border-gray-100 pl-1 pr-2 py-0.5 rounded-md">
+                        <View
+                          style={{
+                            width: 12,
+                            height: 12,
+                            borderRadius: 6,
+                            backgroundColor: item.color,
+                            borderWidth: isLightHex(item.color) ? 1 : 0,
+                            borderColor: "#e5e7eb",
+                          }}
+                        />
+                        <Text className="text-[11px] font-semibold text-gray-600">
+                          Color
+                        </Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </View>
+
+                <View className="justify-center items-end pl-2">
+                  <Text className="text-[14.5px] font-extrabold text-gray-900 tracking-tight">
+                    {formatNgn(item.price * item.quantity)}
+                  </Text>
+                  {item.quantity > 1 && (
+                    <Text className="text-[10.5px] text-gray-400 mt-0.5 font-semibold">
+                      {formatNgn(item.price)} ea
+                    </Text>
+                  )}
+                </View>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* === PAYMENT SUMMARY === */}
+        <View className="px-5 mb-4">
+          <Text className="text-[10.5px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-2 pl-1">
+            Payment summary
+          </Text>
+
+          <View
+            className="bg-white rounded-2xl border border-gray-100 overflow-hidden"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 10,
+              elevation: 2,
+            }}
+          >
+            <View className="px-5 pt-4 pb-3">
+              <View className="flex-row items-center justify-between mb-2.5">
+                <Text className="text-[13px] text-gray-500">Subtotal</Text>
+                <Text className="text-[13.5px] font-bold text-gray-900">
+                  {formatNgn(subtotal)}
+                </Text>
+              </View>
+              {order.deliveryCharge > 0 && (
+                <View className="flex-row items-center justify-between mb-2.5">
+                  <View className="flex-row items-center gap-1">
+                    <Text className="text-[13px] text-gray-500">Delivery</Text>
+                  </View>
+                  <Text className="text-[13.5px] font-bold text-gray-900">
+                    {formatNgn(order.deliveryCharge)}
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View
+              className="px-5 py-4 flex-row items-end justify-between"
+              style={{ backgroundColor: "#f8fafc" }}
+            >
+              <View>
+                <Text className="text-[10.5px] font-extrabold text-gray-400 uppercase tracking-[1.2px]">
+                  Total
+                </Text>
+                <Text className="text-[13px] text-gray-500 mt-0.5">
+                  Customer paid
+                </Text>
+              </View>
+              <Text className="text-[24px] font-extrabold text-gray-900 tracking-tight">
+                {formatNgn(order.totalPrice)}
+              </Text>
+            </View>
+
+            <View className="px-5 py-3 border-t border-gray-100 flex-row items-center justify-between">
+              <View className="flex-row items-center gap-2">
+                <Ionicons
+                  name={isPaid ? "card" : "cash-outline"}
+                  size={14}
+                  color="#64748b"
+                />
+                <Text className="text-[12.5px] text-gray-600 font-semibold">
+                  Payment status
+                </Text>
+              </View>
+              <View
+                className={`flex-row items-center gap-1 px-2 py-0.5 rounded-md ${
+                  isPaid ? "bg-emerald-50 border border-emerald-100" : "bg-amber-50 border border-amber-100"
+                }`}
+              >
+                <View
+                  className={`w-1.5 h-1.5 rounded-full ${
+                    isPaid ? "bg-emerald-500" : "bg-amber-500"
+                  }`}
+                />
+                <Text
+                  className={`text-[10.5px] font-extrabold tracking-wide ${
+                    isPaid ? "text-emerald-700" : "text-amber-700"
+                  }`}
+                >
+                  {isPaid ? "PAID" : "PENDING"}
+                </Text>
+              </View>
+            </View>
+          </View>
         </View>
       </ScrollView>
 
-      {/* Floating Action Bar */}
-      {action && (
-        <View className="absolute bottom-0 left-0 right-0 p-5 bg-white border-t border-gray-100 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-          <Pressable
-            onPress={() => setStatus(action.next)}
-            className="bg-gray-900 rounded-2xl py-4 flex-row items-center justify-center active:scale-[0.98] transition-transform shadow-lg shadow-gray-900/20"
-          >
-             {action.icon && <Ionicons name={action.icon as any} size={20} color="white" style={{ marginRight: 8 }} />}
-            <Text className="text-white font-bold text-lg">
-              {action.label}
-            </Text>
-          </Pressable>
-        </View>
-      )}
+      {/* === FLOATING ACTION BAR ===
+          Forward action advances the order one step. Backward action lets
+          the vendor undo a mistake, gated behind a confirm so a stray tap
+          on the bottom of the screen doesn't silently rewind status. */}
+      {(action || prevAction) && (
+        <View
+          className="absolute bottom-0 left-0 right-0 px-5 pt-3 pb-7 bg-white border-t border-gray-100"
+          style={{
+            shadowColor: "#0f172a",
+            shadowOffset: { width: 0, height: -4 },
+            shadowOpacity: 0.06,
+            shadowRadius: 12,
+            elevation: 12,
+          }}
+        >
+          <View className="flex-row gap-2">
+            {prevAction ? (
+              <Pressable
+                onPress={() => {
+                  Alert.alert(
+                    "Move order back?",
+                    `This will set the order status back to ${prevAction.prev}. Use this if you marked the order ${status} by mistake.`,
+                    [
+                      { text: "Cancel", style: "cancel" },
+                      {
+                        text: "Move back",
+                        style: "destructive",
+                        onPress: () => setStatus(prevAction.prev),
+                      },
+                    ]
+                  );
+                }}
+                className={`${
+                  action ? "" : "flex-1"
+                } rounded-2xl py-4 px-4 flex-row items-center justify-center gap-1.5 border border-gray-200 bg-white active:bg-gray-50`}
+              >
+                <Ionicons name="arrow-undo" size={15} color="#475569" />
+                <Text className="text-gray-700 font-extrabold text-[13.5px]">
+                  {action ? "Undo" : prevAction.label}
+                </Text>
+              </Pressable>
+            ) : null}
 
-      {(status === "Completed" || status === "Cancelled") && (
-        <View className="absolute bottom-0 left-0 right-0 p-5 bg-white border-t border-gray-100">
-          <View className="bg-gray-100 rounded-2xl py-4 flex-row items-center justify-center border border-gray-200">
-             <Ionicons name={status === "Completed" ? "checkmark-done-circle" : "close-circle"} size={20} color={status === "Completed" ? "#059669" : "#dc2626"} style={{ marginRight: 8 }} />
-            <Text className={`font-bold text-lg ${status === "Completed" ? "text-green-700" : "text-red-700"}`}>
-              {status === "Completed" ? "Order Completed" : "Order Cancelled"}
-            </Text>
+            {action ? (
+              <Pressable
+                onPress={() => setStatus(action.next)}
+                className="flex-1 rounded-2xl py-4 flex-row items-center justify-center gap-2 active:opacity-90"
+                style={{
+                  backgroundColor: STATUS_TONE[action.next].accent,
+                  shadowColor: STATUS_TONE[action.next].accent,
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.3,
+                  shadowRadius: 16,
+                  elevation: 6,
+                }}
+              >
+                {action.icon ? (
+                  <Ionicons name={action.icon} size={18} color="white" />
+                ) : null}
+                <Text className="text-white font-extrabold text-[15px] tracking-tight">
+                  {action.label}
+                </Text>
+              </Pressable>
+            ) : null}
           </View>
         </View>
       )}

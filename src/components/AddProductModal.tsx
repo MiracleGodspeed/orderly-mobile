@@ -45,6 +45,10 @@ import { useFeatures } from "../hooks/useFeatures";
 import { FEATURES, FeatureKey } from "../lib/features";
 import { FeaturePaywallSheet } from "./FeaturePaywallSheet";
 import { SelectionDrawer } from "./SelectionDrawer";
+import { AlertDialog } from "./AlertDialog";
+import { useNavigation } from "@react-navigation/native";
+import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import type { RootStackParamList } from "../navigation/types";
 
 interface Props {
   visible: boolean;
@@ -101,6 +105,17 @@ export default function AddProductModal({
   initialDraft,
 }: Props) {
   const toast = useToast();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  // Server / save errors live INSIDE the modal — RN's Modal is a separate
+  // native window, so the global toast at app root gets covered by the
+  // page-sheet. The inline alert keeps the message visible right where the
+  // vendor needs to see it.
+  const [saveError, setSaveError] = useState<{
+    title: string;
+    message: string;
+    isPlanLimit: boolean;
+  } | null>(null);
   const { fetchVendorData } = useVendor();
 
   const [productImages, setProductImages] = useState<string[]>([]);
@@ -125,6 +140,22 @@ export default function AddProductModal({
   const [features, setFeatures] = useState<string[]>([]);
   const [currentFeature, setCurrentFeature] = useState("");
   const [enableVariants, setEnableVariants] = useState(false);
+  // Explicit list of vendor-defined variant overrides. Each entry pins
+  // ONE specific (size, color) combo (or just one of them) to a custom
+  // price. The list is what the vendor sees and edits; nothing is
+  // auto-generated from sizes/colors.
+  type VariantEntry = {
+    size: string | null;
+    color: string | null;
+    price: string;
+  };
+  const [variantEntries, setVariantEntries] = useState<VariantEntry[]>([]);
+  // The form for adding/editing a single entry. `index` === -1 means
+  // "creating new"; >= 0 means "editing existing entry at that index".
+  const [variantForm, setVariantForm] = useState<
+    | (VariantEntry & { index: number })
+    | null
+  >(null);
 
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pickerReady, setPickerReady] = useState(false);
@@ -145,6 +176,8 @@ export default function AddProductModal({
   // locked opens the upgrade sheet instead of the image picker.
   const { has: hasFeature } = useFeatures();
   const canUseSecondaryImage = hasFeature(FEATURES.PRODUCTS_SECONDARY_IMAGE);
+  const canUseVariants = hasFeature(FEATURES.PRODUCTS_VARIANTS);
+  const canUseCategories = hasFeature(FEATURES.PRODUCTS_CATEGORIES);
   const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(
     null
   );
@@ -215,6 +248,18 @@ export default function AddProductModal({
           (productData.colourOptions && productData.colourOptions.length)
         )
       );
+      // Pre-fill explicit variant entries from the API. Each row keeps
+      // its own (size, color) — either may be null when the vendor only
+      // wants to constrain one axis.
+      const incoming = productData.variantPrices ?? [];
+      setVariantEntries(
+        incoming.map((v) => ({
+          size: v.size ?? null,
+          color: v.color ?? null,
+          price: String(v.price ?? ""),
+        }))
+      );
+      setVariantForm(null);
       return;
     }
     if (mode === "add" && initialDraft) {
@@ -228,6 +273,21 @@ export default function AddProductModal({
       setColors(initialDraft.colors ?? []);
       setFeatures(initialDraft.features ?? []);
       setEnableVariants(!!initialDraft.enableVariants);
+      // Drafts persist variant prices as a Record keyed by `${size}||${color}`.
+      // Reconstitute as explicit entries so the editor list looks the same
+      // as it did before the draft was saved.
+      const draftEntries: VariantEntry[] = [];
+      Object.entries(initialDraft.variantPrices ?? {}).forEach(([k, v]) => {
+        if (!v?.price) return;
+        const [sz, cl] = k.includes("||") ? k.split("||") : [k, ""];
+        draftEntries.push({
+          size: sz || null,
+          color: cl || null,
+          price: String(v.price),
+        });
+      });
+      setVariantEntries(draftEntries);
+      setVariantForm(null);
       return;
     }
     // Fresh Add — clean slate.
@@ -408,6 +468,14 @@ export default function AddProductModal({
     }
     try {
       setSavingDraft(true);
+      // Persist each explicit entry under a `${size}||${color}` key so the
+      // legacy draft shape stays compatible.
+      const draftVariantPrices: Record<string, { price: string }> = {};
+      variantEntries.forEach((entry) => {
+        if (!entry.price || !entry.price.trim()) return;
+        const key = `${entry.size ?? ""}||${entry.color ?? ""}`;
+        draftVariantPrices[key] = { price: entry.price };
+      });
       const updated = await appendDraft({
         productName,
         catalogCategoryId,
@@ -419,6 +487,7 @@ export default function AddProductModal({
         colors,
         features,
         enableVariants,
+        variantPrices: draftVariantPrices,
       });
       setDraftCount(updated.length);
       toast.show("Draft saved", { type: "success" });
@@ -447,6 +516,18 @@ export default function AddProductModal({
     setColors(draft.colors ?? []);
     setFeatures(draft.features ?? []);
     setEnableVariants(!!draft.enableVariants);
+    const restored: VariantEntry[] = [];
+    Object.entries(draft.variantPrices ?? {}).forEach(([k, v]) => {
+      if (!v?.price) return;
+      const [sz, cl] = k.includes("||") ? k.split("||") : [k, ""];
+      restored.push({
+        size: sz || null,
+        color: cl || null,
+        price: String(v.price),
+      });
+    });
+    setVariantEntries(restored);
+    setVariantForm(null);
     setDraftsSheetOpen(false);
     toast.show("Draft loaded", { type: "success" });
   };
@@ -464,6 +545,9 @@ export default function AddProductModal({
     setCurrentSize("");
     setCurrentFeature("");
     setEnableVariants(false);
+    setVariantEntries([]);
+    setVariantForm(null);
+    setSaveError(null);
     setErrors({
       productName: "",
       price: "",
@@ -472,7 +556,79 @@ export default function AddProductModal({
     });
   };
 
+  // === Variant entry editor helpers ===
+
+  // True when an existing entry in the list matches the form's
+  // (size, color) — used to block duplicate combos.
+  const entryConflicts = (
+    list: VariantEntry[],
+    candidate: { size: string | null; color: string | null },
+    skipIndex: number
+  ) => {
+    const norm = (v: string | null | undefined) =>
+      (v ?? "").trim().toLowerCase();
+    return list.some(
+      (e, i) =>
+        i !== skipIndex &&
+        norm(e.size) === norm(candidate.size) &&
+        norm(e.color) === norm(candidate.color)
+    );
+  };
+
+  const openVariantForm = (index: number) => {
+    haptic();
+    if (index === -1) {
+      setVariantForm({ index: -1, size: null, color: null, price: "" });
+    } else {
+      const existing = variantEntries[index];
+      setVariantForm({ index, ...existing });
+    }
+  };
+
+  const closeVariantForm = () => setVariantForm(null);
+
+  const saveVariantForm = () => {
+    if (!variantForm) return;
+    const priceNum = Number((variantForm.price ?? "").trim());
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
+      toast.show("Enter a valid price", { type: "danger" });
+      return;
+    }
+    if (!variantForm.size && !variantForm.color) {
+      toast.show("Pick a size, a color, or both", { type: "danger" });
+      return;
+    }
+    if (
+      entryConflicts(
+        variantEntries,
+        { size: variantForm.size, color: variantForm.color },
+        variantForm.index
+      )
+    ) {
+      toast.show("That combination already has a price", { type: "danger" });
+      return;
+    }
+    const next: VariantEntry = {
+      size: variantForm.size,
+      color: variantForm.color,
+      price: String(priceNum),
+    };
+    setVariantEntries((prev) => {
+      if (variantForm.index === -1) return [...prev, next];
+      const copy = [...prev];
+      copy[variantForm.index] = next;
+      return copy;
+    });
+    setVariantForm(null);
+  };
+
+  const deleteVariantEntry = (index: number) => {
+    haptic();
+    setVariantEntries((prev) => prev.filter((_, i) => i !== index));
+  };
+
   const handleSave = async () => {
+    setSaveError(null);
     if (!validateForm()) {
       toast.show("Please fill in the required fields", { type: "danger" });
       return;
@@ -481,6 +637,26 @@ export default function AddProductModal({
     try {
       setLoading(true);
       const basePrice = parseFloat(price);
+
+      // Send each explicit entry verbatim. The backend resolves matching
+      // priority (exact > size-only > color-only > base) at purchase time.
+      const variantPricesPayload = enableVariants
+        ? variantEntries
+            .map((e) => {
+              const parsed = Number((e.price ?? "").trim());
+              if (!Number.isFinite(parsed) || parsed <= 0) return null;
+              return {
+                size: e.size && e.size.trim() ? e.size : null,
+                color: e.color && e.color.trim() ? e.color : null,
+                price: parsed,
+              };
+            })
+            .filter(
+              (v): v is { size: string | null; color: string | null; price: number } =>
+                v !== null
+            )
+        : [];
+
       const payload: CreateProductPayload = {
         title: (productName ?? "").trim(),
         catalogCategoryId,
@@ -496,6 +672,7 @@ export default function AddProductModal({
         features: features.length > 0 ? features : undefined,
         colourOptions: colors.length > 0 ? colors : undefined,
         sizeOptions: sizes.length > 0 ? sizes : undefined,
+        variantPrices: variantPricesPayload,
       };
 
       if (
@@ -543,12 +720,24 @@ export default function AddProductModal({
       onProductAdded?.();
     } catch (error) {
       console.error("Error saving product:", error);
-      toast.show(
+      const rawMessage =
         error instanceof Error
           ? error.message
-          : `Failed to ${mode === "edit" ? "update" : "add"} product`,
-        { type: "danger" }
-      );
+          : `Failed to ${mode === "edit" ? "update" : "add"} product`;
+      // Detect plan-limit / paywall errors so we can surface an upgrade
+      // CTA on the alert instead of a generic dismiss. The backend's
+      // strings vary ("limit", "upgrade", "plan", "professional"), so we
+      // match liberally — false positives here only over-offer upgrade,
+      // which is harmless.
+      const isPlanLimit =
+        /\b(limit|upgrade|plan|professional|reached the)\b/i.test(rawMessage);
+      setSaveError({
+        title: isPlanLimit
+          ? "Plan limit reached"
+          : `Couldn't ${mode === "edit" ? "update" : "save"} product`,
+        message: rawMessage,
+        isPlanLimit,
+      });
     } finally {
       setLoading(false);
     }
@@ -745,7 +934,19 @@ export default function AddProductModal({
                 <View className="mb-3" />
               )}
 
-              <Text className={FIELD_LABEL}>Category</Text>
+              <View className="flex-row items-center gap-1.5 mb-1.5">
+                <Text className="text-[12.5px] font-semibold text-gray-700">
+                  Category
+                </Text>
+                {!canUseCategories && (
+                  <View className="flex-row items-center gap-0.5 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                    <Ionicons name="lock-closed" size={9} color="#b45309" />
+                    <Text className="text-[9px] font-extrabold text-amber-800 tracking-wide uppercase">
+                      Pro
+                    </Text>
+                  </View>
+                )}
+              </View>
               {(() => {
                 const selectedCategory = vendorCategories.find(
                   (c) => c.id === catalogCategoryId
@@ -757,30 +958,44 @@ export default function AddProductModal({
                       if (Platform.OS === "ios") {
                         Haptics.selectionAsync().catch(() => {});
                       }
+                      // Paywalled — tap routes to upgrade sheet rather
+                      // than opening the picker.
+                      if (!canUseCategories) {
+                        setPaywallFeature(FEATURES.PRODUCTS_CATEGORIES);
+                        return;
+                      }
                       setCategoryPickerOpen(true);
                     }}
-                    className="flex-row items-center bg-white rounded-2xl px-4 h-12 mb-5 border border-gray-200 active:bg-gray-50"
+                    className={`flex-row items-center rounded-2xl px-4 h-12 mb-5 border ${
+                      canUseCategories
+                        ? "bg-white border-gray-200 active:bg-gray-50"
+                        : "bg-gray-50 border-gray-100"
+                    }`}
                   >
                     <Ionicons
                       name="folder-open-outline"
                       size={16}
-                      color="#9ca3af"
+                      color={canUseCategories ? "#9ca3af" : "#cbd5e1"}
                     />
                     <Text
                       className={`flex-1 ml-3 text-[15px] ${
-                        selectedCategory
+                        !canUseCategories
+                          ? "text-gray-400"
+                          : selectedCategory
                           ? "text-gray-900 font-semibold"
                           : "text-gray-400"
                       }`}
                       numberOfLines={1}
                     >
-                      {selectedCategory
+                      {!canUseCategories
+                        ? "Upgrade to organise products into categories"
+                        : selectedCategory
                         ? selectedCategory.name
                         : hasCategories
                         ? "Select a category"
                         : "No categories yet — add one in Products"}
                     </Text>
-                    {catalogCategoryId != null && (
+                    {canUseCategories && catalogCategoryId != null && (
                       <Pressable
                         onPress={(e) => {
                           e.stopPropagation();
@@ -793,9 +1008,9 @@ export default function AddProductModal({
                       </Pressable>
                     )}
                     <Ionicons
-                      name="chevron-down"
+                      name={canUseCategories ? "chevron-down" : "chevron-forward"}
                       size={16}
-                      color="#9ca3af"
+                      color={canUseCategories ? "#9ca3af" : "#9ca3af"}
                     />
                   </Pressable>
                 );
@@ -870,13 +1085,23 @@ export default function AddProductModal({
 
               <View className="h-5" />
 
-              {/* VARIANTS */}
+              {/* VARIANTS — paywalled. Tapping while locked opens the
+                  upgrade sheet instead of toggling. The lock badge
+                  replaces the toggle so the gate is visually obvious. */}
               <Pressable
                 onPress={() => {
                   haptic();
+                  if (!canUseVariants) {
+                    setPaywallFeature(FEATURES.PRODUCTS_VARIANTS);
+                    return;
+                  }
                   setEnableVariants((prev) => !prev);
                 }}
-                className="flex-row items-center bg-white border border-gray-100 rounded-2xl px-4 py-3.5"
+                className={`flex-row items-center rounded-2xl px-4 py-3.5 border ${
+                  canUseVariants
+                    ? "bg-white border-gray-100"
+                    : "bg-gray-50 border-gray-100"
+                }`}
                 style={{
                   shadowColor: "#0f172a",
                   shadowOffset: { width: 0, height: 1 },
@@ -885,28 +1110,52 @@ export default function AddProductModal({
                   elevation: 1,
                 }}
               >
-                <View className="w-11 h-11 rounded-xl bg-violet-50 items-center justify-center mr-3">
-                  <Ionicons name="layers-outline" size={20} color="#7c3aed" />
-                </View>
-                <View className="flex-1">
-                  <Text className="text-[14px] font-bold text-gray-900">
-                    Product variants
-                  </Text>
-                  <Text className="text-[12px] text-gray-500 leading-[16px]">
-                    Add sizes and colors customers can pick
-                  </Text>
-                </View>
                 <View
-                  className={`w-12 h-7 rounded-full px-1 justify-center ${
-                    enableVariants ? "bg-blue-600" : "bg-gray-200"
+                  className={`w-11 h-11 rounded-xl items-center justify-center mr-3 ${
+                    canUseVariants ? "bg-violet-50" : "bg-gray-100"
                   }`}
                 >
-                  <View
-                    className={`w-5 h-5 rounded-full bg-white ${
-                      enableVariants ? "self-end" : "self-start"
-                    }`}
+                  <Ionicons
+                    name="layers-outline"
+                    size={20}
+                    color={canUseVariants ? "#7c3aed" : "#9ca3af"}
                   />
                 </View>
+                <View className="flex-1">
+                  <View className="flex-row items-center gap-1.5">
+                    <Text className="text-[14px] font-bold text-gray-900">
+                      Product variants
+                    </Text>
+                    {!canUseVariants && (
+                      <View className="flex-row items-center gap-0.5 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
+                        <Ionicons name="lock-closed" size={9} color="#b45309" />
+                        <Text className="text-[9px] font-extrabold text-amber-800 tracking-wide uppercase">
+                          Pro
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text className="text-[12px] text-gray-500 leading-[16px]">
+                    {canUseVariants
+                      ? "Add sizes and colors customers can pick"
+                      : "Upgrade to offer sizes, colors and per-variant pricing"}
+                  </Text>
+                </View>
+                {canUseVariants ? (
+                  <View
+                    className={`w-12 h-7 rounded-full px-1 justify-center ${
+                      enableVariants ? "bg-blue-600" : "bg-gray-200"
+                    }`}
+                  >
+                    <View
+                      className={`w-5 h-5 rounded-full bg-white ${
+                        enableVariants ? "self-end" : "self-start"
+                      }`}
+                    />
+                  </View>
+                ) : (
+                  <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+                )}
               </Pressable>
 
               {enableVariants && (
@@ -1040,6 +1289,272 @@ export default function AddProductModal({
                       Custom color
                     </Text>
                   </Pressable>
+
+                  {/* Per-variant pricing — explicit list. Vendors only see
+                      what they themselves added; nothing is auto-generated.
+                      Each row pins one specific (size, color) — or just one
+                      of them — to a custom price. Tap a row to edit; tap
+                      the X to delete. */}
+                  {(sizes.length > 0 || colors.length > 0) && (
+                    <>
+                      <View className="h-px bg-gray-100 my-4" />
+                      <View className="flex-row items-start justify-between mb-1">
+                        <Text className={FIELD_LABEL}>Variant pricing</Text>
+                        {variantEntries.length > 0 && (
+                          <Pressable
+                            onPress={() => {
+                              haptic();
+                              setVariantEntries([]);
+                              setVariantForm(null);
+                            }}
+                            hitSlop={6}
+                          >
+                            <Text className="text-[11.5px] font-bold text-blue-600">
+                              Clear all
+                            </Text>
+                          </Pressable>
+                        )}
+                      </View>
+                      <Text className="text-[11.5px] text-gray-500 leading-[16px] mb-3">
+                        Optional. Pick a size, a color, or both, and set a
+                        custom price — anything not listed uses the base
+                        price (₦{price ? Number(price).toLocaleString() : "—"}).
+                      </Text>
+
+                      {/* Existing entries */}
+                      {variantEntries.length > 0 && (
+                        <View className="bg-gray-50 border border-gray-100 rounded-2xl overflow-hidden mb-3">
+                          {variantEntries.map((entry, idx) => {
+                            const isLast = idx === variantEntries.length - 1;
+                            const swatchLight =
+                              entry.color && isLightColor(entry.color);
+                            return (
+                              <Pressable
+                                key={`${entry.size ?? ""}||${entry.color ?? ""}||${idx}`}
+                                onPress={() => openVariantForm(idx)}
+                                className={`flex-row items-center px-3 py-3 ${
+                                  isLast ? "" : "border-b border-gray-100"
+                                } active:bg-gray-100`}
+                              >
+                                <View className="flex-row items-center gap-2 flex-1 min-w-0">
+                                  {entry.color ? (
+                                    <View
+                                      className="w-7 h-7 rounded-full"
+                                      style={{
+                                        backgroundColor: entry.color,
+                                        borderWidth: swatchLight ? 1 : 0,
+                                        borderColor: "#e5e7eb",
+                                      }}
+                                    />
+                                  ) : null}
+                                  {entry.size ? (
+                                    <View className="bg-violet-50 border border-violet-100 rounded-md px-2 py-0.5">
+                                      <Text className="text-[12px] font-extrabold text-violet-700">
+                                        {entry.size}
+                                      </Text>
+                                    </View>
+                                  ) : null}
+                                  {!entry.size && !entry.color ? (
+                                    <Text className="text-[12px] text-gray-400 italic">
+                                      Empty
+                                    </Text>
+                                  ) : null}
+                                </View>
+                                <Text className="text-[13.5px] font-extrabold text-gray-900 mr-3">
+                                  ₦{entry.price ? Number(entry.price).toLocaleString() : "—"}
+                                </Text>
+                                <Pressable
+                                  onPress={() => deleteVariantEntry(idx)}
+                                  hitSlop={6}
+                                  className="w-7 h-7 rounded-full bg-white border border-gray-200 items-center justify-center"
+                                >
+                                  <Ionicons
+                                    name="close"
+                                    size={12}
+                                    color="#6b7280"
+                                  />
+                                </Pressable>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      {/* Form for add/edit */}
+                      {variantForm ? (
+                        <View className="bg-white border-2 border-blue-200 rounded-2xl p-4">
+                          <View className="flex-row items-center justify-between mb-3">
+                            <Text className="text-[13px] font-extrabold text-gray-900">
+                              {variantForm.index === -1
+                                ? "New variant price"
+                                : "Edit variant price"}
+                            </Text>
+                            <Pressable
+                              onPress={closeVariantForm}
+                              hitSlop={6}
+                              className="w-7 h-7 rounded-full bg-gray-50 items-center justify-center"
+                            >
+                              <Ionicons name="close" size={14} color="#6b7280" />
+                            </Pressable>
+                          </View>
+
+                          {/* Size picker — only shown when product has sizes */}
+                          {sizes.length > 0 && (
+                            <>
+                              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
+                                Size · {variantForm.size ? "selected" : "any"}
+                              </Text>
+                              <View className="flex-row flex-wrap gap-2 mb-4">
+                                {sizes.map((s) => {
+                                  const selected = variantForm.size === s;
+                                  return (
+                                    <Pressable
+                                      key={s}
+                                      onPress={() => {
+                                        haptic();
+                                        setVariantForm((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                size: selected ? null : s,
+                                              }
+                                            : prev
+                                        );
+                                      }}
+                                      className={`px-3 h-9 rounded-full border items-center justify-center ${
+                                        selected
+                                          ? "bg-violet-600 border-violet-600"
+                                          : "bg-white border-gray-200"
+                                      }`}
+                                    >
+                                      <Text
+                                        className={`text-[13px] font-extrabold ${
+                                          selected ? "text-white" : "text-gray-700"
+                                        }`}
+                                      >
+                                        {s}
+                                      </Text>
+                                    </Pressable>
+                                  );
+                                })}
+                              </View>
+                            </>
+                          )}
+
+                          {/* Color picker — only shown when product has colors */}
+                          {colors.length > 0 && (
+                            <>
+                              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
+                                Color · {variantForm.color ? "selected" : "any"}
+                              </Text>
+                              <View className="flex-row flex-wrap gap-2 mb-4">
+                                {colors.map((c) => {
+                                  const light = isLightColor(c);
+                                  const selected =
+                                    variantForm.color?.toLowerCase() ===
+                                    c.toLowerCase();
+                                  return (
+                                    <Pressable
+                                      key={c}
+                                      onPress={() => {
+                                        haptic();
+                                        setVariantForm((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                color: selected ? null : c,
+                                              }
+                                            : prev
+                                        );
+                                      }}
+                                      style={{
+                                        width: 36,
+                                        height: 36,
+                                        borderRadius: 18,
+                                        backgroundColor: c,
+                                        borderWidth: selected ? 3 : light ? 1 : 0,
+                                        borderColor: selected ? "#2563eb" : "#e5e7eb",
+                                        alignItems: "center",
+                                        justifyContent: "center",
+                                      }}
+                                    >
+                                      {selected && (
+                                        <Ionicons
+                                          name="checkmark"
+                                          size={16}
+                                          color={light ? "#0f172a" : "white"}
+                                        />
+                                      )}
+                                    </Pressable>
+                                  );
+                                })}
+                              </View>
+                            </>
+                          )}
+
+                          {/* Price input */}
+                          <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
+                            Price (₦)
+                          </Text>
+                          <View className="flex-row items-center bg-gray-50 border border-gray-200 rounded-xl px-3 h-11 mb-4">
+                            <Text className="text-[14px] text-gray-400 mr-1">
+                              ₦
+                            </Text>
+                            <TextInput
+                              value={variantForm.price}
+                              onChangeText={(t) =>
+                                setVariantForm((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        price: t.replace(/[^0-9.]/g, ""),
+                                      }
+                                    : prev
+                                )
+                              }
+                              placeholder={
+                                price
+                                  ? Number(price).toLocaleString()
+                                  : "0"
+                              }
+                              placeholderTextColor="#cbd5e1"
+                              className="flex-1 text-[14px] text-gray-900 h-full"
+                              keyboardType="numeric"
+                            />
+                          </View>
+
+                          <View className="flex-row gap-2">
+                            <Pressable
+                              onPress={closeVariantForm}
+                              className="flex-1 h-11 rounded-xl border border-gray-200 bg-white items-center justify-center"
+                            >
+                              <Text className="text-[13px] font-extrabold text-gray-700">
+                                Cancel
+                              </Text>
+                            </Pressable>
+                            <Pressable
+                              onPress={saveVariantForm}
+                              className="flex-1 h-11 rounded-xl bg-blue-600 items-center justify-center"
+                            >
+                              <Text className="text-[13px] font-extrabold text-white">
+                                {variantForm.index === -1 ? "Add" : "Save"}
+                              </Text>
+                            </Pressable>
+                          </View>
+                        </View>
+                      ) : (
+                        <Pressable
+                          onPress={() => openVariantForm(-1)}
+                          className="flex-row items-center justify-center gap-2 h-11 rounded-2xl border-2 border-dashed border-gray-300 bg-white active:bg-gray-50"
+                        >
+                          <Ionicons name="add" size={16} color="#374151" />
+                          <Text className="text-[13px] font-extrabold text-gray-700">
+                            Add variant price
+                          </Text>
+                        </Pressable>
+                      )}
+                    </>
+                  )}
                 </View>
               )}
 
@@ -1358,6 +1873,44 @@ export default function AddProductModal({
             const id = Number(value);
             if (Number.isFinite(id)) setCatalogCategoryId(id);
           }}
+        />
+
+        {/* Save / server error alert. Rendered as a nested Modal so it
+            overlays this page-sheet — guaranteed visible regardless of
+            scroll position. For plan-limit errors we offer an "Upgrade
+            plan" primary CTA that closes the form and routes to billing. */}
+        <AlertDialog
+          visible={saveError != null}
+          onClose={() => setSaveError(null)}
+          title={saveError?.title ?? ""}
+          message={saveError?.message ?? ""}
+          severity={saveError?.isPlanLimit ? "warning" : "error"}
+          primaryAction={
+            saveError?.isPlanLimit
+              ? {
+                  label: "Upgrade plan",
+                  primary: true,
+                  icon: "arrow-up-circle",
+                  onPress: () => {
+                    setSaveError(null);
+                    onClose();
+                    navigation.navigate("SubscriptionFlow", {});
+                  },
+                }
+              : {
+                  label: "Got it",
+                  primary: true,
+                  onPress: () => setSaveError(null),
+                }
+          }
+          secondaryAction={
+            saveError?.isPlanLimit
+              ? {
+                  label: "Not now",
+                  onPress: () => setSaveError(null),
+                }
+              : undefined
+          }
         />
       </SafeAreaView>
     </Modal>

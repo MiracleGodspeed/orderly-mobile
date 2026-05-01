@@ -2,8 +2,8 @@ import axios from "axios";
 import axiosRetry from "axios-retry";
 
 export const apiClient = axios.create({
-    //baseURL: "https://api.orderlystores.com/api",
-    baseURL: "http://10.211.55.4/api",
+    baseURL: "https://api.orderlystores.com/api",
+    //baseURL: "http://10.211.55.4/api",
     headers: {
         "Content-Type": "application/json",
     },

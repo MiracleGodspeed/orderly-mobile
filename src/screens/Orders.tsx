@@ -26,14 +26,16 @@ type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 type FilterType = "all" | "pending" | "paid";
 
-type UIStatus = "Paid" | "Pending" | "Shipped" | "Completed" | "Cancelled";
+type UIStatus = "Pending" | "Paid" | "Shipped";
 
 const mapStatus = (status: string): UIStatus => {
-  switch (status?.toLowerCase()) {
+  switch ((status || "").toLowerCase()) {
     case "success":
+    case "paid":
       return "Paid";
+    case "shipped":
+      return "Shipped";
     case "pending":
-      return "Pending";
     default:
       return "Pending";
   }
@@ -60,18 +62,6 @@ const STATUS_STYLES: Record<
     text: "text-violet-700",
     bg: "bg-violet-50",
     border: "border-violet-100",
-  },
-  Completed: {
-    dot: "bg-blue-500",
-    text: "text-blue-700",
-    bg: "bg-blue-50",
-    border: "border-blue-100",
-  },
-  Cancelled: {
-    dot: "bg-rose-500",
-    text: "text-rose-700",
-    bg: "bg-rose-50",
-    border: "border-rose-100",
   },
 };
 

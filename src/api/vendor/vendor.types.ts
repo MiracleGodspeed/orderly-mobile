@@ -74,6 +74,19 @@ export interface UpdateStorefrontSettingsResponse {
   data: boolean;
 }
 
+/**
+ * Per-variant price override. Either size or color (or both) may be empty
+ * when the product only varies along one axis. `price` is what the
+ * customer is charged for this exact combo; `stock` is optional
+ * per-variant inventory (when null, falls back to product-level stock).
+ */
+export interface VariantPrice {
+  size?: string | null;
+  color?: string | null;
+  price: number;
+  stock?: number | null;
+}
+
 export interface Product {
   id: string;
   storeId: string;
@@ -103,6 +116,9 @@ export interface Product {
   features: string[];
   colourOptions: string[];
   sizeOptions: string[];
+  /** Optional per-variant price/stock overrides. Empty means the base
+   *  `price` applies to every combination. */
+  variantPrices?: VariantPrice[] | null;
   sku: string;
   slug: string;
   isAvailable: boolean;
@@ -136,6 +152,10 @@ export interface CreateProductPayload {
   sku?: string;
   colourOptions?: string[];
   sizeOptions?: string[];
+  /** Per-variant price/stock overrides. Send `[]` to clear existing
+   *  overrides; omit to leave them untouched is NOT supported — the
+   *  backend treats undefined the same as `null` and clears them. */
+  variantPrices?: VariantPrice[];
   imageFile1?: any;
   imageFile2?: any;
 }
@@ -373,4 +393,64 @@ export interface ValidateAccountResponse {
   message: string;
   code: string;
   data: ValidateAccountData;
+}
+
+export interface VendorCustomer {
+  id: string;
+  name: string;
+  email: string;
+  phoneNumber: string;
+  backupPhone?: string | null;
+  deliveryAddress?: string | null;
+  lastSeen?: string | null;
+  note?: string | null;
+  createdAt: string;
+}
+
+export interface GetVendorCustomersResponse {
+  code: string;
+  message: string;
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  data: VendorCustomer[];
+}
+
+export type NotificationType =
+  | "order"
+  | "stock"
+  | "payout"
+  | "performance"
+  | "subscription"
+  | string;
+
+export interface AppNotification {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  isRead: boolean;
+  /** ISO date string from the API. */
+  createdAt: string;
+  /** Optional: a screen name in RootStackParamList to navigate to on tap. */
+  route: string | null;
+  /** Optional: JSON-encoded params for the destination screen. */
+  routeParams: string | null;
+}
+
+export interface GetNotificationsResponse {
+  message: string;
+  code: string;
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  data: AppNotification[];
+}
+
+export interface UnreadCountResponse {
+  message: string;
+  code: string;
+  data: number;
 }

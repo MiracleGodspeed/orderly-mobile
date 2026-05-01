@@ -1,9 +1,4 @@
-export type OrderStatus =
-  | 'Paid'
-  | 'Pending'
-  | 'Shipped'
-  | 'Completed'
-  | 'Cancelled';
+export type OrderStatus = 'Pending' | 'Paid' | 'Shipped';
 
   export type Order = {
   id: string;
@@ -54,5 +49,6 @@ export type RootStackParamList = {
   NotificationProfile: undefined;
   LocationManagement: undefined;
   CustomDomain: undefined;
+  Customers: undefined;
 
 };

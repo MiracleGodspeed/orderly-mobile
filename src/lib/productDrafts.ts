@@ -28,6 +28,9 @@ export interface ProductDraft {
   colors: string[];
   features: string[];
   enableVariants: boolean;
+  /** Optional per-variant price/stock map keyed by `${size}||${color}`.
+   *  Persisted as a plain object so JSON round-trips cleanly. */
+  variantPrices?: Record<string, { price: string; stock?: string }>;
 }
 
 export async function loadDrafts(): Promise<ProductDraft[]> {

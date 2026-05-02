@@ -7,6 +7,7 @@ import {
   SignupResponseInitial,
   OtpVerificationRequest,
   Country,
+  ChangePasswordRequest,
 } from "./auth.types";
 
 const handleApiResponse = <T>(response: { data: any }): T => {
@@ -53,13 +54,48 @@ export const verifyOtp = async (
   payload: OtpVerificationRequest
 ): Promise<SignupResponseComplete> => {
   const response = await apiClient.post<SignupResponseComplete>(
-    "/auth/validate-otp", 
-    payload, 
+    "/auth/validate-otp",
+    payload,
     { validateStatus: () => true }
   );
 
- 
+
   return handleApiResponse<SignupResponseComplete>(response);
+};
+
+export const changePassword = async (
+  payload: ChangePasswordRequest
+): Promise<void> => {
+  // Backend DTO shape (lowercase property names) — see ChangePasswordDto in
+  // orderly.domain/DTOs/LoginDto.cs.
+  const response = await apiClient.post<{ code: string; message: string }>(
+    "/auth/update-password",
+    {
+      email: payload.email,
+      currentpassword: payload.currentPassword,
+      newpassword: payload.newPassword,
+    },
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    const detail =
+      response.data?.message ||
+      `HTTP ${response.status} ${response.statusText ?? ""}`.trim();
+    throw new Error(detail || "Couldn't update password.");
+  }
+};
+
+export const resendOtp = async (email: string): Promise<void> => {
+  const response = await apiClient.post<{ code: string; message: string }>(
+    "/auth/resend-otp",
+    { Email: email },
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    const detail =
+      response.data?.message || `HTTP ${response.status} ${response.statusText ?? ""}`.trim();
+    throw new Error(detail || "Couldn't resend the code.");
+  }
 };
 
 export const getCountries = async (): Promise<Country[]> => {

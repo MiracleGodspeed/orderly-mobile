@@ -21,6 +21,12 @@ import { BrandLoader } from '../components/BrandLoader';
 import MenuOverlay from '../components/MenuOverlay';
 import StoreSetupProgress from '../components/StoreSetupProgress';
 import { TrialBanner } from '../components/TrialBanner';
+import { TrialWelcomeModal, type TrialWelcomeModalHandle } from '../components/TrialWelcomeModal';
+import { SubscriptionStatusBanner } from '../components/SubscriptionStatusBanner';
+import {
+  useUnreadNotificationCount,
+  useInvalidateNotifications,
+} from '../hooks/useNotifications';
 import { StoreSetupModal, type SetupStepId } from '../components/StoreSetupModal';
 import { setupProgressPct } from '../lib/setupProgress';
 import { CustomDateRangeModal } from '../components/CustomDateRangeModal';
@@ -78,12 +84,18 @@ export default function Home() {
   const currentSlideRef = useRef(0);
   const navigation = useNavigation<ScreenNavigationProp>();
   const flatListRef = useRef<FlatList>(null);
+  const trialWelcomeRef = useRef<TrialWelcomeModalHandle>(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [trialModalVisible, setTrialModalVisible] = useState(false);
-  const [unreadNotificationsCount] = useState(2);
+  // Real unread count from the server, polled every 60s in the
+  // background so the badge stays current without driving the full
+  // notifications list fetch. Defaults to 0 while the first request
+  // is in flight (better than hardcoding a fake number).
+  const { data: unreadNotificationsCount = 0 } = useUnreadNotificationCount();
+  const invalidateNotifications = useInvalidateNotifications();
 
   const [durationModalVisible, setDurationModalVisible] = useState(false);
   const [selectedDuration, setSelectedDuration] = useState<number | undefined>(30);
@@ -290,7 +302,7 @@ export default function Home() {
   // Custom-domain quick action — gated behind STORE_CUSTOM_DOMAIN. Locked
   // vendors get the upgrade sheet instead of the dedicated screen.
   const { has: hasFeature } = useFeatures();
-  const canUseCustomDomain = true //hasFeature(FEATURES.STORE_CUSTOM_DOMAIN);
+  const canUseCustomDomain = hasFeature(FEATURES.STORE_CUSTOM_DOMAIN);
   const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(null);
   const handleOpenDomain = useCallback(() => {
     tap();
@@ -326,10 +338,19 @@ export default function Home() {
         // reflects whatever the user just did before opening the app today.
         fetchVendorData(),
       ]);
+      // Force the badge to refresh too — the polling tick is 60s, but a
+      // pull-to-refresh should give the vendor a fresh count immediately.
+      invalidateNotifications();
     } finally {
       setRefreshing(false);
     }
-  }, [refetchOrders, refetchProducts, refetchPerformance, fetchVendorData]);
+  }, [
+    refetchOrders,
+    refetchProducts,
+    refetchPerformance,
+    fetchVendorData,
+    invalidateNotifications,
+  ]);
 
   // Step completion is tracked by the server via VendorContext.checklistItems.
   // Tapping a step here just navigates the user to where they finish it; the
@@ -338,8 +359,8 @@ export default function Home() {
   const handleSetupStepPress = useCallback(
     (step: SetupStepId) => {
       closeSetupModal();
-      if (step === 'customize-store') {
-        navigation.navigate('ManageStore');
+      if (step === 'add-delivery-locations') {
+        navigation.navigate('LocationManagement');
       } else if (step === 'add-product') {
         navigation.navigate('ProductsList', { openAddProduct: true } as any);
       } else if (step === 'setup-payment') {
@@ -411,9 +432,13 @@ export default function Home() {
           />
         }
       >
-        {/* Trial banner — only renders when the vendor is on a trial.
-            Sits above the greeting so it's the first thing they see. */}
-        <TrialBanner />
+        {/* Subscription lifecycle banners — mutually exclusive, only
+            one (or none) renders at a time. TrialBanner handles the
+            trial window; SubscriptionStatusBanner handles paid expiry,
+            grace, and post-grace. Sit above the greeting so vendors
+            see the most important state first. */}
+        <TrialBanner onPress={() => trialWelcomeRef.current?.open()} />
+        <SubscriptionStatusBanner />
 
         {/* Greeting + store identity */}
         <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl border border-gray-100 p-4 overflow-hidden"
@@ -837,6 +862,12 @@ export default function Home() {
         onClose={closeSetupModal}
         onStepPress={handleSetupStepPress}
       />
+
+      {/* Onboarding for trial vendors so they understand the full-access
+          window and aren't surprised when features lock after a
+          starter-plan purchase. Auto-shows once per store and can be
+          re-opened by tapping the trial banner above. */}
+      <TrialWelcomeModal ref={trialWelcomeRef} />
 
       {/* Trial modal */}
       <Modal

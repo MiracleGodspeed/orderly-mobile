@@ -50,7 +50,7 @@ export interface StorefrontDetailsData {
 
   vendorOnboardProgressResponse: {
     addedFirstProduct: boolean;
-    managedStoreFront: boolean;
+    addedDeliveryLocations: boolean;
     updatedPersonsalProfile: boolean;
   };
 

@@ -8,7 +8,7 @@ import { setupProgressPct } from "../lib/setupProgress";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
-export type SetupStepId = "customize-store" | "add-product" | "setup-payment";
+export type SetupStepId = "add-delivery-locations" | "add-product" | "setup-payment";
 
 interface Step {
   id: SetupStepId;
@@ -21,13 +21,13 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    id: "customize-store",
-    title: "Customize your storefront",
+    id: "add-delivery-locations",
+    title: "Add delivery locations",
     description:
-      "Add your logo, brand colors, and layout so your store looks polished and on-brand.",
-    icon: "color-palette-outline",
-    tint: "#eef2ff",
-    iconColor: "#4f46e5",
+      "Tell customers where you deliver. Without this, checkout stalls and they can't place an order.",
+    icon: "location-outline",
+    tint: "#fff1f2",
+    iconColor: "#e11d48",
   },
   {
     id: "add-product",

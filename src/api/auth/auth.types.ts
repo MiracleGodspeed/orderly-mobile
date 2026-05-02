@@ -67,3 +67,9 @@ export interface SignupResponseComplete {
   role: number;
   userStatus: number;
 }
+
+export interface ChangePasswordRequest {
+  email: string;
+  currentPassword: string;
+  newPassword: string;
+}

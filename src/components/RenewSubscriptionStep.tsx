@@ -212,7 +212,7 @@ export default function RenewSubscriptionStep({
             <Pressable
               key={plan.id}
               onPress={() => handlePickPlan(plan)}
-              className={`relative rounded-3xl p-5 mb-3 border-2 ${
+              className={`relative rounded-3xl p-5 mb-7 border-2 ${
                 isSelected
                   ? "border-blue-600 bg-blue-50/40"
                   : "border-gray-100 bg-white"

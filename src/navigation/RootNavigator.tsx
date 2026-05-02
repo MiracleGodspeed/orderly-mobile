@@ -30,6 +30,7 @@ import Profile from '../screens/Profile';
 import StoreInformation from '../screens/StoreInformation';
 import SubscriptionBilling from '../screens/SubscriptionBilling';
 import Security from '../screens/Security';
+import ChangePassword from '../screens/ChangePassword';
 import PayoutSettings from '../screens/PayoutSettings';
 import PersonalDetails from '../screens/PersonalDetails';
 import NotificationProfile from '../screens/NotificationProfile';
@@ -123,6 +124,7 @@ export default function RootNavigator() {
         <Stack.Screen name="StoreInformation" component={StoreInformation} />
         <Stack.Screen name="SubscriptionBilling" component={SubscriptionBilling} />
         <Stack.Screen name="Security" component={Security} />
+        <Stack.Screen name="ChangePassword" component={ChangePassword} />
         <Stack.Screen name="PayoutSettings" component={PayoutSettings} />
         <Stack.Screen name="PersonalDetails" component={PersonalDetails} />
         <Stack.Screen name="NotificationProfile" component={NotificationProfile} />

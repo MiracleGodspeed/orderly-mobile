@@ -942,7 +942,7 @@ export default function AddProductModal({
                   <View className="flex-row items-center gap-0.5 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                     <Ionicons name="lock-closed" size={9} color="#b45309" />
                     <Text className="text-[9px] font-extrabold text-amber-800 tracking-wide uppercase">
-                      Pro
+                      Upgrade
                     </Text>
                   </View>
                 )}
@@ -1130,7 +1130,7 @@ export default function AddProductModal({
                       <View className="flex-row items-center gap-0.5 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded">
                         <Ionicons name="lock-closed" size={9} color="#b45309" />
                         <Text className="text-[9px] font-extrabold text-amber-800 tracking-wide uppercase">
-                          Pro
+                          UPGRADE
                         </Text>
                       </View>
                     )}

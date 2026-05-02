@@ -36,6 +36,12 @@ export interface StoreData {
   storeName: string;
   phone: string | null;
   email: string;
+  /** Vendor's personal full name on their User account. Distinct
+   *  from the store name. */
+  fullName?: string | null;
+  /** Vendor's personal phone on their User account. Distinct from
+   *  `phone`, which is the storefront's public contact number. */
+  userPhoneNumber?: string | null;
   address: string | null;
   logoUrl: string | null;
   accountName?: string | null;
@@ -74,7 +80,7 @@ export interface PaymentMethod {
 
 interface VendorOnboardProgress {
   addedFirstProduct: boolean,
-  managedStoreFront: boolean,
+  addedDeliveryLocations: boolean,
   updatedPersonsalProfile: boolean,
 }
 
@@ -193,12 +199,12 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
         if (processedData.vendorOnboardProgressResponse) {
           setChecklistItems([
             {
-              id: 'customize-store',
-              title: 'Customize your storefront',
-              description: 'Add your logo, hero image, and tell customers about your business',
-              completed: processedData.vendorOnboardProgressResponse.managedStoreFront,
+              id: 'add-delivery-locations',
+              title: 'Add delivery locations',
+              description: 'Tell customers where you deliver — without this, checkout stalls and orders can\'t be placed',
+              completed: processedData.vendorOnboardProgressResponse.addedDeliveryLocations,
               isPrimary: true,
-              route: "/vendor/manage-storefront"
+              route: "/vendor/locations"
             },
             {
               id: 'add-product',

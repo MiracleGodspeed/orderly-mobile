@@ -43,6 +43,7 @@ export type RootStackParamList = {
   SubscriptionBilling: undefined;
   SubscriptionFlow: { initialPlanName?: string };
   Security: undefined;
+  ChangePassword: undefined;
   Notifications: undefined;
   HelpSupport: undefined;
   LegalPolicies: undefined;

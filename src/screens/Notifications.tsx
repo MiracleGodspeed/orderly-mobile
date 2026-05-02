@@ -8,7 +8,7 @@ import {
   RefreshControl,
   Platform,
 } from "react-native";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -19,10 +19,13 @@ import { useToast } from "react-native-toast-notifications";
 import { RootStackParamList } from "../navigation/types";
 import { AppNotification, NotificationType } from "../api/vendor/vendor.types";
 import {
-  getNotifications,
   markAllNotificationsAsRead,
   markNotificationAsRead,
 } from "../api/vendor/vendor.api";
+import {
+  useNotifications,
+  useInvalidateNotifications,
+} from "../hooks/useNotifications";
 import { formatRelativeTime } from "../lib/format";
 import { ScreenHeader } from "../components/ScreenHeader";
 
@@ -118,44 +121,38 @@ export default function Notifications() {
   const toast = useToast();
   const navigation = useNavigation<ScreenNavigationProp>();
 
-  const [loading, setLoading] = useState(true);
+  // React Query handles caching, background refresh, and observer-based
+  // gcTime — reopening this screen feels instant when the cache is warm
+  // (within staleTime). The first paint also blocks for far less time
+  // because we ask for 20 rows instead of 50.
+  const { data, isPending, refetch } = useNotifications(20);
+  const invalidateNotifications = useInvalidateNotifications();
+
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<"all" | "unread">("all");
-  const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [markingAllRead, setMarkingAllRead] = useState(false);
 
-  const fetchNotifications = useCallback(
-    async (silent = false) => {
-      try {
-        if (!silent) setLoading(true);
-        const result = await getNotifications({ pageIndex: 1, pageSize: 50 });
-        setNotifications(result.data);
-      } catch (err: any) {
-        console.error("Failed to load notifications:", err);
-        if (!silent) {
-          toast.show(err?.message || "Couldn't load notifications", {
-            type: "danger",
-          });
-        }
-      } finally {
-        if (!silent) setLoading(false);
-      }
-    },
-    [toast]
-  );
+  // Local optimistic overrides — applied on top of the server list so
+  // tapping a row to mark-as-read updates instantly without waiting for
+  // refetch. Keyed by notification id; value is the new isRead bit.
+  const [readOverrides, setReadOverrides] = useState<Record<string, true>>({});
 
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
+  const notifications: AppNotification[] = useMemo(() => {
+    const rows = data?.data ?? [];
+    if (Object.keys(readOverrides).length === 0) return rows;
+    return rows.map((n) =>
+      readOverrides[n.id] ? { ...n, isRead: true } : n
+    );
+  }, [data?.data, readOverrides]);
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
-      await fetchNotifications(true);
+      await refetch();
     } finally {
       setRefreshing(false);
     }
-  }, [fetchNotifications]);
+  }, [refetch]);
 
   const filteredNotifications = useMemo(
     () =>
@@ -189,7 +186,15 @@ export default function Notifications() {
     try {
       setMarkingAllRead(true);
       await markAllNotificationsAsRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      // Optimistic local update — flip every loaded row to read
+      // immediately. Then invalidate so the next fetch reflects the
+      // server truth (also clears the badge cache).
+      const allIds = notifications.reduce<Record<string, true>>((acc, n) => {
+        acc[n.id] = true;
+        return acc;
+      }, {});
+      setReadOverrides((prev) => ({ ...prev, ...allIds }));
+      invalidateNotifications();
       toast.show("All caught up", { type: "success" });
     } catch (err: any) {
       toast.show(err?.message || "Couldn't mark all as read", {
@@ -203,14 +208,13 @@ export default function Notifications() {
   const handleNotificationPress = async (notification: AppNotification) => {
     haptic();
     if (!notification.isRead) {
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id === notification.id ? { ...n, isRead: true } : n
-        )
-      );
-      markNotificationAsRead(notification.id).catch(() => {
-        // Best-effort — local state already updated.
-      });
+      setReadOverrides((prev) => ({ ...prev, [notification.id]: true }));
+      markNotificationAsRead(notification.id)
+        .then(() => invalidateNotifications())
+        .catch(() => {
+          // Best-effort — local override already in place; the next
+          // refetch will reconcile.
+        });
     }
 
     const route =
@@ -439,7 +443,11 @@ export default function Notifications() {
     </View>
   );
 
-  if (loading) {
+  // Only show the full-screen spinner on the very first load — once the
+  // cache has anything, we render the list (possibly stale) and let
+  // background refetch update in place. Massively faster perceived
+  // load on subsequent visits.
+  if (isPending && !data) {
     return (
       <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
         <StatusBar barStyle="dark-content" backgroundColor="#fff" />

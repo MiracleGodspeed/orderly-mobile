@@ -23,11 +23,20 @@ export type FeatureKey = (typeof FEATURES)[keyof typeof FEATURES];
  * Friendly metadata for paywall/upgrade UI. The hook returns the key; the
  * gate component can look up a label/description here without hardcoding
  * copy at every call site.
+ *
+ * `bullets` and `beforeAfter` are optional richer surfaces for features
+ * where vendors might not understand what they're missing — concrete
+ * value props + a visual contrast (e.g. ugly URL → clean URL). Left
+ * undefined the paywall falls back to the plain description.
  */
-export const FEATURE_META: Record<
-  FeatureKey,
-  { label: string; description: string }
-> = {
+export interface FeatureMeta {
+  label: string;
+  description: string;
+  bullets?: string[];
+  beforeAfter?: { beforeLabel: string; before: string; afterLabel: string; after: string };
+}
+
+export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
   [FEATURES.PRODUCTS_LOW_STOCK]: {
     label: "Low-stock filter",
     description:
@@ -58,7 +67,20 @@ export const FEATURE_META: Record<
       "Segment your customers with tags for targeted campaigns and retention.",
   },
   [FEATURES.STORE_CUSTOM_DOMAIN]: {
-    label: "Custom domain",
-    description: "Run your storefront on your own branded domain name.",
+    label: "Your own web address",
+    description:
+      "Stop using the long Orderly link and run your shop on a clean, professional address customers can actually remember — like yourbusiness.com.",
+    bullets: [
+      "Look professional next to a yourbusiness.com address",
+      "Easier for customers to type, share, and remember",
+      "Stronger brand on flyers, business cards, and Instagram bio",
+      "Build trust — looks like an established, legit shop",
+    ],
+    beforeAfter: {
+      beforeLabel: "Before",
+      before: "yourstore.orderlystores.com",
+      afterLabel: "After",
+      after: "www.yourbusiness.com",
+    },
   },
 };

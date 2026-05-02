@@ -209,9 +209,72 @@ export default function CustomDomain() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 36 }}
       >
+        {/* Plain-language explainer — many vendors don't know what a
+            domain is or why it matters. The before/after example makes
+            the value visible at a glance. */}
+        <View className="mt-4 bg-white rounded-3xl border border-gray-100 overflow-hidden">
+          <View className="px-5 py-4">
+            <View className="flex-row items-center gap-2 mb-2">
+              <View className="w-8 h-8 rounded-xl bg-blue-50 items-center justify-center">
+                <Ionicons name="help-circle" size={16} color="#2563eb" />
+              </View>
+              <Text className="text-[12px] font-extrabold text-blue-700 uppercase tracking-[1.2px]">
+                What is a custom domain?
+              </Text>
+            </View>
+            <Text className="text-[13.5px] text-gray-700 leading-[19px]">
+              A custom domain is your shop's own web address — the link
+              customers type to reach your store. With one, you stop
+              using the long Orderly link and get something short, clean,
+              and yours.
+            </Text>
+          </View>
+
+          <View className="px-5 pb-4">
+            <Text className="text-[10px] font-extrabold uppercase tracking-[1.2px] text-gray-400 mb-1.5">
+              Without a domain
+            </Text>
+            <View className="flex-row items-center gap-2 bg-gray-50 border border-gray-100 rounded-xl px-3 py-2.5">
+              <Ionicons name="globe-outline" size={14} color="#94a3b8" />
+              <Text
+                className="text-[12.5px] text-gray-500 flex-1"
+                numberOfLines={1}
+              >
+                yourstore.orderlystores.com
+              </Text>
+            </View>
+
+            <View className="items-center my-2">
+              <Ionicons name="arrow-down" size={14} color="#94a3b8" />
+            </View>
+
+            <Text className="text-[10px] font-extrabold uppercase tracking-[1.2px] text-emerald-700 mb-1.5">
+              With your own domain
+            </Text>
+            <View
+              className="flex-row items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-xl px-3 py-2.5"
+              style={{
+                shadowColor: "#059669",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.12,
+                shadowRadius: 6,
+                elevation: 1,
+              }}
+            >
+              <Ionicons name="globe" size={14} color="#059669" />
+              <Text
+                className="text-[13px] font-extrabold text-emerald-800 flex-1 tracking-tight"
+                numberOfLines={1}
+              >
+                www.yourbusiness.com
+              </Text>
+            </View>
+          </View>
+        </View>
+
         {/* Hero search */}
         <View
-          className="mt-3 rounded-3xl overflow-hidden border border-blue-100"
+          className="mt-4 rounded-3xl overflow-hidden border border-blue-100"
           style={{
             shadowColor: "#1d4ed8",
             shadowOffset: { width: 0, height: 6 },
@@ -230,8 +293,12 @@ export default function CustomDomain() {
                 Find your domain
               </Text>
             </View>
-            <Text className="text-white text-[19px] font-extrabold tracking-tight leading-[24px] mb-3">
-              Stand out with your own .com, .ng or .com.ng
+            <Text className="text-white text-[19px] font-extrabold tracking-tight leading-[24px] mb-2">
+              Pick a name customers can remember
+            </Text>
+            <Text className="text-white/80 text-[12.5px] leading-[17px] mb-3">
+              Type your business name below — we'll check what's
+              available across .com, .ng, .com.ng and more, with prices.
             </Text>
 
             <View className="bg-white rounded-2xl flex-row items-center px-4 h-12">
@@ -256,7 +323,7 @@ export default function CustomDomain() {
               )}
             </View>
             <Text className="text-white/70 text-[11px] mt-2">
-              Letters, numbers & hyphens. We'll show every TLD we support.
+              Letters, numbers & hyphens only. Pick your business name.
             </Text>
           </View>
         </View>

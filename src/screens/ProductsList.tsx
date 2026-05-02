@@ -683,93 +683,164 @@ export default function ProductsList() {
       {/* Single category-filter trigger. Scales to any number of categories —
           tapping opens a searchable picker sheet. */}
      
-      {canUseCategories &&
-        <View className="mb-3 px-5">
-          {(() => {
-            const selectedCategory =
-              selectedCategoryId != null
-                ? categories.find((c) => c.id === selectedCategoryId)
-                : null;
-            const isFiltered = selectedCategory != null;
-            return (
-              <View
-                className="flex-row items-stretch bg-white border border-gray-100 rounded-2xl overflow-hidden"
-                style={{
-                  shadowColor: "#0f172a",
-                  shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.04,
-                  shadowRadius: 10,
-                  elevation: 2,
-                }}
-              >
-                <Pressable
-                  onPress={() => {
-                    if (Platform.OS === "ios") {
-                      Haptics.selectionAsync().catch(() => { });
+      <View className="mb-3 px-5">
+        {(() => {
+          const selectedCategory =
+            selectedCategoryId != null
+              ? categories.find((c) => c.id === selectedCategoryId)
+              : null;
+          const isFiltered = selectedCategory != null && canUseCategories;
+          const locked = !canUseCategories;
+
+          // When the plan doesn't grant categories, render the same card but
+          // grayed out + locked. Tapping anywhere on it opens the paywall
+          // instead of the picker / manager sheets, so the vendor sees the
+          // feature exists and how to unlock it.
+          const openPaywall = () => {
+            if (Platform.OS === "ios") {
+              Haptics.selectionAsync().catch(() => {});
+            }
+            setPaywallFeature(FEATURES.PRODUCTS_CATEGORIES);
+          };
+
+          return (
+            <View
+              className={`flex-row items-stretch border rounded-2xl overflow-hidden ${
+                locked ? "bg-gray-50 border-gray-200" : "bg-white border-gray-100"
+              }`}
+              style={
+                locked
+                  ? undefined
+                  : {
+                      shadowColor: "#0f172a",
+                      shadowOffset: { width: 0, height: 2 },
+                      shadowOpacity: 0.04,
+                      shadowRadius: 10,
+                      elevation: 2,
                     }
-                    setCategoryPickerOpen(true);
-                  }}
-                  className="flex-1 flex-row items-center px-3.5 py-3"
+              }
+            >
+              <Pressable
+                onPress={() => {
+                  if (locked) {
+                    openPaywall();
+                    return;
+                  }
+                  if (Platform.OS === "ios") {
+                    Haptics.selectionAsync().catch(() => {});
+                  }
+                  setCategoryPickerOpen(true);
+                }}
+                className="flex-1 flex-row items-center px-3.5 py-3"
+              >
+                <View
+                  className={`w-9 h-9 rounded-xl items-center justify-center ${
+                    locked
+                      ? "bg-gray-200"
+                      : isFiltered
+                      ? "bg-blue-600"
+                      : "bg-blue-50"
+                  }`}
                 >
-                  <View
-                    className={`w-9 h-9 rounded-xl items-center justify-center ${isFiltered ? "bg-blue-600" : "bg-blue-50"
+                  <Ionicons
+                    name={
+                      locked
+                        ? "lock-closed"
+                        : isFiltered
+                        ? "pricetag"
+                        : "apps-outline"
+                    }
+                    size={15}
+                    color={locked ? "#9ca3af" : isFiltered ? "white" : "#2563eb"}
+                  />
+                </View>
+                <View className="flex-1 min-w-0 ml-3">
+                  <View className="flex-row items-center gap-1.5">
+                    <Text
+                      className={`text-[10.5px] font-extrabold uppercase tracking-[1.2px] ${
+                        locked ? "text-gray-400" : "text-gray-400"
                       }`}
-                  >
-                    <Ionicons
-                      name={isFiltered ? "pricetag" : "apps-outline"}
-                      size={15}
-                      color={isFiltered ? "white" : "#2563eb"}
-                    />
-                  </View>
-                  <View className="flex-1 min-w-0 ml-3">
-                    <Text className="text-[10.5px] font-extrabold text-gray-400 uppercase tracking-[1.2px]">
+                    >
                       Category
                     </Text>
-                    <Text
-                      className="text-[14px] font-extrabold text-gray-900 mt-0.5"
-                      numberOfLines={1}
-                    >
-                      {selectedCategory ? selectedCategory.name : "All categories"}
-                    </Text>
+                    {locked ? (
+                      <View className="px-1.5 py-[1px] rounded-full bg-blue-50 border border-blue-100">
+                        <Text className="text-[8.5px] font-extrabold text-blue-600 tracking-[0.8px]">
+                          UPGRADE
+                        </Text>
+                      </View>
+                    ) : null}
                   </View>
-                  {isFiltered ? (
-                    <Pressable
-                      onPress={() => {
-                        if (Platform.OS === "ios") {
-                          Haptics.selectionAsync().catch(() => { });
-                        }
-                        setSelectedCategoryId(null);
-                      }}
-                      hitSlop={8}
-                      className="w-8 h-8 rounded-full items-center justify-center bg-gray-50 active:bg-gray-100 mr-1"
-                    >
-                      <Ionicons name="close" size={14} color="#6b7280" />
-                    </Pressable>
-                  ) : null}
-                  <Ionicons name="chevron-down" size={16} color="#9ca3af" />
-                </Pressable>
-
-                <View className="w-px bg-gray-100" />
-
-                <Pressable
-                  onPress={() => {
-                    if (Platform.OS === "ios") {
-                      Haptics.selectionAsync().catch(() => { });
-                    }
-                    setCategoriesSheetOpen(true);
-                  }}
-                  className="px-4 items-center justify-center active:bg-gray-50"
-                >
-                  <Ionicons name="settings-outline" size={16} color="#2563eb" />
-                  <Text className="text-[10px] font-extrabold text-blue-600 mt-0.5 uppercase tracking-[0.8px]">
-                    Manage
+                  <Text
+                    className={`text-[14px] font-bold mt-0.5 ${
+                      locked ? "text-gray-400" : "text-gray-900"
+                    }`}
+                    numberOfLines={1}
+                  >
+                    {locked
+                      ? "Organize products by category"
+                      : selectedCategory
+                      ? selectedCategory.name
+                      : "All categories"}
                   </Text>
-                </Pressable>
-              </View>
-            );
-          })()}
-        </View>
-      }
+                </View>
+                {isFiltered ? (
+                  <Pressable
+                    onPress={() => {
+                      if (Platform.OS === "ios") {
+                        Haptics.selectionAsync().catch(() => {});
+                      }
+                      setSelectedCategoryId(null);
+                    }}
+                    hitSlop={8}
+                    className="w-8 h-8 rounded-full items-center justify-center bg-gray-50 active:bg-gray-100 mr-1"
+                  >
+                    <Ionicons name="close" size={14} color="#6b7280" />
+                  </Pressable>
+                ) : null}
+                <Ionicons
+                  name={locked ? "chevron-forward" : "chevron-down"}
+                  size={16}
+                  color={locked ? "#cbd5e1" : "#9ca3af"}
+                />
+              </Pressable>
+
+              <View
+                className={`w-px ${locked ? "bg-gray-200" : "bg-gray-100"}`}
+              />
+
+              <Pressable
+                onPress={() => {
+                  if (locked) {
+                    openPaywall();
+                    return;
+                  }
+                  if (Platform.OS === "ios") {
+                    Haptics.selectionAsync().catch(() => {});
+                  }
+                  setCategoriesSheetOpen(true);
+                }}
+                className={`px-4 items-center justify-center ${
+                  locked ? "" : "active:bg-gray-50"
+                }`}
+              >
+                <Ionicons
+                  name={locked ? "lock-closed-outline" : "settings-outline"}
+                  size={16}
+                  color={locked ? "#9ca3af" : "#2563eb"}
+                />
+                <Text
+                  className={`text-[10px] font-extrabold mt-0.5 uppercase tracking-[0.8px] ${
+                    locked ? "text-gray-400" : "text-blue-600"
+                  }`}
+                >
+                  {locked ? "Locked" : "Manage"}
+                </Text>
+              </Pressable>
+            </View>
+          );
+        })()}
+      </View>
     </View>
   );
 

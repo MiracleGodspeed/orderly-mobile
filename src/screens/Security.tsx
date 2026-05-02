@@ -1,254 +1,242 @@
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
   StatusBar,
-  Switch,
-  ActivityIndicator,
-  Alert
+  Platform,
 } from "react-native";
-import { useState, useEffect } from "react";
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useToast } from 'react-native-toast-notifications';
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import * as Haptics from "expo-haptics";
 
+import { RootStackParamList } from "../navigation/types";
+import { useVendor } from "../../context/VendorContext";
 
-type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type Nav = NativeStackNavigationProp<RootStackParamList>;
 
-// ============ TYPE DEFINITIONS ============
-interface ActiveSession {
-  id: string;
-  deviceName: string;
-  location: string;
-  lastActive: string;
-  isCurrent: boolean;
-}
+const haptic = () => {
+  if (Platform.OS === "ios") {
+    Haptics.selectionAsync().catch(() => {});
+  }
+};
 
 export default function Security() {
-     const toast = useToast();
-  
-  const navigation = useNavigation<ScreenNavigationProp>();
-
-  // ============ STATE MANAGEMENT ============
-  const [loading, setLoading] = useState(true);
-  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
-  const [activeSessions, setActiveSessions] = useState<ActiveSession[]>([]);
-  const [isToggling2FA, setIsToggling2FA] = useState(false);
-
-  // ============ FETCH SECURITY DATA ============
-  useEffect(() => {
-    fetchSecurityData();
-  }, []);
-
-  const fetchSecurityData = async () => {
-    try {
-      setLoading(true);
-
-      // TODO: Replace with actual API call
-      // const response = await getSecuritySettings();
-
-      // Mock data for now
-      const mock2FAStatus = true;
-      const mockSessions: ActiveSession[] = [
-        {
-          id: '1',
-          deviceName: 'iPhone 15 Pro',
-          location: 'San Francisco, US',
-          lastActive: 'Just now',
-          isCurrent: true
-        },
-        {
-          id: '2',
-          deviceName: 'MacBook Pro',
-          location: 'San Francisco, US',
-          lastActive: '2 days ago',
-          isCurrent: false
-        }
-      ];
-
-      setTwoFactorEnabled(mock2FAStatus);
-      setActiveSessions(mockSessions);
-    } catch (error) {
-      console.error('Error fetching security data:', error);
-     toast.show( 'Failed to load security settings', { type: 'danger' });
-
-    } finally {
-      setLoading(false);
-    }
-  };
+  const navigation = useNavigation<Nav>();
+  const { storeData } = useVendor();
+  const email = storeData?.email ?? "";
 
   const handleChangePassword = () => {
-    navigation.navigate('ChangePassword' as any);
+    haptic();
+    navigation.navigate("ChangePassword");
   };
-
-  const handleToggle2FA = async (value: boolean) => {
-    try {
-      setIsToggling2FA(true);
-
-      
-
-      setTwoFactorEnabled(value);
-
-    //   Toast.show({
-    //     type: 'success',
-    //     text1: 'Success',
-    //     text2: value 
-    //       ? 'Two-Factor Authentication enabled' 
-    //       : 'Two-Factor Authentication disabled',
-    //   });
-    } catch (error) {
-      console.error('Error toggling 2FA:', error);
-     toast.show( 'Failed to update 2FA setting', { type: 'danger' });
-
-    
-      setTwoFactorEnabled(!value);
-    } finally {
-      setIsToggling2FA(false);
-    }
-  };
-
-  const handleRevokeSession = (session: ActiveSession) => {
-    if (session.isCurrent) {
-     toast.show( 'You cannot revoke your current session', { type: 'danger' });
-
-      return;
-    }
-
-    Alert.alert(
-      'Revoke Session',
-      `Are you sure you want to revoke access for ${session.deviceName}?`,
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel'
-        },
-        {
-          text: 'Revoke',
-          style: 'destructive',
-          onPress: () => confirmRevokeSession(session.id)
-        }
-      ]
-    );
-  };
-
-  const confirmRevokeSession = async (sessionId: string) => {
-    try {
-     
-      setActiveSessions(activeSessions.filter(s => s.id !== sessionId));
-     toast.show( 'You cannot revoke your current session', { type: 'danger' });
-
-      
-    } catch (error) {
-      console.error('Error revoking session:', error);
-     
-    }
-  };
-
-  if (loading) {
-    return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#3b82f6" />
-        </View>
-      </SafeAreaView>
-    );
-  }
 
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
-      <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+    <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
 
-      <View className="bg-white flex-row items-center px-4 py-3 border-b border-gray-200">
-        <Pressable className="mr-3" onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#000" />
+      {/* Header */}
+      <View className="bg-white px-5 py-3 border-b border-gray-100 flex-row items-center">
+        <Pressable
+          onPress={() => navigation.goBack()}
+          hitSlop={8}
+          className="w-10 h-10 rounded-full items-center justify-center bg-gray-50 mr-3 active:bg-gray-100"
+        >
+          <Ionicons name="arrow-back" size={20} color="#111827" />
         </Pressable>
-        <Text className="text-lg font-medium text-gray-900">Security</Text>
+        <Text
+          className="text-[16px] text-gray-900"
+          style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+        >
+          Security
+        </Text>
       </View>
 
-      <ScrollView className="flex-1">
-        <View className="mx-4 mt-4 mb-4 bg-white rounded-2xl shadow-sm overflow-hidden">
-          
-          <Pressable
-            onPress={handleChangePassword}
-            className="flex-row items-center px-4 py-4 border-b border-gray-100"
-            android_ripple={{ color: '#f3f4f6' }}
-          >
-            <Text className="flex-1 text-base text-gray-900">
-              Change Password
-            </Text>
-            <MaterialIcons name="chevron-right" size={24} color="#9ca3af" />
-          </Pressable>
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: 32 }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Hero */}
+        <View
+          className="mx-4 mt-4 rounded-3xl overflow-hidden p-5"
+          style={{ backgroundColor: "#0f172a" }}
+        >
+          <View
+            style={{
+              position: "absolute",
+              top: -40,
+              right: -40,
+              width: 140,
+              height: 140,
+              borderRadius: 70,
+              backgroundColor: "rgba(96, 165, 250, 0.18)",
+            }}
+          />
+          <View
+            style={{
+              position: "absolute",
+              bottom: -50,
+              left: -30,
+              width: 130,
+              height: 130,
+              borderRadius: 65,
+              backgroundColor: "rgba(34, 197, 94, 0.14)",
+            }}
+          />
 
-          <View className="px-4 py-4">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-1 mr-4">
-                <Text className="text-base text-gray-900 mb-1">
-                  Two-Factor Authentication
-                </Text>
-                <Text className="text-sm text-gray-500">
-                  Protect your account with 2FA
-                </Text>
-              </View>
-              
-              <Switch
-                value={twoFactorEnabled}
-                onValueChange={handleToggle2FA}
-                disabled={isToggling2FA}
-                trackColor={{ false: "#d1d5db", true: "#10b981" }}
-                thumbColor="#fff"
-                ios_backgroundColor="#d1d5db"
-              />
+          <View className="flex-row items-center gap-3">
+            <View className="w-12 h-12 rounded-2xl bg-blue-500/20 items-center justify-center border border-blue-400/30">
+              <Ionicons name="shield-checkmark" size={22} color="#bfdbfe" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.6px] text-blue-200">
+                Account security
+              </Text>
+              <Text
+                className="text-white text-[19px] tracking-tight mt-1"
+                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+              >
+                Keep your store safe
+              </Text>
             </View>
           </View>
+
+          {email ? (
+            <View className="flex-row items-center gap-2 mt-4 bg-white/10 border border-white/15 rounded-xl px-3 py-2.5">
+              <Ionicons name="mail-outline" size={14} color="#bfdbfe" />
+              <Text
+                className="text-blue-100 text-[12.5px] flex-1"
+                numberOfLines={1}
+              >
+                Signed in as{" "}
+                <Text
+                  className="text-white"
+                  style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                >
+                  {email}
+                </Text>
+              </Text>
+            </View>
+          ) : null}
         </View>
 
-        <View className="mx-4 mb-6 bg-white rounded-2xl p-4 shadow-sm">
-          <Text className="text-xs font-semibold text-gray-500 mb-4">
-            ACTIVE SESSIONS
-          </Text>
+        {/* Section: Authentication */}
+        <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.4px] text-gray-400 mx-5 mt-6 mb-2">
+          Authentication
+        </Text>
 
-          {activeSessions.map((session, index) => (
-            <View 
-              key={session.id}
-              className={`${
-                index !== activeSessions.length - 1 ? 'border-b border-gray-100 pb-4 mb-4' : ''
+        <View
+          className="mx-4 bg-white rounded-2xl border border-gray-100 overflow-hidden"
+          style={{
+            shadowColor: "#0f172a",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 10,
+            elevation: 2,
+          }}
+        >
+          <Pressable
+            onPress={handleChangePassword}
+            className="flex-row items-center px-4 py-4 active:bg-gray-50"
+          >
+            <View className="w-11 h-11 rounded-2xl bg-blue-50 items-center justify-center mr-3 border border-blue-100">
+              <Ionicons name="key-outline" size={19} color="#2563eb" />
+            </View>
+            <View className="flex-1">
+              <Text
+                className="text-[14.5px] text-gray-900"
+                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+              >
+                Change password
+              </Text>
+              <Text className="text-[12.5px] text-gray-500 mt-0.5 leading-[16px]">
+                Pick a new password — at least 8 characters, mix of letters,
+                numbers, and a symbol.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+          </Pressable>
+        </View>
+
+        {/* Section: Best practices — replaces the fake 2FA / sessions
+            controls. Educational content beats non-functional toggles. */}
+        <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.4px] text-gray-400 mx-5 mt-6 mb-2">
+          Best practices
+        </Text>
+
+        <View
+          className="mx-4 bg-white rounded-2xl border border-gray-100 p-4"
+          style={{
+            shadowColor: "#0f172a",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 10,
+            elevation: 2,
+          }}
+        >
+          {[
+            {
+              icon: "lock-closed-outline" as const,
+              title: "Use a unique password",
+              body: "Don't reuse the password from another account. If that one leaks, attackers will try it here.",
+              tint: "#eef2ff",
+              iconColor: "#4f46e5",
+            },
+            {
+              icon: "phone-portrait-outline" as const,
+              title: "Sign out on shared devices",
+              body: "If you log in on a friend's phone or a public computer, sign out before you leave.",
+              tint: "#ecfdf5",
+              iconColor: "#059669",
+            },
+            {
+              icon: "alert-circle-outline" as const,
+              title: "Watch for suspicious emails",
+              body: "Orderly will never ask for your password by email. Always confirm the sender before clicking links.",
+              tint: "#fff1f2",
+              iconColor: "#e11d48",
+            },
+          ].map((tip, i, arr) => (
+            <View
+              key={tip.title}
+              className={`flex-row ${
+                i === arr.length - 1 ? "" : "pb-3 mb-3 border-b border-gray-100"
               }`}
             >
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1">
-                  <View className="flex-row items-center mb-2">
-                    <Text className="text-base font-medium text-gray-900">
-                      {session.deviceName}
-                    </Text>
-                    {session.isCurrent && (
-                      <View className="ml-2 bg-teal-100 px-2 py-0.5 rounded">
-                        <Text className="text-xs font-medium text-teal-700">
-                          Current
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text className="text-sm text-gray-500">
-                    {session.location} • {session.lastActive}
-                  </Text>
-                </View>
-
-                {!session.isCurrent && (
-                  <Pressable
-                    onPress={() => handleRevokeSession(session)}
-                    className="ml-3"
-                  >
-                    <Text className="text-red-600 font-medium">Revoke</Text>
-                  </Pressable>
-                )}
+              <View
+                className="w-10 h-10 rounded-2xl items-center justify-center mr-3"
+                style={{ backgroundColor: tip.tint }}
+              >
+                <Ionicons name={tip.icon} size={18} color={tip.iconColor} />
+              </View>
+              <View className="flex-1 pt-0.5">
+                <Text
+                  className="text-[13.5px] text-gray-900"
+                  style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                >
+                  {tip.title}
+                </Text>
+                <Text className="text-[12px] text-gray-500 mt-0.5 leading-[16px]">
+                  {tip.body}
+                </Text>
               </View>
             </View>
           ))}
+        </View>
+
+        {/* Trust line */}
+        <View className="flex-row items-center justify-center gap-1.5 mt-5 px-6">
+          <Ionicons
+            name="shield-checkmark-outline"
+            size={13}
+            color="#94a3b8"
+          />
+          <Text className="text-[11.5px] text-gray-500 text-center">
+            Your password is encrypted and never stored in plain text.
+          </Text>
         </View>
       </ScrollView>
     </SafeAreaView>

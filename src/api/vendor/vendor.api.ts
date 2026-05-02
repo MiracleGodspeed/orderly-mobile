@@ -862,6 +862,42 @@ export const markAllNotificationsAsRead = async (): Promise<number> => {
 };
 
 // =============================================================
+// Personal profile — the vendor's own name + phone, distinct from
+// the store's contact details. Email isn't editable here (would
+// require re-verification flow).
+// =============================================================
+
+export const updatePersonalProfile = async (payload: {
+  fullName?: string;
+  phoneNumber?: string;
+}): Promise<void> => {
+  const response = await apiClient.post<{ code: string; message: string }>(
+    "/storefront/update-personal-profile",
+    {
+      FullName: payload.fullName,
+      PhoneNumber: payload.phoneNumber,
+    },
+    { validateStatus: () => true }
+  );
+
+  if (response.data?.code !== "200") {
+    // Verbose logging so the dev console shows the actual HTTP status,
+    // response body, and headers — way easier to diagnose 401/404/500
+    // than a generic toast.
+    console.warn("[updatePersonalProfile] non-200 response", {
+      status: response.status,
+      statusText: response.statusText,
+      data: response.data,
+    });
+    const detail =
+      response.data?.message ||
+      (typeof response.data === "string" ? response.data : null) ||
+      `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}`;
+    throw new Error(`Couldn't update profile — ${detail}`);
+  }
+};
+
+// =============================================================
 // Vendor customers — every shopper that ever placed an order on
 // the vendor's storefront. Paginated + searchable.
 // =============================================================

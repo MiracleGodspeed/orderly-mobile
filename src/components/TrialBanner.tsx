@@ -82,7 +82,7 @@ const pickTone = (days: number): UrgencyTone => {
 const formatTitle = (days: number) => {
   if (days <= 0) return "Your trial has ended";
   if (days === 1) return "Trial ends tomorrow";
-  return `${days} days left on your trial`;
+  return `${days} days left · all features unlocked`;
 };
 
 const formatMeta = (days: number) => {
@@ -91,9 +91,18 @@ const formatMeta = (days: number) => {
   if (days <= 2)
     return "Pick a plan now so customers don't lose access to your storefront.";
   if (days <= 7)
-    return "Lock in your plan early — your trial wraps up soon.";
-  return "Enjoy full access. Upgrade anytime to skip the wait at the end.";
+    return "Some features may not be on lower plans — pick what fits before your trial wraps.";
+  return "You've got everything unlocked while you explore. Pick a plan when you're ready.";
 };
+
+interface Props {
+  /** Called when the body of the banner is tapped. The Upgrade pill always
+   *  routes to SubscriptionFlow regardless of this callback. Provide this
+   *  to surface the trial-welcome explainer instead of jumping straight to
+   *  billing — useful for vendors who want to remind themselves what's
+   *  unlocked during the trial. */
+  onPress?: () => void;
+}
 
 /**
  * Subtle, friendly banner shown on Home when the vendor is in their
@@ -108,7 +117,7 @@ const formatMeta = (days: number) => {
  * Returns null when the vendor isn't on a trial — safe to drop in
  * anywhere without a guard.
  */
-export function TrialBanner() {
+export function TrialBanner({ onPress }: Props = {}) {
   const navigation = useNavigation<Nav>();
   const { storeData } = useVendor();
   const sub = storeData?.storeSubscription;
@@ -118,15 +127,25 @@ export function TrialBanner() {
   const days = Math.max(0, Number(sub.daysRemaining) || 0);
   const tone = pickTone(days);
 
-  const onPress = () => {
+  const handleBodyPress = () => {
+    haptic();
+    if (onPress) {
+      onPress();
+    } else {
+      // Default: behave like the Upgrade button so the banner remains
+      // useful in contexts that don't pass a custom handler.
+      navigation.navigate("SubscriptionFlow", {});
+    }
+  };
+
+  const handleUpgradePress = () => {
     haptic();
     navigation.navigate("SubscriptionFlow", {});
   };
 
   return (
-    <Pressable
-      onPress={onPress}
-      className="mx-4 mt-3 rounded-2xl overflow-hidden border"
+    <View
+      className="mx-4 mt-3 rounded-2xl overflow-hidden border flex-row items-stretch"
       style={{
         backgroundColor: tone.bgFrom,
         borderColor: tone.border,
@@ -137,7 +156,12 @@ export function TrialBanner() {
         elevation: 2,
       }}
     >
-      <View className="flex-row items-center px-4 py-3.5">
+      {/* Body — tap opens the trial-welcome explainer (or whatever the
+          parent wired up via onPress). */}
+      <Pressable
+        onPress={handleBodyPress}
+        className="flex-1 flex-row items-center px-4 py-3.5"
+      >
         <View
           className="w-11 h-11 rounded-2xl items-center justify-center mr-3"
           style={{ backgroundColor: tone.iconBg }}
@@ -167,27 +191,31 @@ export function TrialBanner() {
             {formatMeta(days)}
           </Text>
         </View>
+      </Pressable>
 
-        <View
-          className="ml-2 flex-row items-center gap-1 rounded-full px-3 h-8"
-          style={{
-            backgroundColor: tone.ctaBg,
-            shadowColor: tone.ctaBg,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 3,
-          }}
+      {/* Upgrade pill — independent tap target so it always routes to
+          billing, even if the body opens an explainer instead. */}
+      <Pressable
+        onPress={handleUpgradePress}
+        hitSlop={6}
+        className="self-center mr-3 ml-1 flex-row items-center gap-1 rounded-full px-3 h-8 active:opacity-80"
+        style={{
+          backgroundColor: tone.ctaBg,
+          shadowColor: tone.ctaBg,
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.3,
+          shadowRadius: 8,
+          elevation: 3,
+        }}
+      >
+        <Text
+          className="text-[11.5px] font-extrabold"
+          style={{ color: tone.ctaText }}
         >
-          <Text
-            className="text-[11.5px] font-extrabold"
-            style={{ color: tone.ctaText }}
-          >
-            Upgrade
-          </Text>
-          <Ionicons name="arrow-forward" size={12} color={tone.ctaText} />
-        </View>
-      </View>
-    </Pressable>
+          Upgrade
+        </Text>
+        <Ionicons name="arrow-forward" size={12} color={tone.ctaText} />
+      </Pressable>
+    </View>
   );
 }

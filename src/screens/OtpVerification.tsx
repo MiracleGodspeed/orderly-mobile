@@ -20,7 +20,7 @@ import { useToast } from "react-native-toast-notifications";
 
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../../context/AuthContext";
-import { verifyOtp } from "../api/auth/auth.api";
+import { verifyOtp, resendOtp } from "../api/auth/auth.api";
 import { OtpVerificationRequest } from "../api/auth/auth.types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "OtpVerification">;
@@ -32,9 +32,18 @@ const OTP_LENGTH = 6;
  * Isolated resend timer. Owns its own ticking state so its 1Hz update doesn't
  * re-render the OTP shell — the kind of churn that interrupts keyboard
  * transitions on iOS.
+ *
+ * `onResend` returns a promise — only on resolution does the cooldown
+ * restart. If it rejects, the link stays tappable so the user can retry
+ * without waiting out a fake 30s window.
  */
-function ResendTimer({ onResend }: { onResend: () => void }) {
+function ResendTimer({
+  onResend,
+}: {
+  onResend: () => Promise<void>;
+}) {
   const [cooldown, setCooldown] = useState(RESEND_COOLDOWN_S);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     if (cooldown <= 0) return;
@@ -53,18 +62,34 @@ function ResendTimer({ onResend }: { onResend: () => void }) {
 
   return (
     <Pressable
-      onPress={() => {
+      onPress={async () => {
+        if (sending) return;
         if (Platform.OS === "ios") {
           Haptics.selectionAsync().catch(() => {});
         }
-        onResend();
-        setCooldown(RESEND_COOLDOWN_S);
+        setSending(true);
+        try {
+          await onResend();
+          setCooldown(RESEND_COOLDOWN_S);
+        } finally {
+          setSending(false);
+        }
       }}
       hitSlop={8}
+      disabled={sending}
     >
-      <Text className="text-[13px] text-blue-600 font-extrabold">
-        Resend code
-      </Text>
+      {sending ? (
+        <View className="flex-row items-center gap-1.5">
+          <ActivityIndicator size="small" color="#2563eb" />
+          <Text className="text-[13px] text-blue-600 font-extrabold">
+            Sending…
+          </Text>
+        </View>
+      ) : (
+        <Text className="text-[13px] text-blue-600 font-extrabold">
+          Resend code
+        </Text>
+      )}
     </Pressable>
   );
 }
@@ -197,11 +222,24 @@ export default function OtpVerification({ route, navigation }: Props) {
     }
   };
 
-  const handleResend = () => {
-    setOtp("");
-    setErrored(false);
-    hiddenInputRef.current?.focus();
-    toast.show("A fresh code is on its way.", { type: "success" });
+  const handleResend = async () => {
+    try {
+      await resendOtp(email);
+      setOtp("");
+      setErrored(false);
+      hiddenInputRef.current?.focus();
+      toast.show("A fresh code is on its way.", { type: "success" });
+    } catch (e: any) {
+      console.error("Resend OTP failed:", e);
+      const message =
+        e?.response?.data?.message ||
+        e?.message ||
+        "Couldn't resend the code. Try again.";
+      toast.show(message, { type: "danger" });
+      // Re-throw so ResendTimer doesn't restart the cooldown — the user
+      // should be able to tap again immediately on failure.
+      throw e;
+    }
   };
 
   const isOtpComplete = otp.length === OTP_LENGTH;

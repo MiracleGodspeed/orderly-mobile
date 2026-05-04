@@ -16,6 +16,7 @@ export const FEATURES = {
   CUSTOMERS_TAGS: "customers.tags",
   STORE_CUSTOM_DOMAIN: "store.custom_domain",
   STORE_LOGO: "store.logo",
+  STAFF_ACCOUNTS: "staff.accounts",
 } as const;
 
 export type FeatureKey = (typeof FEATURES)[keyof typeof FEATURES];
@@ -93,6 +94,17 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
       "Look established next to a polished header logo",
       "Show up on order confirmations, invoices, and receipts",
       "Replace the default placeholder customers currently see",
+    ],
+  },
+  [FEATURES.STAFF_ACCOUNTS]: {
+    label: "Staff accounts",
+    description:
+      "Bring your team into the app. Invite cashiers, stockkeepers, and managers with their own logins and granular permissions — no more sharing one password.",
+    bullets: [
+      "Each staff member gets their own login — no shared passwords",
+      "Pick what they can see and do — orders, catalog, customers",
+      "Suspend or remove access in one tap when someone leaves",
+      "See who confirmed which order in your audit trail",
     ],
   },
 };

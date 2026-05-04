@@ -47,6 +47,10 @@ export const clearAuthFromStorage = async () => {
     "store_data_cache",
     "store_setup_steps",
     "vendor_auto_renew",
+    // Persisted feature gate snapshot (see useFeatures). Drops out so a
+    // different vendor signing in on the same device doesn't see the
+    // previous user's plan permissions on first paint.
+    "orderly:features-cache:v1",
   ]);
   reset('Splash');
 };

@@ -53,6 +53,8 @@ import { formatNaira, getGreeting, computeTrend, formatRelativeTime } from '../l
 import { FeaturePaywallSheet } from '../components/FeaturePaywallSheet';
 import { useFeatures } from '../hooks/useFeatures';
 import { FEATURES, FeatureKey } from '../lib/features';
+import { useStaffPermissions } from '../hooks/useStaffPermissions';
+import { STAFF_PERMISSIONS } from '../lib/staffPermissions';
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -184,6 +186,16 @@ function StoreOverviewBackdrop() {
 export default function Home() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ScreenNavigationProp>();
+  const perms = useStaffPermissions();
+  // Owner-only chrome (trial banner, subscription banner, setup
+  // progress) is hidden for staff sessions — these are vendor-level
+  // concerns the staff member can't act on. Analytics-driven widgets
+  // (Store Overview card, Top Sellers) additionally depend on the
+  // analytics.view permission, since the underlying performance
+  // endpoint is gated on that claim and would 403 otherwise.
+  const isOwnerView = !perms.isStaff;
+  const canViewAnalytics = perms.has(STAFF_PERMISSIONS.ANALYTICS_VIEW);
+  const canViewOrders = perms.has(STAFF_PERMISSIONS.ORDERS_VIEW);
   const trialWelcomeRef = useRef<TrialWelcomeModalHandle>(null);
   // Local state-driven copy confirmation. Avoids the third-party toast
   // queue that was eating the first tap on this screen, and lets us
@@ -620,10 +632,14 @@ export default function Home() {
         {/* Subscription lifecycle banners — mutually exclusive, only
             one (or none) renders at a time. TrialBanner handles the
             trial window; SubscriptionStatusBanner handles paid expiry,
-            grace, and post-grace. Sit above the greeting so vendors
-            see the most important state first. */}
-        <TrialBanner onPress={() => trialWelcomeRef.current?.open()} />
-        <SubscriptionStatusBanner />
+            grace, and post-grace. Owner-only — staff can't act on
+            billing so we hide both for them. */}
+        {isOwnerView && (
+          <>
+            <TrialBanner onPress={() => trialWelcomeRef.current?.open()} />
+            <SubscriptionStatusBanner />
+          </>
+        )}
 
         {/* Greeting + store identity */}
         <View className="mx-4 mt-3 mb-3 rounded-2xl  p-4 overflow-hidden"
@@ -750,7 +766,7 @@ export default function Home() {
             )} */}
           </View>
 
-          {checklistItems.length > 0 && progressPercentage < 100 && (
+          {isOwnerView && checklistItems.length > 0 && progressPercentage < 100 && (
             <View className="mb-4">
               <StoreSetupProgress
                 progress={progressPercentage}
@@ -877,7 +893,7 @@ export default function Home() {
             {firstName ? `, ${firstName}` : ''} 👋
           </Text>
 
-          {checklistItems.length > 0 && progressPercentage < 100 && (
+          {isOwnerView && checklistItems.length > 0 && progressPercentage < 100 && (
             <View className="mb-4">
               <StoreSetupProgress
                 progress={progressPercentage}
@@ -935,7 +951,10 @@ export default function Home() {
           </View>
         </View> */}
 
-        {/* Store overview */}
+        {/* Store overview — only shown for users who can read analytics.
+            Staff without analytics.view would 403 the underlying
+            performance endpoint, leaving every tile blank. */}
+        {canViewAnalytics && (
         <View
           className="mx-4 mb-2 px-4 pt-4 pb-3.5 bg-white rounded-2xl border border-gray-100"
           style={{
@@ -1151,10 +1170,7 @@ export default function Home() {
             })}
           </View>
         </View>
-
-       
-
-      
+        )}
 
         {/* Quick actions */}
         <View
@@ -1449,9 +1465,10 @@ export default function Home() {
           </View>
         )}
 
-        {/* Top sellers — leverages existing performanceData payload, so
-            no extra query cost. Empty state when there's no sales data
-            yet keeps the section honest instead of hiding it. */}
+        {/* Top sellers — analytics-derived, hidden for staff without
+            analytics.view since the underlying performance endpoint is
+            gated on that claim. */}
+        {canViewAnalytics && (
         <View
           className="mx-4 mb-4 bg-white rounded-2xl border border-gray-100 overflow-hidden"
           style={{
@@ -1566,6 +1583,7 @@ export default function Home() {
             </View>
           )}
         </View>
+        )}
         {/* Recent orders — the daily-check section. Vendors tap into the
             app several times a day to see "did anything new come in?";
             this answers that without forcing them to navigate. */}

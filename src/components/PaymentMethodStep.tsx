@@ -79,6 +79,7 @@ function getRefFromUrl(url: string): string | null {
 // scheme. Lives at /app-callback (NOT a protected vendor route — paying users
 // aren't logged in on the web, so an auth guard would intercept them).
 const WEB_CALLBACK_URL = "https://orderlystores.com/app-callback";
+//const WEB_CALLBACK_URL = "http://localhost:3000/app-callback";
 
 const APP_DEEPLINK_PREFIX = "orderly://billing/callback";
 

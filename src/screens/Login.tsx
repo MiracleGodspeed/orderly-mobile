@@ -39,6 +39,18 @@ const haptic = () => {
 
 export type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
+// UserRole enum on the backend is 1-indexed: Admin=1, Vendor, Customer,
+// Marketer, Multi, Staff. Staff users should never be routed into the
+// vendor setup wizard regardless of their userStatus — they don't own
+// the store, they're just a teammate joining one.
+const ROLE_STAFF = 6;
+
+const routeAfterLogin = (data: { role?: number; userStatus?: number } | null | undefined):
+  "SetupStep1" | "Home" => {
+  if (data?.role === ROLE_STAFF) return "Home";
+  return data?.userStatus === 2 ? "SetupStep1" : "Home";
+};
+
 export default function Login() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const { login, googleLogin } = useAuth();
@@ -76,7 +88,7 @@ export default function Login() {
         };
         const data = await googleLogin(payload);
         await fetchVendorData();
-        navigation.replace(data?.userStatus === 2 ? "SetupStep1" : "Home");
+        navigation.replace(routeAfterLogin(data));
       } else {
         Alert.alert("Error", "No ID token received from Google");
       }
@@ -105,7 +117,7 @@ export default function Login() {
       setLoading(true);
       const data = await login(email.trim().toLowerCase(), password);
       await fetchVendorData();
-      navigation.replace(data?.userStatus === 2 ? "SetupStep1" : "Home");
+      navigation.replace(routeAfterLogin(data));
     } catch (err) {
       let message = "Check your email and password and try again.";
       if (err instanceof Error) message = err.message;

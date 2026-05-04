@@ -69,5 +69,15 @@ export type RootStackParamList = {
    *  The Direct option is what unlocks the manual-payment Confirm/Reject
    *  push flow added alongside this screen. */
   PaymentSetup: undefined;
+  /** Vendor-facing staff & permissions screen. Lists current teammates,
+   *  shows the seat-count vs plan limit, and lets the vendor invite,
+   *  edit, suspend, reactivate, and remove staff. Gated on the
+   *  STAFF_ACCOUNTS feature key. */
+  StaffManagement: undefined;
+  /** Top-level "More" hub — the destination of the fifth tab. Holds
+   *  every secondary feature area (store config, billing, workspace,
+   *  support). Profile (personal info) is a separate sub-screen
+   *  reached via the profile pill at the top of this hub. */
+  MoreHub: undefined;
 
 };

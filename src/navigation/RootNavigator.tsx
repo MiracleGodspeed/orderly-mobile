@@ -34,6 +34,8 @@ import ChangePassword from '../screens/ChangePassword';
 import LogOrder from '../screens/LogOrder';
 import RejectManualPayment from '../screens/RejectManualPayment';
 import PaymentSetup from '../screens/PaymentSetup';
+import StaffManagement from '../screens/StaffManagement';
+import MoreHub from '../screens/MoreHub';
 import DeleteAccount from '../screens/DeleteAccount';
 import PayoutSettings from '../screens/PayoutSettings';
 import PersonalDetails from '../screens/PersonalDetails';
@@ -136,6 +138,8 @@ export default function RootNavigator() {
           options={{ presentation: 'modal' }}
         />
         <Stack.Screen name="PaymentSetup" component={PaymentSetup} />
+        <Stack.Screen name="StaffManagement" component={StaffManagement} />
+        <Stack.Screen name="MoreHub" component={MoreHub} />
         <Stack.Screen name="DeleteAccount" component={DeleteAccount} />
         <Stack.Screen name="PayoutSettings" component={PayoutSettings} />
         <Stack.Screen name="PersonalDetails" component={PersonalDetails} />

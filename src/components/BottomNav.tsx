@@ -12,6 +12,8 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { RootStackParamList } from '../navigation/types';
+import { useStaffPermissions } from '../hooks/useStaffPermissions';
+import { STAFF_PERMISSIONS } from '../lib/staffPermissions';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -30,7 +32,9 @@ interface TabConfig {
 const ACTIVE_COLOR = '#2563eb';
 const ACTIVE_PILL = '#dbeafe';
 const ACTIVE_PILL_BORDER = '#bfdbfe';
-const INACTIVE_COLOR = '#94a3b8';
+// const INACTIVE_COLOR = '#94a3b8';
+const INACTIVE_COLOR = '#787f89';
+
 const INACTIVE_LABEL = '#64748b';
 
 /**
@@ -127,11 +131,17 @@ export default function BottomNav() {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute();
   const insets = useSafeAreaInsets();
+  const perms = useStaffPermissions();
 
   // Refined glyph picks: ditched the document-text "report" icon and
   // generic person silhouette for `analytics` and `person-circle` —
   // they read as modern commerce-app icons, not 2010 admin panels.
-  const tabs: TabConfig[] = [
+  //
+  // Tabs are filtered against the active session's permissions before
+  // render — a staff user without `orders.view` doesn't see the Orders
+  // tab at all, etc. Vendors and admins always see everything because
+  // `perms.has` short-circuits to true for those roles.
+  const allTabs: (TabConfig & { gate?: () => boolean })[] = [
     {
       id: 'home',
       outline: 'home-outline',
@@ -145,13 +155,20 @@ export default function BottomNav() {
       filled: 'bag-handle',
       label: 'Orders',
       screen: 'Orders',
+      gate: () => perms.has(STAFF_PERMISSIONS.ORDERS_VIEW),
     },
     {
+      // Store management (branding, bank, fulfilment) is owner-only.
+      // Staff don't have a permission key for it because we don't
+      // surface those mutations to them in Phase 1 — hiding the tab
+      // entirely is cleaner than showing it and refusing every action
+      // inside.
       id: 'store',
       outline: 'storefront-outline',
       filled: 'storefront',
       label: 'Store',
       screen: 'ManageStore',
+      gate: () => !perms.isStaff,
     },
     {
       id: 'reports',
@@ -159,17 +176,36 @@ export default function BottomNav() {
       filled: 'analytics',
       label: 'Reports',
       screen: 'ReportsAnalytics',
+      gate: () => perms.has(STAFF_PERMISSIONS.ANALYTICS_VIEW),
     },
     {
-      id: 'profile',
-      outline: 'person-circle-outline',
-      filled: 'person-circle',
-      label: 'Profile',
-      screen: 'Profile',
+      // The fifth tab is a hub, not a screen — it surfaces secondary
+      // functionality (staff, billing, security, support) and is the
+      // natural slot to add new feature areas as the product grows
+      // without re-jigging the primary tabs. Routes to the dedicated
+      // MoreHub screen; Profile (personal info, hero card) is a
+      // sub-screen accessed from the profile pill on MoreHub.
+      id: 'more',
+      outline: 'grid-outline',
+      filled: 'grid',
+      label: 'More',
+      screen: 'MoreHub',
     },
   ];
 
-  const isActiveTab = (screenName: string) => route.name === screenName;
+  const tabs: TabConfig[] = allTabs
+    .filter((t) => (t.gate ? t.gate() : true))
+    .map(({ gate, ...rest }) => rest);
+
+  // The More tab destination is `MoreHub`, but Profile is a sub-screen
+  // pushed from there. Treat both as "More tab active" so the pill
+  // stays highlighted when the user drills into Profile.
+  const isActiveTab = (screenName: string) => {
+    if (screenName === 'MoreHub') {
+      return route.name === 'MoreHub' || route.name === 'Profile';
+    }
+    return route.name === screenName;
+  };
 
   const handleTabPress = (screen: keyof RootStackParamList, isActive: boolean) => {
     if (isActive) return;

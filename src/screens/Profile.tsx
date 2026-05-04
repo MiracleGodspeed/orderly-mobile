@@ -54,19 +54,15 @@ export default function Profile() {
     }
   };
 
+  // Profile is the personal-account sub-screen reached from MoreHub —
+  // everything store / billing / workspace lives on MoreHub now.
+  // Profile only carries items that describe the logged-in user
+  // themselves (their name, their password). Staff sessions see the
+  // same items because both apply to them too.
   const groups: MenuGroup[] = [
     {
-      label: "Store",
+      label: "Account",
       items: [
-        {
-          id: "store-info",
-          icon: "storefront-outline",
-          tint: "#dbeafe",
-          iconColor: "#2563eb",
-          title: "Store information",
-          subtitle: "Brand, address, working hours",
-          screen: "StoreInformation",
-        },
         {
           id: "personal-details",
           icon: "person-outline",
@@ -77,45 +73,6 @@ export default function Profile() {
           screen: "PersonalDetails",
         },
         {
-          id: "payout-settings",
-          icon: "wallet-outline",
-          tint: "#d1fae5",
-          iconColor: "#059669",
-          title: "Bank settings",
-          subtitle: storeData?.accountNumber
-            ? `•••• ${storeData.accountNumber.slice(-4)}`
-            : "Set up payouts",
-          screen: "PayoutSettings",
-        },
-        {
-          id: "payment-setup",
-          icon: "cash-outline",
-          tint: "#fef3c7",
-          iconColor: "#b45309",
-          title: "Payment setup",
-          subtitle:
-            storeData?.feeBearer === ("direct" as any)
-              ? "Direct to your bank"
-              : "Online payment (Paystack)",
-          screen: "PaymentSetup",
-        },
-      ],
-    },
-    {
-      label: "Account",
-      items: [
-        {
-          id: "subscription",
-          icon: "card-outline",
-          tint: "#ede9fe",
-          iconColor: "#7c3aed",
-          title: "Subscription & billing",
-          subtitle: storeData?.storeSubscription?.isTrial
-            ? `${storeData?.storeSubscription?.daysRemaining ?? 0} days left in trial`
-            : "Manage your plan",
-          screen: "SubscriptionBilling",
-        },
-        {
           id: "security",
           icon: "shield-checkmark-outline",
           tint: "#f1f5f9",
@@ -124,41 +81,11 @@ export default function Profile() {
           subtitle: "Password, sessions, 2FA",
           screen: "Security",
         },
-        // {
-        //   id: "notifications",
-        //   icon: "notifications-outline",
-        //   tint: "#fef3c7",
-        //   iconColor: "#d97706",
-        //   title: "Notifications",
-        //   subtitle: "Push, email, alerts",
-        //   screen: "NotificationProfile",
-        // },
-      ],
-    },
-    {
-      label: "Support",
-      items: [
-        {
-          id: "help",
-          icon: "help-circle-outline",
-          tint: "#cffafe",
-          iconColor: "#0891b2",
-          title: "Help & support",
-          subtitle: "Get answers or contact us",
-          screen: "HelpSupport",
-        },
-        {
-          id: "legal",
-          icon: "document-text-outline",
-          tint: "#ffe4e6",
-          iconColor: "#e11d48",
-          title: "Legal & policies",
-          subtitle: "Terms, privacy, refunds",
-          screen: "LegalPolicies",
-        },
       ],
     },
   ];
+
+  const visibleGroups = groups;
 
   const handleMenuPress = (item: MenuItem) => {
     haptic();
@@ -267,7 +194,7 @@ export default function Profile() {
         </View>
 
         {/* Menu groups */}
-        {groups.map((group) => (
+        {visibleGroups.map((group) => (
           <View key={group.label} className="px-6 mt-6">
             <Text className="text-[11px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-3 px-1">
               {group.label}

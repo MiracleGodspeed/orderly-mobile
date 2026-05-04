@@ -271,6 +271,10 @@ export interface SubscriptionPlan {
   yearlyPecentageDiscount: number;
   quarterlyPecentageDiscount: number | null;
   catalogItemLimit: number | null;
+  /** Plan-derived staff seat budget. Convention: 0 means staff
+   *  accounts are not part of the plan, a positive integer caps the
+   *  seat count, and null means unlimited (mirrors catalogItemLimit). */
+  staffLimit: number | null;
   price: number;
   isPopular: boolean;
   badge: string | null;
@@ -507,4 +511,51 @@ export interface UnreadCountResponse {
   message: string;
   code: string;
   data: number;
+}
+
+/** Mirrors `StaffStatus` enum on the backend (1-indexed). */
+export type StaffStatus = 'Pending' | 'Active' | 'Suspended' | 'Removed';
+
+export interface StaffMember {
+  id: string;
+  userId: string;
+  fullName: string;
+  email: string;
+  permissions: string[];
+  status: StaffStatus;
+  invitedAt: string;
+  acceptedAt: string | null;
+}
+
+export interface StaffListResult {
+  staff: StaffMember[];
+  /** Plan-derived seat budget. Null means unlimited. */
+  seatLimit: number | null;
+  seatsUsed: number;
+}
+
+export interface InviteStaffPayload {
+  fullName: string;
+  email: string;
+  permissions: string[];
+}
+
+export interface UpdateStaffPermissionsPayload {
+  staffId: string;
+  permissions: string[];
+}
+
+export interface OrderActivity {
+  id: string;
+  batchId: string;
+  /** Stable string keys: payment_confirmed | payment_rejected | status_changed.
+   *  Free-form strings on the wire so adding a new action doesn't break
+   *  older clients. */
+  action: string;
+  /** JSON-encoded extra context, action-specific. */
+  metadata: string | null;
+  /** Cached display name of the actor at the time of the action.
+   *  Empty / null when the action was system-driven. */
+  actorName: string | null;
+  createdAt: string;
 }

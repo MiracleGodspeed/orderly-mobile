@@ -35,6 +35,8 @@ import {
 } from "../../src/api/vendor/vendor.api";
 import { getDisplayPrice, FeeBearer } from "../lib/pricing";
 import { useVendor } from "../../context/VendorContext";
+import { useStaffPermissions } from "../hooks/useStaffPermissions";
+import { STAFF_PERMISSIONS } from "../lib/staffPermissions";
 import { CatalogCategory } from "../../src/api/vendor/vendor.types";
 import { CategoryManagerSheet } from "../components/CategoryManagerSheet";
 import { CategoryPickerSheet } from "../components/CategoryPickerSheet";
@@ -177,6 +179,10 @@ export default function ProductsList() {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { storeData, fetchVendorData } = useVendor();
+  const perms = useStaffPermissions();
+  const canCreate = perms.has(STAFF_PERMISSIONS.CATALOG_CREATE);
+  const canEdit = perms.has(STAFF_PERMISSIONS.CATALOG_EDIT);
+  const canDelete = perms.has(STAFF_PERMISSIONS.CATALOG_DELETE);
 
   // Real-time discount + fee-bearer from the store record. When either changes
   // (after Save in the drawers below), every <ProductCard> re-renders with
@@ -857,7 +863,7 @@ export default function ProductsList() {
           ? "Try a different search term."
           : "Start building your catalog by adding your first product."}
       </Text>
-      {!debouncedSearch && (
+      {!debouncedSearch && canCreate && (
         <Pressable
           onPress={() => {
             if (Platform.OS === "ios") {
@@ -939,29 +945,32 @@ export default function ProductsList() {
         />
       </ScrollView>
 
-      {/* FAB */}
-      <View className="absolute bottom-8 right-6">
-        <Pressable
-          onPress={() => {
-            if (Platform.OS === "ios") {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
-                () => {}
-              );
-            }
-            setShowAddProductModal(true);
-          }}
-          className="bg-blue-600 w-14 h-14 rounded-full items-center justify-center"
-          style={{
-            shadowColor: "#2563eb",
-            shadowOffset: { width: 0, height: 6 },
-            shadowOpacity: 0.35,
-            shadowRadius: 12,
-            elevation: 8,
-          }}
-        >
-          <MaterialIcons name="add" size={28} color="white" />
-        </Pressable>
-      </View>
+      {/* FAB — hidden for staff who can't create catalog items. Edit
+          and delete are gated separately on the product details modal. */}
+      {canCreate && (
+        <View className="absolute bottom-8 right-6">
+          <Pressable
+            onPress={() => {
+              if (Platform.OS === "ios") {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(
+                  () => {}
+                );
+              }
+              setShowAddProductModal(true);
+            }}
+            className="bg-blue-600 w-14 h-14 rounded-full items-center justify-center"
+            style={{
+              shadowColor: "#2563eb",
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.35,
+              shadowRadius: 12,
+              elevation: 8,
+            }}
+          >
+            <MaterialIcons name="add" size={28} color="white" />
+          </Pressable>
+        </View>
+      )}
 
       <AddProductModal
         visible={showAddProductModal}
@@ -1144,6 +1153,8 @@ export default function ProductsList() {
         product={selectedProduct}
         onEdit={handleEditProduct}
         onDelete={handleDeleteProduct}
+        canEdit={canEdit}
+        canDelete={canDelete}
       />
       {/* Apply Discount */}
       <BottomSheet

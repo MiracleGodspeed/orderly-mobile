@@ -23,6 +23,12 @@ interface Props {
   product: Product | null;
   onEdit: () => void;
   onDelete: () => Promise<void>;
+  /** Hide the Edit button when the active session lacks
+   *  catalog.edit. Defaults to true so vendors / admins are unaffected. */
+  canEdit?: boolean;
+  /** Hide the Delete button when the active session lacks
+   *  catalog.delete. Defaults to true. */
+  canDelete?: boolean;
 }
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
@@ -39,6 +45,8 @@ export default function ProductDetailsModal({
   product,
   onEdit,
   onDelete,
+  canEdit = true,
+  canDelete = true,
 }: Props) {
   const [showDeleteConfirmation, setShowDeleteConfirmation] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
@@ -441,55 +449,63 @@ export default function ProductDetailsModal({
           </View>
         </ScrollView>
 
-        {/* Sticky action bar */}
-        <View
-          className="px-5 pt-3 pb-7 border-t border-gray-100 bg-white"
-          style={{
-            shadowColor: "#0f172a",
-            shadowOffset: { width: 0, height: -3 },
-            shadowOpacity: 0.04,
-            shadowRadius: 8,
-            elevation: 6,
-          }}
-        >
-          <View className="flex-row gap-3">
-            <Pressable
-              onPress={() => {
-                haptic();
-                setShowDeleteConfirmation(true);
-              }}
-              className="flex-1 h-12 rounded-2xl border border-rose-100 bg-white items-center justify-center flex-row gap-2 active:bg-rose-50"
-            >
-              <Ionicons name="trash-outline" size={16} color="#dc2626" />
-              <Text className="text-rose-600 text-[14.5px]"
-                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
-              >
-                Delete
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                haptic();
-                onEdit();
-              }}
-              className="flex-1 h-12 rounded-2xl bg-blue-600 items-center justify-center flex-row gap-2"
-              style={{
-                shadowColor: "#2563eb",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.25,
-                shadowRadius: 8,
-                elevation: 4,
-              }}
-            >
-              <Ionicons name="create-outline" size={16} color="white" />
-              <Text className="text-white text-[14.5px]"
-                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
-              >
-                Edit product
-              </Text>
-            </Pressable>
+        {/* Sticky action bar — entire bar disappears when the staff
+            session has neither edit nor delete, so we don't render an
+            empty white strip on view-only sessions. */}
+        {(canEdit || canDelete) && (
+          <View
+            className="px-5 pt-3 pb-7 border-t border-gray-100 bg-white"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: -3 },
+              shadowOpacity: 0.04,
+              shadowRadius: 8,
+              elevation: 6,
+            }}
+          >
+            <View className="flex-row gap-3">
+              {canDelete && (
+                <Pressable
+                  onPress={() => {
+                    haptic();
+                    setShowDeleteConfirmation(true);
+                  }}
+                  className="flex-1 h-12 rounded-2xl border border-rose-100 bg-white items-center justify-center flex-row gap-2 active:bg-rose-50"
+                >
+                  <Ionicons name="trash-outline" size={16} color="#dc2626" />
+                  <Text className="text-rose-600 text-[14.5px]"
+                    style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                  >
+                    Delete
+                  </Text>
+                </Pressable>
+              )}
+              {canEdit && (
+                <Pressable
+                  onPress={() => {
+                    haptic();
+                    onEdit();
+                  }}
+                  className="flex-1 h-12 rounded-2xl bg-blue-600 items-center justify-center flex-row gap-2"
+                  style={{
+                    shadowColor: "#2563eb",
+                    shadowOffset: { width: 0, height: 4 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 8,
+                    elevation: 4,
+                  }}
+                >
+                  <Ionicons name="create-outline" size={16} color="white" />
+                  <Text className="text-white text-[14.5px]"
+                    style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                  >
+                    Edit product
+                  </Text>
+                </Pressable>
+              )}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Delete confirmation */}
         {showDeleteConfirmation && (

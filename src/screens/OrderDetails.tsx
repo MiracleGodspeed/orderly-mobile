@@ -25,7 +25,12 @@ import {
   confirmManualPayment,
   rejectManualPayment,
   updateOrderStatusByBatch,
+  listOrderActivity,
 } from "../api/vendor/vendor.api";
+import { OrderActivity } from "../api/vendor/vendor.types";
+import { useStaffPermissions } from "../hooks/useStaffPermissions";
+import { STAFF_PERMISSIONS } from "../lib/staffPermissions";
+import { formatRelativeTime, parseBackendDate } from "../lib/format";
 
 type ScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -76,6 +81,29 @@ const normalizePhone = (raw: string, defaultDialCode = "234"): string => {
 };
 
 export type OrderStatus = "Pending" | "Paid" | "Shipped";
+
+// Renders an audit row's headline. Status changes carry the new status
+// in their metadata blob; we surface that inline ("Marked as Shipped")
+// so the timeline reads naturally rather than as opaque event keys.
+const auditTitle = (a: OrderActivity): string => {
+  if (a.action === "payment_confirmed") return "Payment confirmed";
+  if (a.action === "payment_rejected") return "Payment rejected";
+  if (a.action === "status_changed") {
+    let nextStatus = "";
+    if (a.metadata) {
+      try {
+        nextStatus = (JSON.parse(a.metadata)?.newStatus as string) ?? "";
+      } catch {
+        // Bad JSON — fall back to the plain title.
+      }
+    }
+    if (nextStatus.toLowerCase() === "dispatched") return "Marked as shipped";
+    if (nextStatus.toLowerCase() === "delivered") return "Marked as delivered";
+    if (nextStatus) return `Status changed to ${nextStatus}`;
+    return "Status updated";
+  }
+  return a.action;
+};
 
 // Resolves to the UI status from both backend fields. Order-line status
 // takes precedence for shipped states (Dispatched / Delivered) — that's
@@ -207,11 +235,37 @@ export default function OrderDetailsScreen() {
   const order = route.params?.order;
   const safeOrder = order ?? ({} as Order);
   const qc = useQueryClient();
+  const perms = useStaffPermissions();
 
   const [status, setStatus] = useState<OrderStatus>(mapStatus(safeOrder));
   // Disables the action buttons while a status-change request is in
   // flight so a double-tap doesn't fire two API calls.
   const [statusUpdating, setStatusUpdating] = useState(false);
+
+  // Permission gates — vendors and admins always pass; staff only
+  // surface actions they're entitled to perform. The forward action
+  // (Mark as Paid / Mark as Shipped) maps to the corresponding write
+  // permission; the backward action depends on which step we're undoing
+  // (Paid → Pending = reject, Shipped → Paid = status update).
+  const canConfirmPayment = perms.has(STAFF_PERMISSIONS.ORDERS_CONFIRM);
+  const canRejectPayment = perms.has(STAFF_PERMISSIONS.ORDERS_REJECT);
+  const canUpdateStatus = perms.has(STAFF_PERMISSIONS.ORDERS_UPDATE_STATUS);
+
+  // Audit timeline for the order. Refetched after each successful
+  // status change so the new entry appears immediately.
+  const [activity, setActivity] = useState<OrderActivity[]>([]);
+  const refreshActivity = React.useCallback(async () => {
+    if (!safeOrder.id) return;
+    try {
+      const rows = await listOrderActivity(safeOrder.id);
+      setActivity(rows);
+    } catch {
+      // Timeline is best-effort — failures don't block the screen.
+    }
+  }, [safeOrder.id]);
+  React.useEffect(() => {
+    refreshActivity();
+  }, [refreshActivity]);
 
   // Whether this order originated from the manual bank-transfer flow.
   // The backwards "Move back to Pending" action only makes sense for
@@ -253,6 +307,7 @@ export default function OrderDetailsScreen() {
         toast.show("Order marked as shipped", { type: "success" });
       }
       invalidateOrders();
+      refreshActivity();
     } catch (err: any) {
       setStatus(previous);
       toast.show(err?.message || "Couldn't update the order", { type: "danger" });
@@ -287,6 +342,7 @@ export default function OrderDetailsScreen() {
         toast.show("Order moved back to paid", { type: "success" });
       }
       invalidateOrders();
+      refreshActivity();
     } catch (err: any) {
       setStatus(previous);
       toast.show(err?.message || "Couldn't update the order", { type: "danger" });
@@ -865,13 +921,110 @@ export default function OrderDetailsScreen() {
             </View>
           </View>
         </View>
+
+        {/* Audit timeline — who did what to this order. Hidden when no
+            activity is recorded yet (e.g. brand-new order). */}
+        {activity.length > 0 && (
+          <View className="mx-5 mt-4">
+            <Text
+              className="text-[11px] text-gray-400 uppercase tracking-[1.2px] mb-2 px-1"
+              style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+            >
+              Activity
+            </Text>
+            <View className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              {activity.slice(0, 5).map((a, i) => (
+                <View
+                  key={a.id}
+                  className={`flex-row items-start px-4 py-3 ${
+                    i !== Math.min(activity.length, 5) - 1
+                      ? "border-b border-gray-100"
+                      : ""
+                  }`}
+                >
+                  <View
+                    className="w-7 h-7 rounded-full items-center justify-center mr-3 mt-0.5"
+                    style={{
+                      backgroundColor:
+                        a.action === "payment_confirmed"
+                          ? "#ecfdf5"
+                          : a.action === "payment_rejected"
+                          ? "#fef2f2"
+                          : "#eff6ff",
+                    }}
+                  >
+                    <Ionicons
+                      name={
+                        a.action === "payment_confirmed"
+                          ? "checkmark-circle-outline"
+                          : a.action === "payment_rejected"
+                          ? "close-circle-outline"
+                          : "swap-horizontal-outline"
+                      }
+                      size={14}
+                      color={
+                        a.action === "payment_confirmed"
+                          ? "#047857"
+                          : a.action === "payment_rejected"
+                          ? "#b91c1c"
+                          : "#1d4ed8"
+                      }
+                    />
+                  </View>
+                  <View className="flex-1 min-w-0">
+                    <Text
+                      className="text-[13px] text-gray-900"
+                      style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                      numberOfLines={1}
+                    >
+                      {auditTitle(a)}
+                    </Text>
+                    <Text
+                      className="text-[11.5px] text-gray-500 mt-0.5"
+                      numberOfLines={1}
+                    >
+                      {a.actorName ? `${a.actorName} · ` : ""}
+                      {formatRelativeTime(parseBackendDate(a.createdAt))}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
       </ScrollView>
 
       {/* === FLOATING ACTION BAR ===
           Forward action advances the order one step. Backward action lets
           the vendor undo a mistake, gated behind a confirm so a stray tap
-          on the bottom of the screen doesn't silently rewind status. */}
-      {(action || prevAction) && (
+          on the bottom of the screen doesn't silently rewind status.
+          Each action is gated by a permission claim — staff without the
+          relevant permission don't see the button at all. */}
+      {(() => {
+        // Forward action: Pending→Paid needs orders.confirm,
+        // Paid→Shipped needs orders.update_status. Anything else means
+        // the action shouldn't render for this user.
+        const forwardAllowed =
+          action?.next === "Paid"
+            ? canConfirmPayment
+            : action?.next === "Shipped"
+            ? canUpdateStatus
+            : true;
+
+        // Backward action: Paid→Pending uses the manual-reject endpoint
+        // (orders.reject). Shipped→Paid uses status update.
+        const backwardAllowed =
+          prevAction?.prev === "Pending"
+            ? canRejectPayment && isManualPayment
+            : prevAction?.prev === "Paid"
+            ? canUpdateStatus
+            : false;
+
+        const showForward = !!action && forwardAllowed;
+        const showBackward = !!prevAction && backwardAllowed;
+        if (!showForward && !showBackward) return null;
+
+        return (
         <View
           className="absolute bottom-0 left-0 right-0 px-5 pt-3 pb-7 bg-white border-t border-gray-100"
           style={{
@@ -883,7 +1036,7 @@ export default function OrderDetailsScreen() {
           }}
         >
           <View className="flex-row gap-2">
-            {prevAction ? (
+            {showBackward && prevAction ? (
               <Pressable
                 disabled={statusUpdating}
                 onPress={() => {
@@ -901,19 +1054,19 @@ export default function OrderDetailsScreen() {
                   );
                 }}
                 className={`${
-                  action ? "" : "flex-1"
+                  showForward ? "" : "flex-1"
                 } rounded-2xl py-4 px-4 flex-row items-center justify-center gap-1.5 border border-gray-200 bg-white active:bg-gray-50 ${
                   statusUpdating ? "opacity-50" : ""
                 }`}
               >
                 <Ionicons name="arrow-undo" size={15} color="#475569" />
                 <Text className="text-gray-700 font-extrabold text-[13.5px]">
-                  {action ? "Undo" : prevAction.label}
+                  {showForward ? "Undo" : prevAction.label}
                 </Text>
               </Pressable>
             ) : null}
 
-            {action ? (
+            {showForward && action ? (
               <Pressable
                 disabled={statusUpdating}
                 onPress={() => advanceTo(action.next)}
@@ -945,7 +1098,8 @@ export default function OrderDetailsScreen() {
             ) : null}
           </View>
         </View>
-      )}
+        );
+      })()}
     </View>
   );
 }

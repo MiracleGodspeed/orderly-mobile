@@ -16,6 +16,8 @@ import {
   Bank, GetBanksResponse, ValidateAccountData,
   AppNotification, GetNotificationsResponse, UnreadCountResponse,
   VendorCustomer, GetVendorCustomersResponse,
+  StaffMember, StaffListResult, InviteStaffPayload, UpdateStaffPermissionsPayload,
+  OrderActivity,
 } from "./vendor.types";
 
 
@@ -800,6 +802,11 @@ export const getMyDomains = async (): Promise<MyDomain[]> => {
 export interface MyFeaturesData {
   keys: string[] | null;
   planName: string | null;
+  /** Staff seat budget on the active plan. Wire convention: 0 or null
+   *  means the Staff & permissions feature is locked for this vendor;
+   *  a positive integer is the seat cap. Trial vendors get a
+   *  sentinel-large value so the row unlocks during trial. */
+  staffLimit: number | null;
 }
 
 export const getMyFeatures = async (): Promise<MyFeaturesData> => {
@@ -1076,4 +1083,89 @@ export const getVendorCustomers = async (params?: {
     totalCount: response.data.totalCount ?? 0,
     totalPages: response.data.totalPages ?? 0,
   };
+};
+
+// --- Staff & Permissions ---
+
+export const listStaff = async (): Promise<StaffListResult> => {
+  const res = await apiClient.get<{ code: string; message: string; data: StaffListResult }>(
+    '/staff/list',
+    { validateStatus: () => true }
+  );
+  if (res.data?.code !== '200') {
+    throw new Error(res.data?.message || "Couldn't load staff list.");
+  }
+  return res.data.data;
+};
+
+export const inviteStaff = async (payload: InviteStaffPayload): Promise<StaffMember> => {
+  const res = await apiClient.post<{ code: string; message: string; data: StaffMember }>(
+    '/staff/invite',
+    payload,
+    { validateStatus: () => true }
+  );
+  if (res.data?.code !== '200') {
+    throw new Error(res.data?.message || "Couldn't send invite.");
+  }
+  return res.data.data;
+};
+
+export const updateStaffPermissions = async (
+  payload: UpdateStaffPermissionsPayload
+): Promise<void> => {
+  const res = await apiClient.post<{ code: string; message: string }>(
+    '/staff/update-permissions',
+    payload,
+    { validateStatus: () => true }
+  );
+  if (res.data?.code !== '200') {
+    throw new Error(res.data?.message || "Couldn't update permissions.");
+  }
+};
+
+export const suspendStaff = async (staffId: string): Promise<void> => {
+  const res = await apiClient.post<{ code: string; message: string }>(
+    '/staff/suspend',
+    null,
+    { params: { staffId }, validateStatus: () => true }
+  );
+  if (res.data?.code !== '200') {
+    throw new Error(res.data?.message || "Couldn't suspend staff.");
+  }
+};
+
+export const reactivateStaff = async (staffId: string): Promise<void> => {
+  const res = await apiClient.post<{ code: string; message: string }>(
+    '/staff/reactivate',
+    null,
+    { params: { staffId }, validateStatus: () => true }
+  );
+  if (res.data?.code !== '200') {
+    throw new Error(res.data?.message || "Couldn't reactivate staff.");
+  }
+};
+
+export const removeStaff = async (staffId: string): Promise<void> => {
+  const res = await apiClient.post<{ code: string; message: string }>(
+    '/staff/remove',
+    null,
+    { params: { staffId }, validateStatus: () => true }
+  );
+  if (res.data?.code !== '200') {
+    throw new Error(res.data?.message || "Couldn't remove staff.");
+  }
+};
+
+// Returns the audit timeline for a single order (BatchId). Newest first.
+// The OrderDetails screen pings this whenever it opens to show "Confirmed
+// by Tunde · 12 mins ago" alongside the action buttons.
+export const listOrderActivity = async (batchId: string): Promise<OrderActivity[]> => {
+  const res = await apiClient.get<{ code: string; message: string; data: OrderActivity[] }>(
+    '/order-requests/activity',
+    { params: { batchId }, validateStatus: () => true }
+  );
+  if (res.data?.code !== '200') {
+    return [];
+  }
+  return res.data.data ?? [];
 };

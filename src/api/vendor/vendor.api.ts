@@ -9,6 +9,7 @@ import {
   CreateProductPayload,
   UpdateProductPayload,
   PaginatedOrdersResponse, GetOrdersParams,
+  LogOfflineOrderRequest,
   SubscriptionHistoryResponse, SubscriptionHistoryParams, SubscriptionHistory,
   GetPlansResponse, ApiSubscriptionPlan,
   StorePerformanceReportResponse, StorePerformanceReportData,
@@ -204,12 +205,20 @@ export const applyGlobalDiscount = async (
 };
 
 /**
- * Set who absorbs the transaction fee — `customer` (added at checkout),
- * `vendor` (deducted from settlement), or `included` (already baked into
- * the listed price).
+ * Sets the storefront's charge-bearer / payment-mode setting.
+ *
+ * Three values represent the platform-fee-bearer (online payment):
+ *   - `customer` — fee added on top at checkout
+ *   - `vendor`   — fee deducted from settlement
+ *   - `included` — already baked into the listed price
+ *
+ * One value flips the entire payment mode:
+ *   - `direct`   — customer transfers straight to the vendor's bank
+ *                  account; backend sets `transferDirectlyToVendor=true`
+ *                  and disables Paystack auto-collection.
  */
 export const setTransactionChargeBearer = async (
-  bearer: "vendor" | "customer" | "included"
+  bearer: "vendor" | "customer" | "included" | "direct"
 ): Promise<{ message: string; code: string }> => {
   const response = await apiClient.post<{ message: string; code: string }>(
     `/storefront/set-transaction-charge-bearer?chargeBearer=${encodeURIComponent(
@@ -457,6 +466,83 @@ export const getPaidOrders = async (
   return res.data;
 };
 
+// Manual bank-transfer orders sit in `pending_vendor_manual_confirmation`
+// until the vendor confirms. Keeping them off the Orders list would mean
+// the vendor never sees the orders that need their attention — so we
+// merge this bucket into useOrders alongside the paid list.
+export const getUnpaidOrders = async (
+  params?: GetOrdersParams
+): Promise<PaginatedOrdersResponse> => {
+  const res = await apiClient.get<PaginatedOrdersResponse>(
+    '/order-requests/get-unpaid-catalog-items',
+    {
+      params,
+      validateStatus: () => true
+    }
+  );
+  return res.data;
+};
+
+// Updates every OrderRequest row under a BatchId to the given status —
+// what the OrderDetails screen calls when the vendor flips Mark as
+// Shipped, undoes a Shipped state, etc. The backend scopes the write to
+// the calling vendor's storeId so this is safe even though the BatchId
+// is exposed on the response.
+export const updateOrderStatusByBatch = async (
+  batchId: string,
+  status: 'pending' | 'Confirmed' | 'Processing' | 'Dispatched' | 'Delivered' | 'Cancelled'
+): Promise<void> => {
+  const response = await apiClient.post<{ code: string; message: string }>(
+    '/order-requests/update-status-by-batch',
+    { batchId, status },
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== '200') {
+    throw new Error(response.data?.message || "Couldn't update order status.");
+  }
+};
+
+export const logOfflineOrder = async (
+  payload: LogOfflineOrderRequest
+): Promise<{ batchId: string }> => {
+  // Backend accepts PascalCase property names (System.Text.Json case-
+  // insensitive default) but we send the camelCase shape for symmetry
+  // with the rest of the API surface. Server treats "channel"/"items"/etc.
+  // identically.
+  const response = await apiClient.post<{
+    code: string;
+    message: string;
+    data: string;
+  }>(
+    '/order-requests/log-offline',
+    {
+      CustomerName: payload.customerName,
+      CustomerPhone: payload.customerPhone,
+      CustomerEmail: payload.customerEmail,
+      Channel: payload.channel,
+      MarkAsPaid: payload.markAsPaid ?? true,
+      Notes: payload.notes,
+      Items: payload.items.map((item) => ({
+        CatalogItemId: item.catalogItemId,
+        Quantity: item.quantity,
+        UnitPrice: item.unitPrice,
+        Color: item.color,
+        Size: item.size,
+      })),
+    },
+    { validateStatus: () => true }
+  );
+
+  if (response.data?.code !== '200') {
+    const detail =
+      response.data?.message ||
+      `HTTP ${response.status} ${response.statusText ?? ''}`.trim();
+    throw new Error(detail || "Couldn't log the order.");
+  }
+
+  return { batchId: response.data.data };
+};
+
 export const createVendorSubscription = async (
   payload: import("./vendor.types").CreateVendorSubscriptionPayload
 ): Promise<import("./vendor.types").CreateVendorSubscriptionData> => {
@@ -538,17 +624,18 @@ export const getAvailablePlans = async (): Promise<ApiSubscriptionPlan[]> => {
 };
 
 export const getStorePerformanceReport = async (
-  durationValue?: number,
   datefrom?: string,
   dateto?: string
 ): Promise<StorePerformanceReportData> => {
+  // We always send a precise from/to window now — the server's
+  // durationValue path was a rolling N-day window that drifted with
+  // the time of day, which made "Today" / "Last week" inaccurate.
   const response = await apiClient.get<StorePerformanceReportResponse>(
     `/reporting/store-performance-report`,
     {
       params: {
-        durationValue,
         datefrom,
-        dateto
+        dateto,
       },
       validateStatus: () => true,
     }
@@ -838,11 +925,52 @@ export const getUnreadNotificationCount = async (): Promise<number> => {
   return Number(response.data.data) || 0;
 };
 
-export const markNotificationAsRead = async (id: string): Promise<void> => {
+/**
+ * Vendor confirms that a manual bank-transfer order's payment has hit
+ * their bank account. Backend flips the payment status to success,
+ * deducts stock, and emails / pushes the customer a confirmation.
+ * Returns true on success, false when already-confirmed.
+ */
+export const confirmManualPayment = async (reference: string): Promise<void> => {
+  const response = await apiClient.get<{ code: string; message: string }>(
+    "/payment/confirm-payment",
+    { params: { reference }, validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't confirm the payment.");
+  }
+};
+
+/**
+ * Vendor rejects a manual bank-transfer — payment didn't actually hit
+ * their account, or the customer is messing with them. Optional reason
+ * is stored on the payment for audit.
+ */
+export const rejectManualPayment = async (
+  reference: string,
+  reason?: string
+): Promise<void> => {
+  const response = await apiClient.post<{ code: string; message: string }>(
+    "/payment/manual/reject",
+    null,
+    {
+      params: { reference, reason: reason || undefined },
+      validateStatus: () => true,
+    }
+  );
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't reject the payment.");
+  }
+};
+
+export const markNotificationAsRead = async (
+  id: string,
+  kind: "notification" | "announcement" = "notification"
+): Promise<void> => {
   const response = await apiClient.post<{ code: string; message: string }>(
     "/notifications/mark-as-read",
     null,
-    { params: { id }, validateStatus: () => true }
+    { params: { id, kind }, validateStatus: () => true }
   );
   if (response.data?.code !== "200") {
     throw new Error(response.data?.message || "Couldn't mark as read");

@@ -8,6 +8,10 @@ import {
   registerPushToken,
   unregisterPushToken,
 } from "../api/notifications/notifications.api";
+import {
+  confirmManualPayment,
+  rejectManualPayment,
+} from "../api/vendor/vendor.api";
 import { navigate } from "../navigation/NavigationService";
 
 const STORED_TOKEN_KEY = "orderly.pushToken";
@@ -44,6 +48,46 @@ async function ensureAndroidChannels() {
     importance: Notifications.AndroidImportance.HIGH,
     lightColor: "#265CC7",
   });
+}
+
+// Identifier the backend stamps on actionable pushes for manual bank
+// transfers. Both sides MUST agree on this string — it's how iOS /
+// Android know to render the [Confirm Payment] / [Reject] buttons under
+// the notification body.
+const MANUAL_PAYMENT_CATEGORY = "manual_payment_confirm";
+const ACTION_CONFIRM = "confirm_payment";
+const ACTION_REJECT = "reject_payment";
+
+/**
+ * Registers the notification categories that drive the action buttons
+ * on push notifications. Call once at app boot. Idempotent — safe to
+ * re-run on every cold start.
+ */
+async function ensureNotificationCategories() {
+  try {
+    await Notifications.setNotificationCategoryAsync(MANUAL_PAYMENT_CATEGORY, [
+      {
+        identifier: ACTION_CONFIRM,
+        buttonTitle: "Confirm payment",
+        // Foreground = false → tapping fires the action handler without
+        // bringing the app to the foreground. Faster, less disruptive
+        // for vendors mid-conversation.
+        options: { opensAppToForeground: false },
+      },
+      {
+        identifier: ACTION_REJECT,
+        buttonTitle: "Reject",
+        // Reject we DO open to foreground so the vendor can optionally
+        // add a reason. The handler will navigate to the order detail
+        // with a reject sheet pre-opened.
+        options: { opensAppToForeground: true, isDestructive: true },
+      },
+    ]);
+  } catch (err) {
+    if (__DEV__) {
+      console.warn("[push] Failed to register notification categories", err);
+    }
+  }
 }
 
 async function requestPermission(): Promise<boolean> {
@@ -143,12 +187,73 @@ function handleTap(data: Record<string, any> | undefined) {
     case "new_order":
       navigate("Orders" as any);
       break;
+    case "manual_payment_confirm":
+      // Tapping the body (not a button) of a manual-payment push opens
+      // the orders list so the vendor can drill in and confirm/reject
+      // from the in-app UI as well. The reference is preserved in the
+      // route params for the orders screen to highlight the row.
+      navigate("Orders" as any, { highlightReference: data.reference });
+      break;
     case "subscription_expiry":
       navigate("SubscriptionBilling" as any);
       break;
     default:
       navigate("Notifications" as any);
       break;
+  }
+}
+
+/**
+ * Dispatches the chosen action from a manual-payment push to the
+ * appropriate backend endpoint. Buttons are typed via the action
+ * identifiers we registered with the notification category.
+ *
+ * For Confirm: fire-and-forget, since opensAppToForeground is false —
+ * the vendor sees a system-level success/fail haptic.
+ * For Reject:  navigate to OrderDetails so the vendor can attach a
+ *              reason note before submitting.
+ */
+async function handleNotificationAction(
+  actionId: string,
+  data: Record<string, any> | undefined
+) {
+  if (!data || typeof data !== "object") return;
+  const reference = typeof data.reference === "string" ? data.reference : null;
+  if (!reference) {
+    if (__DEV__) {
+      console.warn("[push] manual-payment action fired without reference", data);
+    }
+    return;
+  }
+
+  if (actionId === ACTION_CONFIRM) {
+    try {
+      await confirmManualPayment(reference);
+      if (__DEV__) console.log("[push] confirmed payment", reference);
+    } catch (err) {
+      if (__DEV__) console.warn("[push] confirm payment failed", err);
+      // The app is still backgrounded at this point — opening it would
+      // be jarring. The next time the vendor opens the app the order
+      // will still be in the inbox; they can retry from there.
+    }
+    return;
+  }
+
+  if (actionId === ACTION_REJECT) {
+    // Foreground action — opens a dedicated modal screen where the
+    // vendor can pick a reason and submit. The screen handles the API
+    // call + toast + back-navigation itself.
+    const orderTotal = typeof data.orderTotal === "number"
+      ? data.orderTotal
+      : Number(data.orderTotal) || undefined;
+    const customerName = typeof data.customerName === "string" && data.customerName.length > 0
+      ? data.customerName
+      : undefined;
+    navigate("RejectManualPayment" as any, {
+      reference,
+      customerName,
+      orderTotal,
+    });
   }
 }
 
@@ -162,6 +267,7 @@ export function usePushNotifications() {
 
   useEffect(() => {
     ensureAndroidChannels().catch(() => {});
+    ensureNotificationCategories().catch(() => {});
 
     receivedSub.current = Notifications.addNotificationReceivedListener(
       (notification) => {
@@ -177,7 +283,19 @@ export function usePushNotifications() {
         const data = response.notification.request.content.data as
           | Record<string, any>
           | undefined;
-        handleTap(data);
+        const actionId = response.actionIdentifier;
+
+        // Default tap (body) — Expo uses a sentinel id for "user opened
+        // the notification without picking an action button". Anything
+        // else is one of our registered action identifiers.
+        if (
+          actionId === Notifications.DEFAULT_ACTION_IDENTIFIER ||
+          !actionId
+        ) {
+          handleTap(data);
+          return;
+        }
+        handleNotificationAction(actionId, data);
       }
     );
 
@@ -188,7 +306,15 @@ export function usePushNotifications() {
           const data = response.notification.request.content.data as
             | Record<string, any>
             | undefined;
-          handleTap(data);
+          const actionId = response.actionIdentifier;
+          if (
+            actionId === Notifications.DEFAULT_ACTION_IDENTIFIER ||
+            !actionId
+          ) {
+            handleTap(data);
+          } else {
+            handleNotificationAction(actionId, data);
+          }
         }
       })
       .catch(() => {});

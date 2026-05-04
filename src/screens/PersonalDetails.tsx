@@ -11,11 +11,10 @@ import {
 import { useState, useEffect, useMemo } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
-import { useToast } from "react-native-toast-notifications";
-
 import { useVendor } from "../../context/VendorContext";
 import { ScreenHeader } from "../components/ScreenHeader";
 import KeyboardScreen from "../components/KeyboardScreen";
+import { AppToast, AppToastTone } from "../components/AppToast";
 import { updatePersonalProfile } from "../api/vendor/vendor.api";
 
 const haptic = () => {
@@ -35,8 +34,12 @@ const getInitials = (name: string): string => {
 };
 
 export default function PersonalDetails() {
-  const toast = useToast();
   const { storeData, fetchVendorData } = useVendor();
+  const [toast, setToast] = useState<{
+    title: string;
+    subtitle?: string;
+    tone?: AppToastTone;
+  } | null>(null);
 
   const [fullName, setFullName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -63,7 +66,7 @@ export default function PersonalDetails() {
   const handleSave = async () => {
     if (!isDirty || saving) return;
     if (!fullName.trim()) {
-      toast.show("Name can't be empty", { type: "danger" });
+      setToast({ title: "Name can't be empty", tone: "error" });
       return;
     }
     haptic();
@@ -76,13 +79,19 @@ export default function PersonalDetails() {
       // Refetch so storeData reflects the new values everywhere
       // (Home greeting, profile menu, etc.).
       await fetchVendorData();
-      toast.show("Profile updated", { type: "success" });
+      setToast({
+        title: "Profile updated",
+        subtitle: fullName.trim(),
+        tone: "success",
+      });
     } catch (err: any) {
       // Log to console too so the actual stack/network detail is
       // visible during dev, not just the toast.
       console.error("Update personal profile failed:", err);
-      toast.show(err?.message || "Couldn't update profile", {
-        type: "danger",
+      setToast({
+        title: "Couldn't update profile",
+        subtitle: err?.message || "Try again in a moment.",
+        tone: "error",
       });
     } finally {
       setSaving(false);
@@ -92,6 +101,13 @@ export default function PersonalDetails() {
   return (
     <View className="flex-1 bg-gray-50">
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <AppToast
+        visible={toast != null}
+        title={toast?.title ?? ""}
+        subtitle={toast?.subtitle}
+        tone={toast?.tone}
+        onHide={() => setToast(null)}
+      />
       <ScreenHeader title="Personal details" />
 
       <KeyboardScreen>
@@ -186,7 +202,7 @@ export default function PersonalDetails() {
                   <TextInput
                     value={phoneNumber}
                     onChangeText={setPhoneNumber}
-                    placeholder="08012345678"
+                    placeholder="Enter your phone number"
                     placeholderTextColor="#cbd5e1"
                     className="flex-1 ml-2.5 text-[15px] font-semibold text-gray-900"
                     keyboardType="phone-pad"

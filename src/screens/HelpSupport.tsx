@@ -16,9 +16,11 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
-import { useToast } from "react-native-toast-notifications";
 
 import { RootStackParamList } from "../navigation/types";
+import { AppToast, AppToastTone } from "../components/AppToast";
+
+type Notify = (t: { title: string; subtitle?: string; tone?: AppToastTone }) => void;
 import { useVendor } from "../../context/VendorContext";
 import { useSupportConfig } from "../hooks/useSupportConfig";
 import {
@@ -146,10 +148,10 @@ function ContactChannels({ config, onOpenLink }: ContactChannelsProps) {
 interface ContactFormProps {
   email: string;
   onSubmitted: () => void;
+  notify: Notify;
 }
 
-function ContactForm({ email, onSubmitted }: ContactFormProps) {
-  const toast = useToast();
+function ContactForm({ email, onSubmitted, notify }: ContactFormProps) {
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [focused, setFocused] = useState(false);
@@ -164,14 +166,20 @@ function ContactForm({ email, onSubmitted }: ContactFormProps) {
     try {
       await submitSupportMessage(trimmed);
       haptic("success");
-      toast.show("Message sent — we'll be in touch soon.", { type: "success" });
+      notify({
+        title: "Message sent",
+        subtitle: "We'll be in touch soon.",
+        tone: "success",
+      });
       setMessage("");
       onSubmitted();
     } catch (e: any) {
       console.error("Support submission failed:", e);
       haptic("error");
-      toast.show(e?.message ?? "Couldn't send your message.", {
-        type: "danger",
+      notify({
+        title: "Couldn't send your message",
+        subtitle: e?.message ?? "Try again in a moment.",
+        tone: "error",
       });
     } finally {
       setSubmitting(false);
@@ -310,9 +318,14 @@ function ContactForm({ email, onSubmitted }: ContactFormProps) {
 
 export default function HelpSupport() {
   const navigation = useNavigation<Nav>();
-  const toast = useToast();
   const { storeData } = useVendor();
   const email = storeData?.email ?? "";
+  const [toast, setToast] = useState<{
+    title: string;
+    subtitle?: string;
+    tone?: AppToastTone;
+  } | null>(null);
+  const notify: Notify = (t) => setToast(t);
 
   const { data: config, isLoading, isError, refetch } = useSupportConfig();
 
@@ -320,9 +333,13 @@ export default function HelpSupport() {
     try {
       const can = await Linking.canOpenURL(url);
       if (can) await Linking.openURL(url);
-      else toast.show(`Couldn't open ${label}`, { type: "danger" });
+      else
+        notify({
+          title: `Couldn't open ${label}`,
+          tone: "error",
+        });
     } catch {
-      toast.show(`Couldn't open ${label}`, { type: "danger" });
+      notify({ title: `Couldn't open ${label}`, tone: "error" });
     }
   };
 
@@ -337,6 +354,14 @@ export default function HelpSupport() {
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+
+      <AppToast
+        visible={toast != null}
+        title={toast?.title ?? ""}
+        subtitle={toast?.subtitle}
+        tone={toast?.tone}
+        onHide={() => setToast(null)}
+      />
 
       {/* Header */}
       <View className="bg-white px-5 py-3 border-b border-gray-100 flex-row items-center">
@@ -482,7 +507,7 @@ export default function HelpSupport() {
           ) : showChannels ? (
             <ContactChannels config={config} onOpenLink={openLink} />
           ) : (
-            <ContactForm email={email} onSubmitted={() => {}} />
+            <ContactForm email={email} onSubmitted={() => {}} notify={notify} />
           )}
         </ScrollView>
       </KeyboardAvoidingView>

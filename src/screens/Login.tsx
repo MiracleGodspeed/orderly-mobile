@@ -22,12 +22,11 @@ import {
   GoogleSignin,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
-import { useToast } from "react-native-toast-notifications";
-
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useVendor } from "../../context/VendorContext";
 import { AppImage } from "../components/AppImage";
+import { AppToast, AppToastTone } from "../components/AppToast";
 
 const LOGO = require("../../assets/blackLogo.png");
 const GOOGLE_LOGO = require("../../assets/Google.png");
@@ -41,10 +40,14 @@ const haptic = () => {
 export type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 export default function Login() {
-  const toast = useToast();
   const navigation = useNavigation<ScreenNavigationProp>();
   const { login, googleLogin } = useAuth();
   const { fetchVendorData } = useVendor();
+  const [toast, setToast] = useState<{
+    title: string;
+    subtitle?: string;
+    tone?: AppToastTone;
+  } | null>(null);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -104,10 +107,14 @@ export default function Login() {
       await fetchVendorData();
       navigation.replace(data?.userStatus === 2 ? "SetupStep1" : "Home");
     } catch (err) {
-      let message = "Login failed. Please try again.";
+      let message = "Check your email and password and try again.";
       if (err instanceof Error) message = err.message;
       else if (typeof err === "string") message = err;
-      toast.show(message || "Login failed", { type: "danger" });
+      setToast({
+        title: "Couldn't sign in",
+        subtitle: message,
+        tone: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -116,6 +123,14 @@ export default function Login() {
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+
+      <AppToast
+        visible={toast != null}
+        title={toast?.title ?? ""}
+        subtitle={toast?.subtitle}
+        tone={toast?.tone}
+        onHide={() => setToast(null)}
+      />
 
       <KeyboardAvoidingView
         className="flex-1"

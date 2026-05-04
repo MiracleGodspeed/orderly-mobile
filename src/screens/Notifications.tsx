@@ -7,6 +7,7 @@ import {
   ScrollView,
   RefreshControl,
   Platform,
+  Modal,
 } from "react-native";
 import { useCallback, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -26,7 +27,7 @@ import {
   useNotifications,
   useInvalidateNotifications,
 } from "../hooks/useNotifications";
-import { formatRelativeTime } from "../lib/format";
+import { formatRelativeTime, parseBackendDate } from "../lib/format";
 import { ScreenHeader } from "../components/ScreenHeader";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -100,7 +101,7 @@ const ROUTE_FALLBACK: Record<string, keyof RootStackParamList> = {
 // the section headers feel familiar.
 const getDateGroup = (iso: string) => {
   const today = new Date();
-  const created = new Date(iso);
+  const created = parseBackendDate(iso);
   const diffDays =
     (today.getTime() - created.getTime()) / (1000 * 60 * 60 * 24);
   if (diffDays < 1) return "Today";
@@ -136,6 +137,12 @@ export default function Notifications() {
   // tapping a row to mark-as-read updates instantly without waiting for
   // refetch. Keyed by notification id; value is the new isRead bit.
   const [readOverrides, setReadOverrides] = useState<Record<string, true>>({});
+
+  // Detail-view modal — opened when the vendor taps a notification
+  // that has no actionable `route` (e.g. broadcast announcements). The
+  // tap UI on the row trims long messages to 3 lines; the modal lets
+  // them read the full body without an intermediate screen.
+  const [detail, setDetail] = useState<AppNotification | null>(null);
 
   const notifications: AppNotification[] = useMemo(() => {
     const rows = data?.data ?? [];
@@ -209,7 +216,7 @@ export default function Notifications() {
     haptic();
     if (!notification.isRead) {
       setReadOverrides((prev) => ({ ...prev, [notification.id]: true }));
-      markNotificationAsRead(notification.id)
+      markNotificationAsRead(notification.id, notification.kind ?? "notification")
         .then(() => invalidateNotifications())
         .catch(() => {
           // Best-effort — local override already in place; the next
@@ -221,7 +228,14 @@ export default function Notifications() {
       notification.route ||
       ROUTE_FALLBACK[notification.type as string] ||
       null;
-    if (!route) return;
+
+    // No actionable destination (typical for broadcasts and general
+    // announcements) — open the detail modal so the vendor can read
+    // the full message instead of being stuck with the truncated row.
+    if (!route) {
+      setDetail(notification);
+      return;
+    }
 
     let params: any = undefined;
     if (notification.routeParams) {
@@ -494,6 +508,125 @@ export default function Notifications() {
           )}
         </View>
       </ScrollView>
+
+      {/* Detail modal — opens for non-routed notifications (e.g.
+          broadcasts) so the vendor can read the entire message body
+          without truncation. Routed notifications still navigate
+          straight to their destination as before. */}
+      <Modal
+        visible={detail != null}
+        animationType="fade"
+        transparent
+        statusBarTranslucent
+        onRequestClose={() => setDetail(null)}
+      >
+        <View className="flex-1 bg-black/60 justify-center px-5">
+          {detail ? (
+            (() => {
+              const s = styleFor(detail.type);
+              return (
+                <View
+                  className="bg-white rounded-3xl overflow-hidden"
+                  style={{
+                    shadowColor: "#0f172a",
+                    shadowOffset: { width: 0, height: 12 },
+                    shadowOpacity: 0.25,
+                    shadowRadius: 24,
+                    elevation: 12,
+                  }}
+                >
+                  {/* Tinted header strip — matches the row's accent so
+                      the modal feels like a continuation of the tap, not
+                      a new context. */}
+                  <View
+                    style={{
+                      height: 4,
+                      backgroundColor: s.accent,
+                    }}
+                  />
+
+                  <View className="px-5 pt-5 pb-4">
+                    <View className="flex-row items-start gap-3">
+                      <View
+                        className="w-12 h-12 rounded-2xl items-center justify-center"
+                        style={{ backgroundColor: s.iconBg }}
+                      >
+                        <Ionicons name={s.icon} size={22} color={s.iconColor} />
+                      </View>
+                      <View className="flex-1 pr-1 pt-0.5">
+                        <View className="flex-row items-center gap-2 mb-1">
+                          <Text
+                            className="text-[10px] font-extrabold uppercase tracking-[1.2px]"
+                            style={{ color: s.accent }}
+                          >
+                            {s.label}
+                          </Text>
+                          <Text className="text-[10.5px] text-gray-400 font-medium">
+                            · {formatRelativeTime(detail.createdAt)}
+                          </Text>
+                        </View>
+                        <Text
+                          className="text-[18px] text-gray-900 tracking-tight"
+                          style={{
+                            fontFamily: "PlusJakartaSans_700Bold",
+                            lineHeight: 24,
+                          }}
+                        >
+                          {detail.title}
+                        </Text>
+                      </View>
+                      <Pressable
+                        onPress={() => setDetail(null)}
+                        hitSlop={8}
+                        className="w-9 h-9 rounded-full items-center justify-center bg-gray-100 active:bg-gray-200"
+                      >
+                        <Ionicons name="close" size={18} color="#374151" />
+                      </Pressable>
+                    </View>
+                  </View>
+
+                  {/* Body — scrollable for very long broadcasts so the
+                      modal never overflows the device. */}
+                  <ScrollView
+                    showsVerticalScrollIndicator={false}
+                    style={{ maxHeight: 360 }}
+                    contentContainerStyle={{
+                      paddingHorizontal: 20,
+                      paddingBottom: 16,
+                    }}
+                  >
+                    <Text className="text-[14px] text-gray-700 leading-[21px]">
+                      {detail.message}
+                    </Text>
+                  </ScrollView>
+
+                  <View className="px-5 pt-3 pb-5 border-t border-gray-100 bg-white">
+                    <Pressable
+                      onPress={() => setDetail(null)}
+                      className="h-12 rounded-2xl bg-blue-600 items-center justify-center flex-row gap-2 active:bg-blue-700"
+                      style={{
+                        shadowColor: "#2563eb",
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.25,
+                        shadowRadius: 10,
+                        elevation: 4,
+                      }}
+                    >
+                      <Ionicons name="checkmark" size={15} color="white" />
+                      <Text
+                        className="text-white text-[14.5px]"
+                        style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                      >
+                        Got it
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
+              );
+            })()
+          ) : null}
+        </View>
+      </Modal>
     </View>
   );
 }

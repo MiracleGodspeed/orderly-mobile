@@ -27,6 +27,9 @@ import StoreLogoModal from "../components/StoreLogoModal";
 import BrandAssetsModal from "../components/BrandAssetsModal";
 import ThemeLayoutModal from "../components/ThemeAndLayout";
 import ContactUsSectionModal from "../components/ContactUsModal";
+import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
+import { useFeatures } from "../hooks/useFeatures";
+import { FEATURES, FeatureKey } from "../lib/features";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -54,6 +57,11 @@ interface SectionRowProps {
   configured: boolean;
   preview?: React.ReactNode;
   onPress: () => void;
+  /** When true, the row replaces the SET/EMPTY badge with an UPGRADE pill,
+   *  dims the icon, and lets the parent intercept the tap to surface a
+   *  paywall instead of opening the underlying editor. The press handler
+   *  itself is unchanged — gate the action in the parent's onPress. */
+  locked?: boolean;
 }
 
 function SectionRow({
@@ -64,6 +72,7 @@ function SectionRow({
   configured,
   preview,
   onPress,
+  locked,
 }: SectionRowProps) {
   const toneStyle = TONE_STYLES[tone];
   const handlePress = () => {
@@ -86,17 +95,35 @@ function SectionRow({
       }}
     >
       <View
-        className={`w-11 h-11 rounded-xl items-center justify-center mr-3 ${toneStyle.bg}`}
+        className={`w-11 h-11 rounded-xl items-center justify-center mr-3 ${
+          locked ? "bg-gray-100" : toneStyle.bg
+        }`}
       >
-        <Ionicons name={icon} size={20} color={toneStyle.iconColor} />
+        <Ionicons
+          name={icon}
+          size={20}
+          color={locked ? "#9ca3af" : toneStyle.iconColor}
+        />
       </View>
 
       <View className="flex-1 min-w-0">
         <View className="flex-row items-center gap-2 mb-0.5">
-          <Text className="text-[15px] font-bold text-gray-900" numberOfLines={1}>
+          <Text
+            className={`text-[15px] font-bold ${
+              locked ? "text-gray-700" : "text-gray-900"
+            }`}
+            numberOfLines={1}
+          >
             {title}
           </Text>
-          {configured ? (
+          {locked ? (
+            <View className="flex-row items-center gap-1 bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full">
+              <Ionicons name="lock-closed" size={9} color="#2563eb" />
+              <Text className="text-[10px] font-extrabold text-blue-700 tracking-wide">
+                UPGRADE
+              </Text>
+            </View>
+          ) : configured ? (
             <View className="flex-row items-center gap-1 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded-full">
               <View className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
               <Text className="text-[10px] font-bold text-emerald-700">
@@ -141,8 +168,11 @@ export default function ManageStoreScreen() {
   const [showBrandAssetsModal, setShowBrandAssetsModal] = useState(false);
   const [showStoreLogoModal, setShowStoreLogoModal] = useState(false);
   const [showThemeLayoutModal, setShowThemeLayoutModal] = useState(false);
+  const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(null);
 
   const { storeData, updateVendorSettings, loading } = useVendor();
+  const { has: hasFeature } = useFeatures();
+  const canUseLogo = hasFeature(FEATURES.STORE_LOGO);
 
   const heroConfigured = useMemo(() => {
     const arr = (storeData as any)?.storeFrontJson?.heroArr;
@@ -427,11 +457,16 @@ export default function ManageStoreScreen() {
               <SectionRow
                 icon="image-outline"
                 title="Store Logo"
-                subtitle="Upload your brand mark"
+                subtitle={
+                  canUseLogo
+                    ? "Upload your brand mark"
+                    : "Available on a higher plan"
+                }
                 tone="orange"
-                configured={logoConfigured}
+                configured={canUseLogo && logoConfigured}
+                locked={!canUseLogo}
                 preview={
-                  logoConfigured ? (
+                  canUseLogo && logoConfigured ? (
                     <View className="w-9 h-9 rounded-lg overflow-hidden bg-gray-50 border border-gray-100">
                       <AppImage
                         uri={storeData?.logoUrl ?? null}
@@ -440,7 +475,13 @@ export default function ManageStoreScreen() {
                     </View>
                   ) : null
                 }
-                onPress={() => setShowStoreLogoModal(true)}
+                onPress={() => {
+                  if (!canUseLogo) {
+                    setPaywallFeature(FEATURES.STORE_LOGO);
+                    return;
+                  }
+                  setShowStoreLogoModal(true);
+                }}
               />
 
               <SectionRow
@@ -556,6 +597,14 @@ export default function ManageStoreScreen() {
         visible={showThemeLayoutModal}
         onClose={() => setShowThemeLayoutModal(false)}
         initialTemplateId={storeData?.templateId}
+      />
+
+      {/* Paywall — opened when a vendor taps a gated section their plan
+          doesn't include (currently the Store Logo row). */}
+      <FeaturePaywallSheet
+        visible={paywallFeature != null}
+        onClose={() => setPaywallFeature(null)}
+        feature={paywallFeature}
       />
     </View>
   );

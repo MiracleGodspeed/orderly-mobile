@@ -16,9 +16,9 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
-import { useToast } from "react-native-toast-notifications";
 
 import { RootStackParamList } from "../navigation/types";
+import { AppToast, AppToastTone } from "../components/AppToast";
 import { useVendor } from "../../context/VendorContext";
 import {
   getBanks,
@@ -45,8 +45,12 @@ type ValidationStatus = "idle" | "validating" | "valid" | "error";
 
 export default function PayoutSettings() {
   const navigation = useNavigation<ScreenNavigationProp>();
-  const toast = useToast();
   const { storeData, fetchVendorData } = useVendor();
+  const [toast, setToast] = useState<{
+    title: string;
+    subtitle?: string;
+    tone?: AppToastTone;
+  } | null>(null);
 
   const [banks, setBanks] = useState<Bank[]>([]);
   const [banksLoading, setBanksLoading] = useState(false);
@@ -198,13 +202,18 @@ export default function PayoutSettings() {
       });
       // Refresh storeData so the connected-account hero card updates immediately.
       await fetchVendorData();
-      toast.show("Payout details saved.", { type: "success" });
+      setToast({
+        title: "Payout details saved",
+        subtitle: accountName ? `${accountName} · ${selectedBank.name}` : undefined,
+        tone: "success",
+      });
     } catch (error: any) {
       console.error("Error saving payment settings:", error);
-      toast.show(
-        error?.message || "Failed to save payout details.",
-        { type: "danger" }
-      );
+      setToast({
+        title: "Couldn't save payout details",
+        subtitle: error?.message || "Try again in a moment.",
+        tone: "error",
+      });
     } finally {
       setIsSaving(false);
     }
@@ -226,6 +235,14 @@ export default function PayoutSettings() {
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+
+      <AppToast
+        visible={toast != null}
+        title={toast?.title ?? ""}
+        subtitle={toast?.subtitle}
+        tone={toast?.tone}
+        onHide={() => setToast(null)}
+      />
 
       <KeyboardAvoidingView
         className="flex-1"

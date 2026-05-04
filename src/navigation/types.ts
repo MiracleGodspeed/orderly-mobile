@@ -51,5 +51,23 @@ export type RootStackParamList = {
   LocationManagement: undefined;
   CustomDomain: undefined;
   Customers: undefined;
+  DeleteAccount: undefined;
+  LogOrder: undefined;
+  /** Surface for vendors to reject a manual bank-transfer payment.
+   *  Reached from the Reject action button on the actionable push, or
+   *  manually from order details when the payment is awaiting
+   *  confirmation. The reference uniquely identifies the payment;
+   *  customerName + orderTotal are passed for header context only and
+   *  the screen falls back gracefully when they're absent. */
+  RejectManualPayment: {
+    reference: string;
+    customerName?: string;
+    orderTotal?: number;
+  };
+  /** Lets the vendor pick how customers pay them — Online (Paystack) vs
+   *  Direct to bank — and, for online, who absorbs the platform fee.
+   *  The Direct option is what unlocks the manual-payment Confirm/Reject
+   *  push flow added alongside this screen. */
+  PaymentSetup: undefined;
 
 };

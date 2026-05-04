@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -6,16 +6,26 @@ import {
   ScrollView,
   Linking,
   Alert,
+  ActivityIndicator,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
 import { NativeStackNavigationProp, NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useToast } from 'react-native-toast-notifications';
 import Ionicons from "@expo/vector-icons/Ionicons";
 
+import { useQueryClient } from "@tanstack/react-query";
+
 import { RootStackParamList } from "../navigation/types";
 import { Order } from "../api/vendor/vendor.types";
 import { AppImage } from "../components/AppImage";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { resolveChannel } from "../lib/orderChannels";
+import {
+  confirmManualPayment,
+  rejectManualPayment,
+  updateOrderStatusByBatch,
+} from "../api/vendor/vendor.api";
 
 type ScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -67,14 +77,20 @@ const normalizePhone = (raw: string, defaultDialCode = "234"): string => {
 
 export type OrderStatus = "Pending" | "Paid" | "Shipped";
 
-const mapStatus = (status: string): OrderStatus => {
-  switch ((status || "").toLowerCase()) {
+// Resolves to the UI status from both backend fields. Order-line status
+// takes precedence for shipped states (Dispatched / Delivered) — that's
+// driven by the vendor's own actions on the order. Otherwise we fall
+// back to payment status (success → Paid, anything else → Pending).
+const mapStatus = (order: Pick<Order, "status" | "orderStatus">): OrderStatus => {
+  const lineStatus = (order.orderStatus || "").toLowerCase();
+  if (lineStatus === "dispatched" || lineStatus === "delivered") return "Shipped";
+
+  switch ((order.status || "").toLowerCase()) {
     case "success":
     case "paid":
       return "Paid";
-    case "shipped":
-      return "Shipped";
     case "pending":
+    case "pending_vendor_manual_confirmation":
     default:
       return "Pending";
   }
@@ -182,9 +198,121 @@ export default function OrderDetailsScreen() {
 
   const navigation = useNavigation<ScreenNavigationProp>();
   const route = useRoute<OrderDetailsRouteProp>();
-  const { order } = route.params;
+  // Guard against the screen being navigated to without an order — this
+  // happens when an in-app notification with route="OrderDetails" lands
+  // here but didn't ship the full order object (e.g. only an order
+  // reference). Hooks below MUST still run unconditionally, so we keep
+  // a possibly-empty `order` and fall back to a placeholder UI; the
+  // effect bounces the user back to Orders so they pick from the list.
+  const order = route.params?.order;
+  const safeOrder = order ?? ({} as Order);
+  const qc = useQueryClient();
 
-  const [status, setStatus] = useState<OrderStatus>(mapStatus(order.status));
+  const [status, setStatus] = useState<OrderStatus>(mapStatus(safeOrder));
+  // Disables the action buttons while a status-change request is in
+  // flight so a double-tap doesn't fire two API calls.
+  const [statusUpdating, setStatusUpdating] = useState(false);
+
+  // Whether this order originated from the manual bank-transfer flow.
+  // The backwards "Move back to Pending" action only makes sense for
+  // manual orders (rejecting a Paystack-confirmed payment isn't a thing
+  // the vendor can do client-side), so we use this to gate the alert.
+  const isManualPayment =
+    (safeOrder.status || "").toLowerCase() === "pending_vendor_manual_confirmation" ||
+    safeOrder.isManualEntry === true;
+
+  // Invalidates the orders list so the next open of the Orders screen
+  // pulls fresh data. We invalidate by prefix instead of an exact key
+  // so paid + unpaid + every page get refetched together.
+  const invalidateOrders = () => {
+    qc.invalidateQueries({ queryKey: ["orders"] });
+  };
+
+  const advanceTo = async (next: OrderStatus) => {
+    if (statusUpdating) return;
+    setStatusUpdating(true);
+    const previous = status;
+    // Optimistic flip — reverted on error so the UI doesn't lie.
+    setStatus(next);
+
+    try {
+      if (next === "Paid") {
+        // Pending → Paid: only valid for manual bank-transfer orders.
+        // Confirms the payment server-side which flips Payment.Status to
+        // success and moves the order into the paid bucket.
+        if (!safeOrder.orderNumber) {
+          throw new Error("Missing payment reference for this order.");
+        }
+        await confirmManualPayment(safeOrder.orderNumber);
+        toast.show("Order marked as paid", { type: "success" });
+      } else if (next === "Shipped") {
+        // Paid → Shipped: flip every OrderRequest line under this batch
+        // to Dispatched. The mobile concept of "shipped" maps to the
+        // backend's `Dispatched` enum value.
+        await updateOrderStatusByBatch(safeOrder.id, "Dispatched");
+        toast.show("Order marked as shipped", { type: "success" });
+      }
+      invalidateOrders();
+    } catch (err: any) {
+      setStatus(previous);
+      toast.show(err?.message || "Couldn't update the order", { type: "danger" });
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const revertTo = async (prev: OrderStatus) => {
+    if (statusUpdating) return;
+    setStatusUpdating(true);
+    const previous = status;
+    setStatus(prev);
+
+    try {
+      if (prev === "Pending") {
+        // Paid → Pending: only meaningful for manual orders. We treat
+        // this as a vendor reject — the customer's bank transfer didn't
+        // actually come through, so the order is voided.
+        if (!isManualPayment) {
+          throw new Error("Paid online orders can't be moved back to pending.");
+        }
+        if (!safeOrder.orderNumber) {
+          throw new Error("Missing payment reference for this order.");
+        }
+        await rejectManualPayment(safeOrder.orderNumber, "Reverted from Paid");
+        toast.show("Order moved back to pending", { type: "success" });
+      } else if (prev === "Paid") {
+        // Shipped → Paid: order request returns to Confirmed (the state
+        // a paid-but-not-yet-dispatched order sits in).
+        await updateOrderStatusByBatch(safeOrder.id, "Confirmed");
+        toast.show("Order moved back to paid", { type: "success" });
+      }
+      invalidateOrders();
+    } catch (err: any) {
+      setStatus(previous);
+      toast.show(err?.message || "Couldn't update the order", { type: "danger" });
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!order) {
+      toast.show("Open the order from the Orders list", { type: "warning" });
+      // Replace the bad route so the back stack stays clean.
+      navigation.replace("Orders" as any);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [order]);
+
+  if (!order) {
+    return (
+      <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="small" color="#2563eb" />
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   const action = getNextAction(status);
   const prevAction = getPrevAction(status);
@@ -257,6 +385,11 @@ export default function OrderDetailsScreen() {
     hour12: true,
   });
 
+  // Sales-channel meta — present only when the vendor logged the order
+  // offline (WhatsApp, walk-in, etc). Storefront orders return null and
+  // the badge in the hero falls back to nothing rendered.
+  const orderChannelMeta = resolveChannel(order.channel);
+
   return (
     <View className="bg-gray-50 flex-1">
       <ScreenHeader title="Order Details" />
@@ -307,9 +440,34 @@ export default function OrderDetailsScreen() {
           <Text className="text-white/85 text-[28px] font-extrabold tracking-tight mt-3">
             {formatNgn(order.totalPrice)}
           </Text>
-          <View className="flex-row items-center gap-1.5 mt-1">
+          <View className="flex-row items-center flex-wrap gap-1.5 mt-1">
             <Ionicons name="time-outline" size={13} color="rgba(255,255,255,0.7)" />
             <Text className="text-white/70 text-[12px]">{formattedDate}</Text>
+            {/* Channel meta — only renders when the order was logged
+                offline. Reads from the same shared meta as the badge
+                so labels/colours stay consistent everywhere. */}
+            {orderChannelMeta && (
+              <>
+                <Text className="text-white/40 text-[12px]">·</Text>
+                <View
+                  className="flex-row items-center gap-1 px-2 py-0.5 rounded-full"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.16)',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255,255,255,0.20)',
+                  }}
+                >
+                  <Ionicons
+                    name={orderChannelMeta.icon}
+                    size={10}
+                    color="#ffffff"
+                  />
+                  <Text className="text-white text-[10.5px] font-extrabold tracking-wide">
+                    Logged via {orderChannelMeta.short}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         </View>
 
@@ -727,6 +885,7 @@ export default function OrderDetailsScreen() {
           <View className="flex-row gap-2">
             {prevAction ? (
               <Pressable
+                disabled={statusUpdating}
                 onPress={() => {
                   Alert.alert(
                     "Move order back?",
@@ -736,14 +895,16 @@ export default function OrderDetailsScreen() {
                       {
                         text: "Move back",
                         style: "destructive",
-                        onPress: () => setStatus(prevAction.prev),
+                        onPress: () => revertTo(prevAction.prev),
                       },
                     ]
                   );
                 }}
                 className={`${
                   action ? "" : "flex-1"
-                } rounded-2xl py-4 px-4 flex-row items-center justify-center gap-1.5 border border-gray-200 bg-white active:bg-gray-50`}
+                } rounded-2xl py-4 px-4 flex-row items-center justify-center gap-1.5 border border-gray-200 bg-white active:bg-gray-50 ${
+                  statusUpdating ? "opacity-50" : ""
+                }`}
               >
                 <Ionicons name="arrow-undo" size={15} color="#475569" />
                 <Text className="text-gray-700 font-extrabold text-[13.5px]">
@@ -754,8 +915,11 @@ export default function OrderDetailsScreen() {
 
             {action ? (
               <Pressable
-                onPress={() => setStatus(action.next)}
-                className="flex-1 rounded-2xl py-4 flex-row items-center justify-center gap-2 active:opacity-90"
+                disabled={statusUpdating}
+                onPress={() => advanceTo(action.next)}
+                className={`flex-1 rounded-2xl py-4 flex-row items-center justify-center gap-2 active:opacity-90 ${
+                  statusUpdating ? "opacity-60" : ""
+                }`}
                 style={{
                   backgroundColor: STATUS_TONE[action.next].accent,
                   shadowColor: STATUS_TONE[action.next].accent,
@@ -765,12 +929,18 @@ export default function OrderDetailsScreen() {
                   elevation: 6,
                 }}
               >
-                {action.icon ? (
-                  <Ionicons name={action.icon} size={18} color="white" />
-                ) : null}
-                <Text className="text-white font-extrabold text-[15px] tracking-tight">
-                  {action.label}
-                </Text>
+                {statusUpdating ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <>
+                    {action.icon ? (
+                      <Ionicons name={action.icon} size={18} color="white" />
+                    ) : null}
+                    <Text className="text-white font-extrabold text-[15px] tracking-tight">
+                      {action.label}
+                    </Text>
+                  </>
+                )}
               </Pressable>
             ) : null}
           </View>

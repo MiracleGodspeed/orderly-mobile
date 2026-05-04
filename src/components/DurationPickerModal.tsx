@@ -3,12 +3,14 @@ import { View, Text, Pressable, Platform, ScrollView } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { BottomSheet } from "./BottomSheet";
+import { RangeKey } from "../lib/dateRanges";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
+type PresetKey = Exclude<RangeKey, "custom">;
 
 interface Preset {
+  key: PresetKey;
   label: string;
-  value: number;
   hint: string;
   icon: IoniconName;
   tint: string;
@@ -17,32 +19,48 @@ interface Preset {
 
 const PRESETS: Preset[] = [
   {
-    label: "Last 7 days",
-    value: 7,
-    hint: "Quick week-over-week pulse",
-    icon: "flash-outline",
+    key: "today",
+    label: "Today",
+    hint: "Sales since midnight",
+    icon: "today-outline",
     tint: "#fef3c7",
     iconColor: "#d97706",
   },
   {
-    label: "Last 30 days",
-    value: 30,
-    hint: "The default monthly window",
+    key: "yesterday",
+    label: "Yesterday",
+    hint: "Full calendar day before today",
+    icon: "moon-outline",
+    tint: "#fee2e2",
+    iconColor: "#e11d48",
+  },
+  {
+    key: "thismonth",
+    label: "This month",
+    hint: "1st of this month through today",
+    icon: "calendar-number-outline",
+    tint: "#cffafe",
+    iconColor: "#0891b2",
+  },
+  {
+    key: "lastweek",
+    label: "Last week",
+    hint: "Monday through Sunday last week",
     icon: "calendar-outline",
     tint: "#dbeafe",
     iconColor: "#2563eb",
   },
   {
-    label: "Last 90 days",
-    value: 90,
-    hint: "See the quarterly trend",
-    icon: "pulse-outline",
+    key: "lastmonth",
+    label: "Last month",
+    hint: "Full calendar month before this one",
+    icon: "calendar-clear-outline",
     tint: "#ede9fe",
     iconColor: "#7c3aed",
   },
   {
+    key: "lastyear",
     label: "Last year",
-    value: 365,
     hint: "Year-over-year context",
     icon: "trending-up-outline",
     tint: "#dcfce7",
@@ -53,8 +71,10 @@ const PRESETS: Preset[] = [
 interface Props {
   visible: boolean;
   onClose: () => void;
-  selectedDuration: number | undefined;
-  onSelect: (value: number, label: string) => void;
+  /** The preset currently in effect, or `"custom"` when a custom range
+   *  is active. Used purely for the radio-style highlight. */
+  selectedKey: RangeKey | undefined;
+  onSelect: (key: PresetKey, label: string) => void;
   onSelectCustom: () => void;
 }
 
@@ -67,11 +87,11 @@ const haptic = () => {
 function DurationPickerModalImpl({
   visible,
   onClose,
-  selectedDuration,
+  selectedKey,
   onSelect,
   onSelectCustom,
 }: Props) {
-  const isCustomSelected = selectedDuration === undefined;
+  const isCustomSelected = selectedKey === "custom";
 
   return (
     <BottomSheet
@@ -79,7 +99,7 @@ function DurationPickerModalImpl({
       onClose={onClose}
       title="Select duration"
       subtitle="Pick a window for your sales report"
-      height="68%"
+      height="78%"
     >
       <ScrollView
         showsVerticalScrollIndicator={false}
@@ -90,13 +110,13 @@ function DurationPickerModalImpl({
         </Text>
 
         {PRESETS.map((preset) => {
-          const isSelected = selectedDuration === preset.value;
+          const isSelected = selectedKey === preset.key;
           return (
             <Pressable
-              key={preset.label}
+              key={preset.key}
               onPress={() => {
                 haptic();
-                onSelect(preset.value, preset.label);
+                onSelect(preset.key, preset.label);
               }}
               className={`flex-row items-center rounded-2xl border p-4 mb-2.5 active:bg-gray-50 ${
                 isSelected

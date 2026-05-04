@@ -31,6 +31,10 @@ import StoreInformation from '../screens/StoreInformation';
 import SubscriptionBilling from '../screens/SubscriptionBilling';
 import Security from '../screens/Security';
 import ChangePassword from '../screens/ChangePassword';
+import LogOrder from '../screens/LogOrder';
+import RejectManualPayment from '../screens/RejectManualPayment';
+import PaymentSetup from '../screens/PaymentSetup';
+import DeleteAccount from '../screens/DeleteAccount';
 import PayoutSettings from '../screens/PayoutSettings';
 import PersonalDetails from '../screens/PersonalDetails';
 import NotificationProfile from '../screens/NotificationProfile';
@@ -125,6 +129,14 @@ export default function RootNavigator() {
         <Stack.Screen name="SubscriptionBilling" component={SubscriptionBilling} />
         <Stack.Screen name="Security" component={Security} />
         <Stack.Screen name="ChangePassword" component={ChangePassword} />
+        <Stack.Screen name="LogOrder" component={LogOrder} />
+        <Stack.Screen
+          name="RejectManualPayment"
+          component={RejectManualPayment}
+          options={{ presentation: 'modal' }}
+        />
+        <Stack.Screen name="PaymentSetup" component={PaymentSetup} />
+        <Stack.Screen name="DeleteAccount" component={DeleteAccount} />
         <Stack.Screen name="PayoutSettings" component={PayoutSettings} />
         <Stack.Screen name="PersonalDetails" component={PersonalDetails} />
         <Stack.Screen name="NotificationProfile" component={NotificationProfile} />

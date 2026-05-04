@@ -8,11 +8,30 @@ export function formatNaira(value: number | null | undefined): string {
 }
 
 /**
+ * Parses a timestamp coming from the backend. The .NET API serializes
+ * `DateTime` values with `Kind = Unspecified` — i.e. an ISO string with
+ * NO timezone suffix (`2026-05-04T16:30:00.123` instead of `…Z`). The
+ * JS `Date` constructor treats those as the device's local time, so a
+ * UTC value gets parsed as Nigeria time (UTC+1) and the relative-time
+ * formatter shows "1h ago" the moment a notification arrives.
+ *
+ * Fix: if the string lacks a timezone marker, treat it as UTC by
+ * appending `Z`. Anything already carrying `Z` or a `±HH:MM` offset is
+ * trusted as-is.
+ */
+export function parseBackendDate(input: string | Date): Date {
+  if (input instanceof Date) return input;
+  if (typeof input !== "string" || !input) return new Date(NaN);
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/.test(input);
+  return new Date(hasTimezone ? input : input + "Z");
+}
+
+/**
  * Human-readable relative time. "Just now", "5m ago", "2h ago", "Yesterday",
  * "Mon", "Mar 12". Designed for dense list rows — short and unambiguous.
  */
 export function formatRelativeTime(input: string | Date): string {
-  const date = typeof input === "string" ? new Date(input) : input;
+  const date = parseBackendDate(input);
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
 
   const now = Date.now();

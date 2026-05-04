@@ -85,6 +85,20 @@ export const changePassword = async (
   }
 };
 
+export const deleteAccount = async (): Promise<void> => {
+  const response = await apiClient.post<{ code: string; message: string }>(
+    "/auth/delete-account",
+    {},
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    const detail =
+      response.data?.message ||
+      `HTTP ${response.status} ${response.statusText ?? ""}`.trim();
+    throw new Error(detail || "Couldn't delete your account.");
+  }
+};
+
 export const resendOtp = async (email: string): Promise<void> => {
   const response = await apiClient.post<{ code: string; message: string }>(
     "/auth/resend-otp",

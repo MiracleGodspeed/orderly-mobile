@@ -5,12 +5,19 @@ import {
   StatusBar,
   TouchableOpacity,
   Text,
-  Dimensions,
-  FlatList,
   Platform,
   RefreshControl,
   Share,
+  Clipboard,
+  Pressable,
 } from 'react-native';
+import { AppToast } from '../components/AppToast';
+import {
+  RangeKey,
+  RANGE_LABEL,
+  rangeForKey,
+  thisMonthRange,
+} from '../lib/dateRanges';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -32,6 +39,7 @@ import { setupProgressPct } from '../lib/setupProgress';
 import { CustomDateRangeModal } from '../components/CustomDateRangeModal';
 import { DurationPickerModal } from '../components/DurationPickerModal';
 import { Ionicons, Feather, MaterialIcons, Octicons } from '@expo/vector-icons';
+import Svg, { Defs, Rect, RadialGradient, Stop } from 'react-native-svg';
 import Modal from 'react-native-modal';
 import * as Haptics from 'expo-haptics';
 
@@ -41,53 +49,148 @@ import { useProducts } from '../hooks/useProducts';
 import { useStorePerformance } from '../hooks/useStorePerformance';
 import { AppImage } from '../components/AppImage';
 import { TrendBadge } from '../components/TrendBadge';
-import { formatNaira, getGreeting, computeTrend } from '../lib/format';
+import { formatNaira, getGreeting, computeTrend, formatRelativeTime } from '../lib/format';
 import { FeaturePaywallSheet } from '../components/FeaturePaywallSheet';
 import { useFeatures } from '../hooks/useFeatures';
 import { FEATURES, FeatureKey } from '../lib/features';
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
-const { width } = Dimensions.get('window');
-const CARD_WIDTH = width - 32;
-
-// Static slide content — moved out of render to avoid re-creating require()
-// objects on every render.
-const SLIDES = [
-  {
-    title: 'Get your store live today',
-    subtitle: 'Just 3 more steps to publish your online store',
-    buttonText: 'Continue setup',
-    color: '#FFFFFF',
-    image: require('../../assets/magic.png'),
-  },
-  {
-    title: 'Special Discount Alert!',
-    subtitle: '20% off on featured products this week',
-    buttonText: 'View Offers',
-    color: '#7C3AED',
-    image: require('../../assets/magic.png'),
-  },
-  {
-    title: 'New Feature Released',
-    subtitle: 'Check out our latest analytics dashboard',
-    buttonText: 'Learn More',
-    color: '#059669',
-    image: require('../../assets/magic.png'),
-  },
-];
-
 const HOURGLASS = require('../../assets/hourglass.png');
+
+// Decorative texture sitting behind the Store Overview card. Renders a
+// faded brick-tiled lattice of commerce icons (cart, tag, storefront,
+// box, receipt) at ~6% opacity — same idea as WhatsApp's chat
+// background but themed for retail. A soft brand-blue radial wash from
+// the top-right corner adds depth without competing with the headline
+// revenue number above.
+//
+// react-native-svg does NOT reliably honour `width="100%"`/`height="100%"`
+// on the root <Svg> when the parent uses absolute positioning — it
+// silently collapses to 0×0 and the gradient vanishes. We measure the
+// wrapper and pass numeric dimensions through.
+const BACKDROP_ICONS: Array<keyof typeof Ionicons.glyphMap> = [
+  'cart-outline',
+  'pricetag-outline',
+  'storefront-outline',
+  'cube-outline',
+  'receipt-outline',
+  'gift-outline',
+];
+const BACKDROP_ROTATIONS = [-14, 9, -6, 16, -3, 11, -10, 4];
+
+function StoreOverviewBackdrop() {
+  const [size, setSize] = useState({ w: 0, h: 0 });
+
+  const icons = useMemo(() => {
+    if (size.w === 0 || size.h === 0) return [];
+    // Brick layout — every other row is offset by half a cell so the
+    // tiling reads as a deliberate pattern instead of a stiff grid.
+    const cellW = 78;
+    const cellH = 60;
+    const cols = Math.ceil(size.w / cellW) + 1;
+    const rows = Math.ceil(size.h / cellH) + 1;
+    const out: Array<{
+      key: string;
+      x: number;
+      y: number;
+      icon: keyof typeof Ionicons.glyphMap;
+      rotate: number;
+    }> = [];
+    for (let r = 0; r < rows; r++) {
+      const rowOffset = r % 2 === 0 ? 0 : cellW / 2;
+      for (let c = 0; c < cols; c++) {
+        const idx = r * cols + c;
+        out.push({
+          key: `${r}-${c}`,
+          // Negative bleed so the edge icons clip cleanly into the
+          // rounded card border instead of stopping flush with it.
+          x: c * cellW + rowOffset - 18,
+          y: r * cellH - 18,
+          icon: BACKDROP_ICONS[idx % BACKDROP_ICONS.length],
+          rotate: BACKDROP_ROTATIONS[idx % BACKDROP_ROTATIONS.length],
+        });
+      }
+    }
+    return out;
+  }, [size.w, size.h]);
+
+  return (
+    <View
+      pointerEvents="none"
+      onLayout={(e) =>
+        setSize({
+          w: e.nativeEvent.layout.width,
+          h: e.nativeEvent.layout.height,
+        })
+      }
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        borderRadius: 16,
+        overflow: 'hidden',
+      }}
+    >
+      {size.w > 0 && size.h > 0 && (
+        <>
+          {/* Soft brand-blue wash anchored to the top-right corner. */}
+          <Svg
+            width={size.w}
+            height={size.h}
+            style={{ position: 'absolute', top: 0, left: 0 }}
+          >
+            <Defs>
+              {/* <RadialGradient
+                id="storeOverviewGlow"
+                cx={size.w}
+                cy={0}
+                rx={size.w * 0.7}
+                ry={size.h * 0.9}
+                fx={size.w}
+                fy={0}
+                gradientUnits="userSpaceOnUse"
+              >
+                <Stop offset="0%" stopColor="#2563eb" stopOpacity={0.1} />
+                <Stop offset="100%" stopColor="#2563eb" stopOpacity={0} />
+              </RadialGradient> */}
+            </Defs>
+            <Rect width={size.w} height={size.h} fill="url(#storeOverviewGlow)" />
+          </Svg>
+
+          {/* Faded commerce icons — the WhatsApp-style texture. */}
+          {icons.map((it) => (
+            <View
+              key={it.key}
+              style={{
+                position: 'absolute',
+                left: it.x,
+                top: it.y,
+                transform: [{ rotate: `${it.rotate}deg` }],
+              }}
+            >
+              <Ionicons name={it.icon} size={30} color="rgba(15, 23, 42, 0.06)" />
+              {/* <Ionicons name={it.icon} size={30} color="rgba(15, 23, 42, 0.07)" /> */}
+            </View>
+          ))}
+        </>
+      )}
+    </View>
+  );
+}
 
 export default function Home() {
   const insets = useSafeAreaInsets();
-  const currentSlideRef = useRef(0);
   const navigation = useNavigation<ScreenNavigationProp>();
-  const flatListRef = useRef<FlatList>(null);
   const trialWelcomeRef = useRef<TrialWelcomeModalHandle>(null);
+  // Local state-driven copy confirmation. Avoids the third-party toast
+  // queue that was eating the first tap on this screen, and lets us
+  // style the pill exactly the way we want.
+  const [copyToast, setCopyToast] = useState<{ url: string } | null>(null);
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [currentSlide, setCurrentSlide] = useState(0);
   const [setupModalOpen, setSetupModalOpen] = useState(false);
   const [trialModalVisible, setTrialModalVisible] = useState(false);
   // Real unread count from the server, polled every 60s in the
@@ -98,14 +201,17 @@ export default function Home() {
   const invalidateNotifications = useInvalidateNotifications();
 
   const [durationModalVisible, setDurationModalVisible] = useState(false);
-  const [selectedDuration, setSelectedDuration] = useState<number | undefined>(30);
-  const [durationLabel, setDurationLabel] = useState('Sales this month');
-
+  // Calendar-anchored range driven by a preset key. `custom` means the
+  // user picked an arbitrary start/end via the date picker. We store the
+  // resolved {from, to} alongside so the query stays stable across
+  // re-renders without re-deriving on each tick.
+  const initialRange = thisMonthRange();
+  const [selectedKey, setSelectedKey] =
+    useState<RangeKey>('thismonth');
+  const [durationLabel, setDurationLabel] = useState(RANGE_LABEL.thismonth);
+  const [dateFrom, setDateFrom] = useState<Date>(initialRange.from);
+  const [dateTo, setDateTo] = useState<Date>(initialRange.to);
   const [customDateModalVisible, setCustomDateModalVisible] = useState(false);
-  const [dateFrom, setDateFrom] = useState<Date>(
-    new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-  );
-  const [dateTo, setDateTo] = useState<Date>(new Date());
 
   const { storeData, checklistItems, fetchVendorData } = useVendor();
 
@@ -139,18 +245,39 @@ export default function Home() {
     isFetching: productsFetching,
   } = useProducts({ page: 1 });
 
+  // Always send a precise UTC window — the backend used to compute
+  // a rolling N-day window from `UtcNow`, which made "Today" and
+  // "Last week" drift with the time of day. The hook treats any
+  // change to `from`/`to` as a fresh query key.
   const performanceArgs = useMemo(
-    () =>
-      selectedDuration !== undefined
-        ? { duration: selectedDuration }
-        : { from: dateFrom.toISOString(), to: dateTo.toISOString() },
-    [selectedDuration, dateFrom, dateTo]
+    () => ({ from: dateFrom.toISOString(), to: dateTo.toISOString() }),
+    [dateFrom, dateTo]
   );
   const {
     data: performanceData,
     refetch: refetchPerformance,
     isFetching: performanceFetching,
   } = useStorePerformance(performanceArgs);
+
+  // Top Sellers is intentionally scoped to the current calendar month
+  // and ignores the Store Overview duration picker — it answers "what's
+  // hot RIGHT NOW?", not "what's been hot in whatever window the vendor
+  // is studying."
+  //
+  // Cold-start optimisation: when the vendor is on the default
+  // 'thismonth' duration (which is most of the time), we reuse
+  // `performanceArgs` by reference so this hook hits the same cache
+  // entry as the main performance query — zero extra network requests.
+  // We only compute a fresh window when the duration is something else
+  // (today, lastweek, custom, etc), at which point the second query
+  // pays for itself by keeping Top Sellers stable while the rest of
+  // the dashboard re-windows.
+  const topSellersArgs = useMemo(() => {
+    if (selectedKey === 'thismonth') return performanceArgs;
+    const r = thisMonthRange();
+    return { from: r.from.toISOString(), to: r.to.toISOString() };
+  }, [selectedKey, performanceArgs]);
+  const { data: topSellersData } = useStorePerformance(topSellersArgs);
 
   // Manual pull-to-refresh state — only true while the user is dragging
   // through a refresh, NOT during background revalidation. TanStack Query's
@@ -191,17 +318,15 @@ export default function Home() {
 
   // Slides auto-advance.
   useEffect(() => {
-    const timer = setInterval(() => {
-      const nextSlide = (currentSlideRef.current + 1) % SLIDES.length;
-      currentSlideRef.current = nextSlide;
-      setCurrentSlide(nextSlide);
-      flatListRef.current?.scrollToIndex({ index: nextSlide, animated: true });
-    }, 4000);
-    return () => clearInterval(timer);
+   
   }, []);
 
+  // Stocks is the vendor's all-time catalog size — fixed regardless of
+  // duration so it answers "how many products do I sell?" rather than a
+  // window-scoped activity number. Orders, Visits, and Revenue do shift
+  // with the duration since they're inherently activity metrics.
   const totalProductCount = productsData?.totalCount ?? 0;
-  const totalOrderCount = ordersData?.totalCount ?? 0;
+  const totalOrderCount = performanceData?.sales?.totalOrders ?? 0;
   const totalCustomers = performanceData?.sales?.totalCustomers ?? 0;
   const totalVisits = performanceData?.sales?.totalVisits ?? 0;
 
@@ -217,37 +342,86 @@ export default function Home() {
     let previous: number | null = null;
     let label: string | null = null;
 
-    if (selectedDuration === 1) {
+    // Pick the period pair on the GrowthTrend payload that matches the
+    // currently-selected preset so the chip's % actually corresponds to
+    // the headline revenue number above it. Custom ranges don't have a
+    // defensible comparison pair, so we hide the chip in that case.
+    if (selectedKey === 'today') {
       current = trend.today?.totalRevenue ?? 0;
       previous = trend.yesterday?.totalRevenue ?? 0;
-      label = "vs yesterday";
-    } else if (selectedDuration === 7) {
-      current = trend.currentWeek?.totalRevenue ?? 0;
-      previous = trend.lastWeek?.totalRevenue ?? 0;
-      label = "vs last week";
-    } else if (selectedDuration === 30 || selectedDuration === 90) {
-      // No quarterly pair on the API; 90d falls back to month-over-month
-      // which is the closest defensible comparison.
+      label = 'vs yesterday';
+    } else if (selectedKey === 'yesterday') {
+      // No "day before yesterday" pair available — fall back to a
+      // hidden chip rather than misleading the vendor.
+      current = null;
+      previous = null;
+    } else if (selectedKey === 'thismonth') {
       current = trend.currentMonth?.totalRevenue ?? 0;
       previous = trend.lastMonth?.totalRevenue ?? 0;
-      label = "vs last month";
-    } else if (selectedDuration === 365) {
-      current = trend.currentYear?.totalRevenue ?? 0;
-      previous = trend.lastYear?.totalRevenue ?? 0;
-      label = "vs last year";
+      label = 'vs last month';
+    } else if (selectedKey === 'lastweek') {
+      current = trend.lastWeek?.totalRevenue ?? 0;
+      previous = trend.currentWeek?.totalRevenue ?? 0;
+      label = 'vs this week';
+    } else if (selectedKey === 'lastmonth') {
+      current = trend.lastMonth?.totalRevenue ?? 0;
+      previous = trend.currentMonth?.totalRevenue ?? 0;
+      label = 'vs this month';
+    } else if (selectedKey === 'lastyear') {
+      current = trend.lastYear?.totalRevenue ?? 0;
+      previous = trend.currentYear?.totalRevenue ?? 0;
+      label = 'vs this year';
     }
-    // selectedDuration === undefined (custom date range) → leave nulls,
-    // which causes the chip to be hidden below.
 
     if (current === null || previous === null) return null;
     return { ...computeTrend(current, previous), label };
-  }, [performanceData, selectedDuration]);
+  }, [performanceData, selectedKey]);
 
   const greeting = useMemo(() => getGreeting(), []);
   const firstName = useMemo(() => {
     const name = (storeData as any)?.fullName ?? storeData?.storeName ?? '';
     return typeof name === 'string' ? name.split(' ')[0] : '';
   }, [storeData]);
+
+  // Derived data for the new dashboard sections — kept memoised so they
+  // don't re-derive on every render of unrelated state (menu open,
+  // duration toggles, etc).
+
+  // Most-recent paid orders for the at-a-glance preview. Limited to 4
+  // because the section sits above the fold and we don't want it to
+  // dominate the dashboard.
+  const recentOrders = useMemo(
+    () => (ordersData?.data ?? []).slice(0, 4),
+    [ordersData?.data]
+  );
+
+  // Out-of-stock count from the first page of products. Page-1 sample is
+  // intentional — Home should nudge ("at least one item is empty") not
+  // be a perfect inventory audit. Vendors tap through to the full list
+  // for the actual tally.
+  const outOfStockCount = useMemo(() => {
+    const items = productsData?.data ?? [];
+    return items.filter((p: any) => (p?.stock ?? 0) === 0).length;
+  }, [productsData?.data]);
+
+  // Missing-payout flag — the storefront accepts orders before payouts
+  // are configured, so it's a real footgun: a vendor can be racking up
+  // sales without a destination bank account. Flag it loudly.
+  const payoutsMissing = !storeData?.accountName;
+
+  // Top sellers from the current-month-locked report (see
+  // `topSellersArgs` above). Always answers "what's hot this month?"
+  // regardless of the duration the vendor has selected for the
+  // Store Overview card.
+  const topSellers = useMemo(
+    () => (topSellersData?.sales?.bestSellingProducts ?? []).slice(0, 3),
+    [topSellersData?.sales?.bestSellingProducts]
+  );
+
+  // Whether the Needs Attention card has anything to render. Lets us
+  // hide the entire section when nothing applies, instead of showing
+  // an empty card.
+  const hasAttentionItems = outOfStockCount > 0 || payoutsMissing;
 
   // Single source of truth shared with StoreSetupModal — see lib/setupProgress.
   // Just signing up = 25% baseline; each of the 3 checklist steps adds 25%.
@@ -303,6 +477,9 @@ export default function Home() {
   // vendors get the upgrade sheet instead of the dedicated screen.
   const { has: hasFeature } = useFeatures();
   const canUseCustomDomain = hasFeature(FEATURES.STORE_CUSTOM_DOMAIN);
+  // Visitor analytics is a paid feature — locked vendors see the tile
+  // with a lock icon and tap-to-upgrade behavior, not the real number.
+  const canUseVisits = hasFeature(FEATURES.ANALYTICS_VISITS);
   const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(null);
   const handleOpenDomain = useCallback(() => {
     tap();
@@ -321,11 +498,7 @@ export default function Home() {
     [navigation, tap]
   );
 
-  const handleMomentumScrollEnd = (event: any) => {
-    const slideIndex = Math.round(event.nativeEvent.contentOffset.x / CARD_WIDTH);
-    currentSlideRef.current = slideIndex;
-    setCurrentSlide(slideIndex);
-  };
+
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -375,12 +548,18 @@ export default function Home() {
     setTimeout(() => setDurationModalVisible(true), 300);
   }, []);
 
-  const handleDurationSelect = useCallback((value: number, label: string) => {
-    setIsPeriodChanging(true);
-    setSelectedDuration(value);
-    setDurationLabel(label);
-    setDurationModalVisible(false);
-  }, []);
+  const handleDurationSelect = useCallback(
+    (key: Exclude<RangeKey, 'custom'>, label: string) => {
+      const range = rangeForKey(key);
+      setIsPeriodChanging(true);
+      setSelectedKey(key);
+      setDurationLabel(label);
+      setDateFrom(range.from);
+      setDateTo(range.to);
+      setDurationModalVisible(false);
+    },
+    []
+  );
 
   const handleDurationCustom = useCallback(() => {
     setDurationModalVisible(false);
@@ -394,10 +573,16 @@ export default function Home() {
         day: 'numeric',
         year: 'numeric',
       });
+    // Lock the bounds to start-of-day / end-of-day in local time so a
+    // custom range is internally consistent with the calendar presets.
+    const from = new Date(nextFrom);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(nextTo);
+    to.setHours(23, 59, 59, 999);
     setIsPeriodChanging(true);
-    setDateFrom(nextFrom);
-    setDateTo(nextTo);
-    setSelectedDuration(undefined);
+    setDateFrom(from);
+    setDateTo(to);
+    setSelectedKey('custom');
     setDurationLabel(`${fmt(nextFrom)} – ${fmt(nextTo)}`);
     setCustomDateModalVisible(false);
   }, []);
@@ -441,7 +626,244 @@ export default function Home() {
         <SubscriptionStatusBanner />
 
         {/* Greeting + store identity */}
-        <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl border border-gray-100 p-4 overflow-hidden"
+        <View className="mx-4 mt-3 mb-3 rounded-2xl  p-4 overflow-hidden"
+          style={{
+            backgroundColor: '#1c59ca',
+            shadowColor: '#1c59ca',
+            shadowOffset: { width: 0, height: 8 },
+            shadowOpacity: 0.22,
+            shadowRadius: 18,
+            elevation: 5,
+          }}
+        >
+          {/* Top-edge inner highlight — a 1px translucent line at the top
+              of the card mimics light catching the upper rim. Subtle but
+              the card immediately reads as "lit from above" rather than
+              flat-painted. Classic premium-UI trick. */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: 1,
+              backgroundColor: 'rgba(255, 255, 255, 0.20)',
+            }}
+          />
+          {/* Subtle diagonal sheen — a faint light stripe across the card
+              gives the surface a touch of motion, like a brushed gradient
+              instead of solid paint. */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: -20,
+              left: '12%',
+              width: 1.5,
+              height: '180%',
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              transform: [{ rotate: '18deg' }],
+            }}
+          />
+
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: -55,
+              right: -45,
+              width: 170,
+              height: 170,
+              borderRadius: 85,
+              backgroundColor: 'rgba(96, 165, 250, 0.22)',
+            }}
+          />
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: -25,
+              right: 20,
+              width: 80,
+              height: 80,
+              borderRadius: 40,
+              backgroundColor: 'rgba(147, 197, 253, 0.18)',
+            }}
+          />
+          {/* <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              bottom: -55,
+              left: -35,
+              width: 150,
+              height: 150,
+              borderRadius: 75,
+              backgroundColor: 'rgba(34, 211, 238, 0.14)',
+            }}
+          />
+          */}
+          {/* <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 18,
+              right: 70,
+              width: 5,
+              height: 5,
+              borderRadius: 2.5,
+              backgroundColor: 'rgba(253, 224, 71, 0.7)',
+            }}
+          /> */}
+         
+          {/* <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: -10,
+              left: '20%',
+              width: 1.5,
+              height: '180%',
+              backgroundColor: 'rgba(255, 255, 255, 0.06)',
+              transform: [{ rotate: '20deg' }],
+            }}
+          /> */}
+
+         
+          <View className="flex-row items-baseline gap-1.5 mb-3">
+            <Text
+              className="text-[10px] font-extrabold uppercase tracking-[1.6px] text-blue-200/90"
+            >
+              {greeting} 👋
+            </Text>
+            {/* {firstName ? (
+              <Text
+                className="text-[12px] text-white"
+                style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+                numberOfLines={1}
+              >
+                · {firstName} 👋
+              </Text>
+            ) : (
+              <Text className="text-[12px]">👋</Text>
+            )} */}
+          </View>
+
+          {checklistItems.length > 0 && progressPercentage < 100 && (
+            <View className="mb-4">
+              <StoreSetupProgress
+                progress={progressPercentage}
+                onContinue={openSetupModal}
+              />
+            </View>
+          )}
+
+          <View className="flex-row items-center justify-between">
+            <View className="flex-row items-center gap-3 flex-1">
+             
+              <View
+                className="w-12 h-12 rounded-2xl items-center justify-center border"
+                style={{
+                  backgroundColor: 'rgba(96, 165, 250, 0.22)',
+                  borderColor: 'rgba(147, 197, 253, 0.35)',
+                }}
+              >
+                <Ionicons name="storefront" size={22} color="#ffffff" />
+              </View>
+              <View className="flex-1">
+                <Text
+                  className="text-[17px] text-white leading-tight"
+                  numberOfLines={1}
+                  style={{
+                    fontFamily: 'PlusJakartaSans_700Bold',
+                    letterSpacing: -0.3,
+                  }}
+                >
+                  {storeData?.storeName || 'My Store'}
+                </Text>
+                <View className="flex-row items-center gap-1.5 mt-1.5">
+                  {/* Live pill — glass treatment with emerald tint so it
+                      reads as a status badge belonging to the card, not
+                      a sticker pasted over the dark surface. */}
+                  {/* <View
+                    className="flex-row items-center gap-1 px-2 py-0.5 rounded-full border"
+                    style={{
+                      backgroundColor: 'rgba(52, 211, 153, 0.18)',
+                      borderColor: 'rgba(110, 231, 183, 0.35)',
+                    }}
+                  >
+                    <View
+                      className="w-1.5 h-1.5 rounded-full"
+                      style={{
+                        backgroundColor: '#34d399',
+                        shadowColor: '#34d399',
+                        shadowOffset: { width: 0, height: 0 },
+                        shadowOpacity: 0.8,
+                        shadowRadius: 3,
+                      }}
+                    />
+                    <Text className="text-[9.5px] text-emerald-50 font-extrabold uppercase tracking-wide">
+                      Live
+                    </Text>
+                  </View> */}
+
+                  {/* URL pill — neutral glass so it reads as the secondary
+                      bit of metadata, not as a competing accent. Tap copies
+                      the full URL so the vendor can paste it anywhere. */}
+                  <Pressable
+                    onPress={() => {
+                      if (!storeData?.slugUrl) return;
+                      const url = `https://${storeData.slugUrl}.orderlystores.com`;
+                      Clipboard.setString(url);
+                      if (Platform.OS === 'ios') {
+                        Haptics.notificationAsync(
+                          Haptics.NotificationFeedbackType.Success
+                        ).catch(() => {});
+                      }
+                      // Re-set with a fresh object even if the same URL,
+                      // so a rapid second tap re-triggers the animation.
+                      setCopyToast({ url: `${storeData.slugUrl}.orderlystores.com` });
+                    }}
+                    hitSlop={8}
+                    className="flex-row items-center gap-1 px-2 py-0.5 rounded-full border flex-shrink min-w-0 active:opacity-70"
+                    style={{
+                      backgroundColor: 'rgba(255, 255, 255, 0.10)',
+                      borderColor: 'rgba(255, 255, 255, 0.15)',
+                    }}
+                  >
+                    <Ionicons name="globe-outline" size={9} color="#bfdbfe" />
+                    <Text
+                      className="text-[10.5px] text-blue-50 font-semibold"
+                      numberOfLines={1}
+                    >
+                      {storeData?.slugUrl
+                        ? `${storeData.slugUrl}.orderlystores.com`
+                        : 'store'}
+                    </Text>
+                    <Ionicons name="copy-outline" size={9} color="#bfdbfe" />
+                  </Pressable>
+                </View>
+              </View>
+            </View>
+
+            {/* Glass share button — sits inside the card's visual language
+                instead of fighting it like the old white circle did. */}
+            <TouchableOpacity
+              className="w-10 h-10 rounded-full items-center justify-center border"
+              activeOpacity={0.7}
+              onPress={handleShareStore}
+              style={{
+                backgroundColor: 'rgba(255, 255, 255, 0.14)',
+                borderColor: 'rgba(255, 255, 255, 0.22)',
+              }}
+            >
+              <Ionicons name="share-social-outline" size={18} color="#ffffff" />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl border border-gray-100 p-4 overflow-hidden"
           style={{
             shadowColor: '#0f172a',
             shadowOffset: { width: 0, height: 2 },
@@ -511,11 +933,11 @@ export default function Home() {
               <Ionicons name="share-social-outline" size={18} color="#374151" />
             </TouchableOpacity>
           </View>
-        </View>
+        </View> */}
 
         {/* Store overview */}
         <View
-          className="mx-4 mb-4 p-5 bg-white rounded-2xl border border-gray-100"
+          className="mx-4 mb-2 px-4 pt-4 pb-3.5 bg-white rounded-2xl border border-gray-100"
           style={{
             shadowColor: '#0f172a',
             shadowOffset: { width: 0, height: 2 },
@@ -524,33 +946,64 @@ export default function Home() {
             elevation: 2,
           }}
         >
-          <View className="flex-row items-center justify-between mb-4">
-            <Text className="text-[11px] font-extrabold text-gray-400 uppercase tracking-[1.2px]">
-              Store Overview
-            </Text>
+          {/* Subtle background texture — a faint dot grid plus a barely
+              perceptible blue radial wash in the top-right corner. Lives
+              inside its own clipped layer so it follows the card's
+              rounded corners without affecting the outer shadow. The
+              `pointerEvents="none"` keeps taps falling through to the
+              real controls above. We measure the wrapper with `onLayout`
+              and feed numeric dimensions to <Svg> — react-native-svg
+              silently collapses to 0×0 when both width/height are
+              percentages and the parent isn't a flex/measured root, so
+              the texture wouldn't render at all without this. */}
+          <StoreOverviewBackdrop />
+
+          <View className="flex-row items-center justify-between mb-3">
+            {/* Eyebrow with a tiny brand accent bar — gives the section
+                title a clear anchor instead of floating in space. */}
+            <View className="flex-row items-center gap-2">
+              <View
+                style={{
+                  width: 3,
+                  height: 12,
+                  borderRadius: 2,
+                  // backgroundColor: '#2563eb',
+                }}
+              />
+              <Text className="text-[11px] font-extrabold text-gray-500 uppercase tracking-[1.2px]">
+                Store Overview
+              </Text>
+            </View>
             <TouchableOpacity
-              className="flex-row items-center gap-1 bg-gray-50 border border-gray-200 px-3 py-1.5 rounded-full"
+              className="flex-row items-center gap-1 bg-white border border-gray-200 px-2.5 py-1 rounded-full"
               activeOpacity={0.7}
               onPress={() => setDurationModalVisible(true)}
+              style={{
+                // shadowColor: '#0f172a',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.05,
+                shadowRadius: 3,
+                elevation: 1,
+              }}
             >
-              <Text className="text-[12px] text-gray-700 font-bold">
+              <Text className="text-[11.5px] text-gray-800 font-bold">
                 {durationLabel}
               </Text>
-              <Feather name="chevron-down" size={13} color="#374151" />
+              <Feather name="chevron-down" size={12} color="#374151" />
             </TouchableOpacity>
           </View>
 
-          <View className="items-center mt-2">
-            <Text className="text-[10.5px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-1">
+          <View className="items-center mt-1">
+            <Text className="text-[10px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-0.5">
               Revenue
             </Text>
             <Text
               className="text-gray-900"
               style={{
                 fontFamily: 'PlusJakartaSans_700Bold',
-                fontSize: 36,
-                letterSpacing: -1.2,
-                lineHeight: 42,
+                fontSize: 30,
+                letterSpacing: -1.0,
+                lineHeight: 36,
               }}
             >
               {formatNaira(performanceData?.sales?.totalRevenue)}
@@ -558,69 +1011,154 @@ export default function Home() {
           </View>
 
           {revenueTrend && revenueTrend.direction !== 'flat' ? (
-            <View className="flex-row justify-center mt-3 mb-5">
+            <View className="flex-row justify-center mt-2 mb-3">
               <TrendBadge trend={revenueTrend} label={revenueTrend.label ?? undefined} />
             </View>
           ) : (
-            <View className="mb-5 mt-3" />
+            <View className="mb-3 mt-2" />
           )}
 
-          <View className="flex-row justify-between gap-2">
-            {[
-              {
-                icon: (
-                  <MaterialIcons name="storefront" size={18} color="#2563eb" />
-                ),
-                tint: '#dbeafe',
-                value: totalVisits,
-                label: 'Visits',
-              },
-              {
-                icon: <Octicons name="stack" size={18} color="#7c3aed" />,
-                tint: '#ede9fe',
-                value: totalProductCount,
-                label: 'Stocks',
-              },
-              {
-                icon: (
-                  <Ionicons name="cart-outline" size={18} color="#059669" />
-                ),
-                tint: '#d1fae5',
-                value: totalOrderCount,
-                label: 'Orders',
-              },
-            ].map((m) => (
-              <View
-                key={m.label}
-                className="flex-1 bg-gray-50/70 border border-gray-100 rounded-2xl py-3 items-center"
-              >
-                <View
-                  className="w-9 h-9 rounded-full items-center justify-center mb-1.5"
-                  style={{ backgroundColor: m.tint }}
-                >
-                  {m.icon}
+          {/* Hairline divider between the headline revenue and the
+              breakdown tiles — visually signals "summary above,
+              breakdown below" without adding a heavy section break. */}
+          {/* <View
+            style={{
+              height: 1,
+              backgroundColor: 'rgba(15, 23, 42, 0.06)',
+              marginBottom: 11,
+              marginHorizontal: -4,
+            }}
+          /> */}
+
+          <View className="flex-row justify-between gap-2 mt-3">
+            {(
+              [
+                {
+                  icon: (
+                    <MaterialIcons name="storefront" size={16} color={canUseVisits ? '#2563eb' : '#9ca3af'} />
+                  ),
+                  tint: canUseVisits ? '#dbeafe' : '#f3f4f6',
+                  value: totalVisits,
+                  label: 'Visits',
+                  locked: !canUseVisits,
+                  // Only attach a tap handler when the feature is gated —
+                  // unlocked tiles are read-only stats, not buttons.
+                  onPress: !canUseVisits
+                    ? () => {
+                        tap();
+                        setPaywallFeature(FEATURES.ANALYTICS_VISITS);
+                      }
+                    : (undefined as (() => void) | undefined),
+                },
+                {
+                  icon: <Octicons name="stack" size={16} color="#7c3aed" />,
+                  tint: '#ede9fe',
+                  value: totalProductCount,
+                  label: 'Stocks',
+                  locked: false,
+                  onPress: undefined as (() => void) | undefined,
+                },
+                {
+                  icon: (
+                    <Ionicons name="cart-outline" size={16} color="#059669" />
+                  ),
+                  tint: '#d1fae5',
+                  value: totalOrderCount,
+                  label: 'Orders',
+                  locked: false,
+                  onPress: undefined as (() => void) | undefined,
+                },
+              ]
+            ).map((m) => {
+              const inner = (
+                <>
+                  <View
+                    className="w-8 h-8 rounded-full items-center justify-center mb-1 relative"
+                    style={{ backgroundColor: m.tint }}
+                  >
+                    {m.icon}
+                    {m.locked && (
+                      <View
+                        className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-white items-center justify-center"
+                        style={{
+                          shadowColor: '#0f172a',
+                          shadowOffset: { width: 0, height: 1 },
+                          shadowOpacity: 0.12,
+                          shadowRadius: 2,
+                          elevation: 2,
+                        }}
+                      >
+                        <Ionicons name="lock-closed" size={8} color="#6b7280" />
+                      </View>
+                    )}
+                  </View>
+                  {m.locked ? (
+                    <View className="bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded-full mb-0.5">
+                      <Text className="text-[9px] font-extrabold text-blue-700 uppercase tracking-wide">
+                        Upgrade
+                      </Text>
+                    </View>
+                  ) : (
+                    <Text
+                      className="text-gray-900 mb-0.5"
+                      style={{
+                        fontFamily: 'PlusJakartaSans_700Bold',
+                        fontSize: 16,
+                        letterSpacing: -0.3,
+                      }}
+                    >
+                      {m.value}
+                    </Text>
+                  )}
+                  <Text className="text-[10px] text-gray-500 font-extrabold uppercase tracking-wide">
+                    {m.label}
+                  </Text>
+                </>
+              );
+
+              // Polished tile container — white surface + thin border +
+              // micro shadow so the breakdown tiles sit forward from the
+              // card instead of melting into a gray plate.
+              const tileStyle = {
+                shadowColor: '#0f172a',
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.04,
+                shadowRadius: 4,
+                elevation: 1,
+              } as const;
+              const tileClass =
+                'flex-1 bg-white border border-gray-100 rounded-2xl py-2.5 items-center';
+
+              if (m.onPress) {
+                return (
+                  <TouchableOpacity
+                    key={m.label}
+                    onPress={m.onPress}
+                    activeOpacity={0.7}
+                    className={tileClass}
+                    style={tileStyle}
+                  >
+                    {inner}
+                  </TouchableOpacity>
+                );
+              }
+
+              return (
+                <View key={m.label} className={tileClass} style={tileStyle}>
+                  {inner}
                 </View>
-                <Text
-                  className="text-gray-900 mb-0.5"
-                  style={{
-                    fontFamily: 'PlusJakartaSans_700Bold',
-                    fontSize: 18,
-                    letterSpacing: -0.3,
-                  }}
-                >
-                  {m.value}
-                </Text>
-                <Text className="text-[10.5px] text-gray-500 font-extrabold uppercase tracking-wide">
-                  {m.label}
-                </Text>
-              </View>
-            ))}
+              );
+            })}
           </View>
         </View>
 
+       
+
+      
+
         {/* Quick actions */}
         <View
-          className="mb-4 mx-4 bg-white px-4 pt-4 pb-3 rounded-2xl border border-gray-100"
+          className="mb-2 mx-4 bg-white px-4 pt-4 pb-3 rounded-2xl border border-gray-100"
           style={{
             shadowColor: '#0f172a',
             shadowOffset: { width: 0, height: 2 },
@@ -629,9 +1167,21 @@ export default function Home() {
             elevation: 2,
           }}
         >
-          <Text className="text-[11px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-4">
-            Quick Actions
-          </Text>
+          {/* Eyebrow with a brand accent bar — matches the Store Overview
+              section header so titles feel paired, not floating. */}
+          <View className="flex-row items-center gap-2 mb-4">
+            <View
+              style={{
+                width: 3,
+                height: 12,
+                borderRadius: 2,
+                // backgroundColor: '#7c3aed',
+              }}
+            />
+            <Text className="text-[11px] font-extrabold text-gray-500 uppercase tracking-[1.2px]">
+              Quick Actions
+            </Text>
+          </View>
 
           {(() => {
             const tiles: Array<{
@@ -739,7 +1289,21 @@ export default function Home() {
                       <View className="relative">
                         <View
                           className="w-[58px] h-[58px] rounded-2xl items-center justify-center mb-1.5"
-                          style={{ backgroundColor: tile.tint }}
+                          style={{
+                            backgroundColor: tile.tint,
+                            // Hairline inner ring + tiny soft shadow gives
+                            // each tile a touch of depth so the bg colour
+                            // reads as a button surface rather than a flat
+                            // sticker. Matches the rest of the app's
+                            // tinted-icon pattern.
+                            borderWidth: 1,
+                            borderColor: 'rgba(255, 255, 255, 0.65)',
+                            shadowColor: tile.iconColor,
+                            shadowOffset: { width: 0, height: 2 },
+                            shadowOpacity: 0.10,
+                            shadowRadius: 6,
+                            elevation: 1,
+                          }}
                         >
                           <Ionicons
                             name={tile.icon}
@@ -789,70 +1353,358 @@ export default function Home() {
           })()}
         </View>
 
-        {/* Slides */}
-        <View className="px-4 mb-5">
-          <FlatList
-            ref={flatListRef}
-            data={SLIDES}
-            horizontal
-            pagingEnabled
-            showsHorizontalScrollIndicator={false}
-            onMomentumScrollEnd={handleMomentumScrollEnd}
-            keyExtractor={(_, index) => index.toString()}
-            getItemLayout={(_data, index) => ({
-              length: CARD_WIDTH,
-              offset: CARD_WIDTH * index,
-              index,
-            })}
-            renderItem={({ item: slide }) => (
+
+        {/* Needs your attention — only renders when there's actually
+            something to flag, so the dashboard never carries an empty
+            "all clear" placeholder. Drives behaviour, not just info. */}
+        {hasAttentionItems && (
+          <View
+            className="mx-4 mb-4 bg-white rounded-2xl border border-gray-100 overflow-hidden"
+            style={{
+              shadowColor: '#0f172a',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 12,
+              elevation: 2,
+            }}
+          >
+            <View className="px-5 pt-4 pb-2 flex-row items-center gap-2">
               <View
-                className="p-6 rounded-2xl flex-row items-center"
-                style={{ width: CARD_WIDTH, backgroundColor: '#fff' }}
+                style={{
+                  width: 3,
+                  height: 12,
+                  borderRadius: 2,
+                  backgroundColor: '#e11d48',
+                }}
+              />
+              <Text className="text-[11px] font-extrabold text-gray-500 uppercase tracking-[1.2px]">
+                Needs your attention
+              </Text>
+            </View>
+
+            <View className="px-2 pb-2">
+              {payoutsMissing && (
+                <Pressable
+                  onPress={() => handleQuickAction('PayoutSettings')}
+                  className="flex-row items-center px-3 py-3 rounded-xl active:bg-gray-50"
+                >
+                  <View
+                    className="w-10 h-10 rounded-2xl items-center justify-center mr-3"
+                    style={{ backgroundColor: '#fff1f2' }}
+                  >
+                    <Ionicons name="card-outline" size={18} color="#e11d48" />
+                  </View>
+                  <View className="flex-1 pr-2">
+                    <Text
+                      className="text-[13.5px] text-gray-900"
+                      style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+                    >
+                      Set up payouts
+                    </Text>
+                    <Text
+                      className="text-[12px] text-gray-500 mt-0.5 leading-[16px]"
+                      numberOfLines={2}
+                    >
+                      Connect your bank so you can receive money from sales.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
+                </Pressable>
+              )}
+
+              {outOfStockCount > 0 && (
+                <Pressable
+                  onPress={() => handleQuickAction('ProductsList')}
+                  className="flex-row items-center px-3 py-3 rounded-xl active:bg-gray-50"
+                >
+                  <View
+                    className="w-10 h-10 rounded-2xl items-center justify-center mr-3"
+                    style={{ backgroundColor: '#fff7ed' }}
+                  >
+                    <Ionicons
+                      name="cube-outline"
+                      size={18}
+                      color="#ea580c"
+                    />
+                  </View>
+                  <View className="flex-1 pr-2">
+                    <Text
+                      className="text-[13.5px] text-gray-900"
+                      style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+                    >
+                      Restock {outOfStockCount}{' '}
+                      {outOfStockCount === 1 ? 'product' : 'products'}
+                    </Text>
+                    <Text
+                      className="text-[12px] text-gray-500 mt-0.5 leading-[16px]"
+                      numberOfLines={2}
+                    >
+                      Items at zero stock won't show up for customers to buy.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color="#cbd5e1" />
+                </Pressable>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Top sellers — leverages existing performanceData payload, so
+            no extra query cost. Empty state when there's no sales data
+            yet keeps the section honest instead of hiding it. */}
+        <View
+          className="mx-4 mb-4 bg-white rounded-2xl border border-gray-100 overflow-hidden"
+          style={{
+            shadowColor: '#0f172a',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 12,
+            elevation: 2,
+          }}
+        >
+          <View className="px-5 pt-4 pb-3 flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2">
+              <View
+                style={{
+                  width: 3,
+                  height: 12,
+                  borderRadius: 2,
+                  backgroundColor: '#d97706',
+                }}
+              />
+              <Text className="text-[11px] font-extrabold text-gray-500 uppercase tracking-[1.2px]">
+                Top sellers
+              </Text>
+            </View>
+            <Text className="text-[10.5px] text-gray-400 font-bold">
+              This month
+            </Text>
+          </View>
+
+          {topSellers.length === 0 ? (
+            <View className="px-5 py-8 items-center">
+              <View
+                className="w-12 h-12 rounded-2xl items-center justify-center mb-3"
+                style={{ backgroundColor: '#fef3c7' }}
               >
-                <View className="flex-1">
-                  <View className="flex-row mb-4 items-center gap-3">
-                    <View className="w-20 h-20 rounded-xl overflow-hidden">
-                      <AppImage
-                        source={slide.image}
-                        contentFit="cover"
-                        style={{ width: '100%', height: '100%' }}
-                      />
-                    </View>
-                    <View className="flex-1">
-                      <Text className="text-[#1F2A37] font-[400] text-[16px] mb-1">
-                        {slide.title}
+                <Ionicons name="trophy-outline" size={20} color="#d97706" />
+              </View>
+              <Text
+                className="text-[13.5px] text-gray-700"
+                style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+              >
+                No sales data yet
+              </Text>
+              <Text className="text-[12px] text-gray-500 mt-1 text-center max-w-[260px]">
+                Once you make sales in this period, your top products will line
+                up here.
+              </Text>
+            </View>
+          ) : (
+            <View className="px-2 pb-3">
+              {topSellers.map((product, i) => {
+                // Rank badges — gold/silver/bronze tones for the podium
+                // feel without being gaudy.
+                const rankTones = [
+                  { bg: '#fef3c7', fg: '#b45309' }, // 1st
+                  { bg: '#e2e8f0', fg: '#475569' }, // 2nd
+                  { bg: '#fce7d6', fg: '#9a3412' }, // 3rd
+                ];
+                const rank = rankTones[i] ?? rankTones[2];
+                return (
+                  <View
+                    key={product.productId ?? i}
+                    className="flex-row items-center px-3 py-2.5"
+                  >
+                    <View
+                      className="w-9 h-9 rounded-2xl items-center justify-center mr-3"
+                      style={{ backgroundColor: rank.bg }}
+                    >
+                      <Text
+                        className="text-[13px]"
+                        style={{
+                          fontFamily: 'PlusJakartaSans_700Bold',
+                          color: rank.fg,
+                        }}
+                      >
+                        {i + 1}
                       </Text>
-                      <Text className="text-[#6B7280] text-[12px]">
-                        {slide.subtitle}
+                    </View>
+
+                    <View className="flex-1 pr-2 min-w-0">
+                      <Text
+                        className="text-[12px] text-gray-900"
+                        numberOfLines={1}
+                        style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+                      >
+                        {product.productName ?? 'Untitled product'}
+                      </Text>
+                      {product.category ? (
+                        <Text
+                          className="text-[11.5px] text-gray-500 mt-0.5"
+                          numberOfLines={1}
+                        >
+                          {product.category}
+                        </Text>
+                      ) : null}
+                    </View>
+
+                    <View className="items-end">
+                      <Text
+                        className="text-[13.5px] text-gray-900"
+                        style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+                      >
+                        {product.totalQuantitySold ?? 0}
+                      </Text>
+                      <Text className="text-[9px] text-gray-400 uppercase tracking-wide font-extrabold">
+                        sold
                       </Text>
                     </View>
                   </View>
-
-                  <TouchableOpacity
-                    onPress={() => navigation.navigate('SetupStep1')}
-                    className="bg-[#1A56DB] px-6 py-2.5 rounded-full self-start flex-row items-center gap-2"
-                    activeOpacity={0.8}
-                  >
-                    <Text className="text-white font-semibold text-sm">
-                      {slide.buttonText}
-                    </Text>
-                    <Text className="text-white">→</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-          />
-
-          <View className="flex-row justify-center gap-1.5 mt-3">
-            {SLIDES.map((_, index) => (
+                );
+              })}
+            </View>
+          )}
+        </View>
+        {/* Recent orders — the daily-check section. Vendors tap into the
+            app several times a day to see "did anything new come in?";
+            this answers that without forcing them to navigate. */}
+        <View
+          className="mx-4 mb-4 bg-white rounded-2xl border border-gray-100 overflow-hidden"
+          style={{
+            shadowColor: '#0f172a',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.04,
+            shadowRadius: 12,
+            elevation: 2,
+          }}
+        >
+          <View className="px-5 pt-4 pb-3 flex-row items-center justify-between">
+            <View className="flex-row items-center gap-2">
               <View
-                key={index}
-                className={`h-1.5 rounded-full ${
-                  index === currentSlide ? 'w-6 bg-blue-600' : 'w-1.5 bg-gray-300'
-                }`}
+                style={{
+                  width: 3,
+                  height: 12,
+                  borderRadius: 2,
+                  backgroundColor: '#059669',
+                }}
               />
-            ))}
+              <Text className="text-[11px] font-extrabold text-gray-500 uppercase tracking-[1.2px]">
+                Recent orders
+              </Text>
+            </View>
+            {recentOrders.length > 0 && (
+              <Pressable
+                onPress={() => handleQuickAction('Orders')}
+                hitSlop={6}
+                className="flex-row items-center gap-1 active:opacity-60"
+              >
+                <Text className="text-[12px] text-blue-600 font-extrabold">
+                  See all
+                </Text>
+                <Ionicons name="arrow-forward" size={12} color="#2563eb" />
+              </Pressable>
+            )}
           </View>
+
+          {recentOrders.length === 0 ? (
+            <View className="px-5 py-8 items-center">
+              <View
+                className="w-12 h-12 rounded-2xl items-center justify-center mb-3"
+                style={{ backgroundColor: '#f1f5f9' }}
+              >
+                <Ionicons name="bag-handle-outline" size={20} color="#94a3b8" />
+              </View>
+              <Text
+                className="text-[13.5px] text-gray-700"
+                style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+              >
+                No orders yet
+              </Text>
+              <Text className="text-[12px] text-gray-500 mt-1 text-center max-w-[240px]">
+                Once customers start buying, you'll see their orders pop up here.
+              </Text>
+            </View>
+          ) : (
+            <View className="px-2 pb-3">
+              {recentOrders.map((order, i) => {
+                const statusKey = (order.status ?? '').toLowerCase();
+                const tone =
+                  statusKey === 'success'
+                    ? {
+                      bg: '#ecfdf5',
+                      text: '#047857',
+                      label: 'Paid',
+                    }
+                    : statusKey === 'shipped'
+                      ? {
+                        bg: '#f5f3ff',
+                        text: '#6d28d9',
+                        label: 'Shipped',
+                      }
+                      : {
+                        bg: '#fffbeb',
+                        text: '#b45309',
+                        label: 'Pending',
+                      };
+                const initial = (order.buyerName ?? '?')
+                  .trim()
+                  .charAt(0)
+                  .toUpperCase();
+                const when = order.paidAt || order.createdAt;
+                return (
+                  <Pressable
+                    key={order.id ?? i}
+                    onPress={() =>
+                      navigation.navigate('OrderDetails', { order })
+                    }
+                    className="flex-row items-center px-3 py-2.5 rounded-xl active:bg-gray-50"
+                  >
+                    <View
+                      className="w-10 h-10 rounded-full items-center justify-center mr-3 border border-blue-100"
+                      style={{ backgroundColor: '#dbeafe' }}
+                    >
+                      <Text
+                        className="text-[14px] text-blue-700"
+                        style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+                      >
+                        {initial}
+                      </Text>
+                    </View>
+
+                    <View className="flex-1 pr-2 min-w-0">
+                      <Text
+                        className="text-[13.5px] text-gray-900"
+                        numberOfLines={1}
+                        style={{ fontFamily: 'PlusJakartaSans_700Bold' }}
+                      >
+                        {order.buyerName || 'Customer'}
+                      </Text>
+                      <Text
+                        className="text-[11.5px] text-gray-500 mt-0.5"
+                        numberOfLines={1}
+                      >
+                        {formatNaira(order.totalPrice ?? order.amountPaid ?? 0)}
+                        {when ? ` · ${formatRelativeTime(when)}` : ''}
+                      </Text>
+                    </View>
+
+                    <View
+                      className="px-2 py-0.5 rounded-full"
+                      style={{ backgroundColor: tone.bg }}
+                    >
+                      <Text
+                        className="text-[10px] font-extrabold uppercase tracking-wide"
+                        style={{ color: tone.text }}
+                      >
+                        {tone.label}
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -868,6 +1720,16 @@ export default function Home() {
           starter-plan purchase. Auto-shows once per store and can be
           re-opened by tapping the trial banner above. */}
       <TrialWelcomeModal ref={trialWelcomeRef} />
+
+      {/* Premium copy-confirmation pill — driven by local state so the
+          first tap on the URL chip lands reliably (the toast library
+          was eating it on cold start). */}
+      <AppToast
+        visible={copyToast != null}
+        title="Store link copied"
+        subtitle={copyToast?.url}
+        onHide={() => setCopyToast(null)}
+      />
 
       {/* Trial modal */}
       <Modal
@@ -942,7 +1804,7 @@ export default function Home() {
       <DurationPickerModal
         visible={durationModalVisible}
         onClose={() => setDurationModalVisible(false)}
-        selectedDuration={selectedDuration}
+        selectedKey={selectedKey}
         onSelect={handleDurationSelect}
         onSelectCustom={handleDurationCustom}
       />

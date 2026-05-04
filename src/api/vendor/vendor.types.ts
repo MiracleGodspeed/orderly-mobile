@@ -175,10 +175,36 @@ export type CatalogItem = {
   quantity: number;
 };
 
+/** Sales channel attribution for an order. Empty/null when the order
+ *  came in through the public storefront (the default). */
+export type OrderChannel =
+  | 'whatsapp'
+  | 'instagram'
+  | 'facebook'
+  | 'walkin'
+  | 'phone'
+  | 'twitter'
+  | 'tiktok'
+  | 'other';
+
+/** Order-line status — what the vendor has done with the order so far.
+ *  Orthogonal to payment status. Backend enum names are PascalCase; we
+ *  type the wire format directly. */
+export type OrderLineStatus =
+  | 'pending'
+  | 'Confirmed'
+  | 'Processing'
+  | 'Dispatched'
+  | 'Delivered'
+  | 'Cancelled';
+
 export type Order = {
   id: string;
   orderNumber: string;
-  status: 'success' | 'pending' | 'failed';
+  status: 'success' | 'pending' | 'failed' | 'pending_vendor_manual_confirmation';
+  /** Row-level status driven by vendor actions like "Mark as Shipped".
+   *  Unset for legacy rows where the backend hasn't been redeployed yet. */
+  orderStatus?: OrderLineStatus;
   buyerName: string;
   buyerEmail: string;
   buyerPhone: string;
@@ -193,7 +219,29 @@ export type Order = {
   paidAt: string;
   createdAt: string;
   catalogItems: CatalogItem[];
+  /** Set by vendor-logged offline orders (WhatsApp, walk-in, etc).
+   *  Null/undefined for orders that came through the storefront. */
+  channel?: OrderChannel | string | null;
+  /** True when the vendor logged this order from the dashboard
+   *  rather than it arriving via the storefront. */
+  isManualEntry?: boolean;
 };
+
+export interface LogOfflineOrderRequest {
+  customerName: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  channel: OrderChannel;
+  markAsPaid?: boolean;
+  notes?: string;
+  items: {
+    catalogItemId: string;
+    quantity: number;
+    unitPrice?: number;
+    color?: string;
+    size?: string;
+  }[];
+}
 
 export type GetOrdersParams = {
   pageIndex?: number;
@@ -437,6 +485,12 @@ export interface AppNotification {
   route: string | null;
   /** Optional: JSON-encoded params for the destination screen. */
   routeParams: string | null;
+  /** Either "notification" (per-user row — orders, payouts, low stock,
+   *  subscription notices) or "announcement" (shared platform-wide
+   *  broadcast). The id space is per-table, so we pass kind back to
+   *  mark-as-read to disambiguate. Defaults to "notification" for
+   *  backwards-compatibility with older payloads. */
+  kind?: "notification" | "announcement";
 }
 
 export interface GetNotificationsResponse {

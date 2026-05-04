@@ -18,7 +18,6 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
-import { useToast } from "react-native-toast-notifications";
 import {
   GoogleSignin,
   statusCodes,
@@ -29,6 +28,7 @@ import { SignupRequest, Country } from "../api/auth/auth.types";
 import { signup, getCountries } from "../api/auth/auth.api";
 import { CountryPickerDrawer } from "../components/CountryPickerDrawer";
 import { AppImage } from "../components/AppImage";
+import { AppToast, AppToastTone } from "../components/AppToast";
 import { useAuth } from "../../context/AuthContext";
 import { useVendor } from "../../context/VendorContext";
 
@@ -52,10 +52,14 @@ const haptic = () => {
 };
 
 export default function EmailSignUp() {
-  const toast = useToast();
   const navigation = useNavigation<ScreenNavigationProp>();
   const { googleLogin } = useAuth();
   const { fetchVendorData } = useVendor();
+  const [toast, setToast] = useState<{
+    title: string;
+    subtitle?: string;
+    tone?: AppToastTone;
+  } | null>(null);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -150,11 +154,15 @@ export default function EmailSignUp() {
 
   const handleSignup = async () => {
     if (!passwordsMatch) {
-      toast.show("Passwords don't match", { type: "danger" });
+      setToast({ title: "Passwords don't match", tone: "error" });
       return;
     }
     if (password.length < 8) {
-      toast.show("Password must be at least 8 characters", { type: "danger" });
+      setToast({
+        title: "Password is too short",
+        subtitle: "Use at least 8 characters.",
+        tone: "error",
+      });
       return;
     }
 
@@ -174,15 +182,16 @@ export default function EmailSignUp() {
 
     try {
       await signup(payload);
-      toast.show("Check your email for the verification code", {
-        type: "normal",
-      });
       navigation.navigate("OtpVerification", { email, password });
     } catch (err) {
-      let message = "Sign up failed. Please try again.";
+      let message = "Check your details and try again.";
       if (err instanceof Error) message = err.message;
       else if (typeof err === "string") message = err;
-      toast.show(message, { type: "danger" });
+      setToast({
+        title: "Couldn't create account",
+        subtitle: message,
+        tone: "error",
+      });
     } finally {
       setLoading(false);
     }
@@ -191,6 +200,14 @@ export default function EmailSignUp() {
   return (
     <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
       <StatusBar barStyle="dark-content" backgroundColor="#f9fafb" />
+
+      <AppToast
+        visible={toast != null}
+        title={toast?.title ?? ""}
+        subtitle={toast?.subtitle}
+        tone={toast?.tone}
+        onHide={() => setToast(null)}
+      />
 
       <KeyboardAvoidingView
         className="flex-1"

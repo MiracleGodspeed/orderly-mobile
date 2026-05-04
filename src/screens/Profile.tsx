@@ -87,6 +87,18 @@ export default function Profile() {
             : "Set up payouts",
           screen: "PayoutSettings",
         },
+        {
+          id: "payment-setup",
+          icon: "cash-outline",
+          tint: "#fef3c7",
+          iconColor: "#b45309",
+          title: "Payment setup",
+          subtitle:
+            storeData?.feeBearer === ("direct" as any)
+              ? "Direct to your bank"
+              : "Online payment (Paystack)",
+          screen: "PaymentSetup",
+        },
       ],
     },
     {
@@ -112,15 +124,15 @@ export default function Profile() {
           subtitle: "Password, sessions, 2FA",
           screen: "Security",
         },
-        {
-          id: "notifications",
-          icon: "notifications-outline",
-          tint: "#fef3c7",
-          iconColor: "#d97706",
-          title: "Notifications",
-          subtitle: "Push, email, alerts",
-          screen: "NotificationProfile",
-        },
+        // {
+        //   id: "notifications",
+        //   icon: "notifications-outline",
+        //   tint: "#fef3c7",
+        //   iconColor: "#d97706",
+        //   title: "Notifications",
+        //   subtitle: "Push, email, alerts",
+        //   screen: "NotificationProfile",
+        // },
       ],
     },
     {

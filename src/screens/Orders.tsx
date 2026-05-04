@@ -18,6 +18,7 @@ import { useOrders, ORDERS_PAGE_SIZE } from "../hooks/useOrders";
 import { OrdersListSkeleton } from "../components/OrderRowSkeleton";
 import { prefetchImage } from "../components/AppImage";
 import { ScreenHeader } from "../components/ScreenHeader";
+import { OrderChannelBadge } from "../components/OrderChannelBadge";
 import { Pagination } from "../components/Pagination";
 import { ListSearchBar } from "../components/ListSearchBar";
 import { formatRelativeTime } from "../lib/format";
@@ -28,14 +29,20 @@ type FilterType = "all" | "pending" | "paid";
 
 type UIStatus = "Pending" | "Paid" | "Shipped";
 
-const mapStatus = (status: string): UIStatus => {
-  switch ((status || "").toLowerCase()) {
+// Mirror of the OrderDetails mapping: order-line status drives Shipped,
+// payment status drives Paid / Pending. Keeping these in sync matters
+// for filter chips and the per-row pill — a "Shipped" order should never
+// show as "Paid" in the list.
+const mapStatus = (order: Pick<Order, "status" | "orderStatus">): UIStatus => {
+  const lineStatus = (order.orderStatus || "").toLowerCase();
+  if (lineStatus === "dispatched" || lineStatus === "delivered") return "Shipped";
+
+  switch ((order.status || "").toLowerCase()) {
     case "success":
     case "paid":
       return "Paid";
-    case "shipped":
-      return "Shipped";
     case "pending":
+    case "pending_vendor_manual_confirmation":
     default:
       return "Pending";
   }
@@ -114,7 +121,7 @@ interface OrderRowProps {
 }
 
 function OrderRow({ order, onPress }: OrderRowProps) {
-  const status = mapStatus(order.status);
+  const status = mapStatus(order);
   const statusStyle = STATUS_STYLES[status];
   const initials = getInitials(order.buyerName);
   const avatarColor = getAvatarColor(order.buyerName);
@@ -172,17 +179,23 @@ function OrderRow({ order, onPress }: OrderRowProps) {
               )}
             </View>
 
-            <View
-              className={`flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border ${statusStyle.bg} ${statusStyle.border} ml-2`}
-            >
+            <View className="flex-row items-center gap-1.5 ml-2">
+              {/* Channel tag — only renders for vendor-logged offline
+                  orders. Storefront orders fall through to just the
+                  status pill, keeping the row clean. */}
+              <OrderChannelBadge channel={order.channel} />
               <View
-                className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}
-              />
-              <Text
-                className={`text-[10px] font-bold ${statusStyle.text}`}
+                className={`flex-row items-center gap-1.5 px-2 py-0.5 rounded-full border ${statusStyle.bg} ${statusStyle.border}`}
               >
-                {status}
-              </Text>
+                <View
+                  className={`w-1.5 h-1.5 rounded-full ${statusStyle.dot}`}
+                />
+                <Text
+                  className={`text-[10px] font-bold ${statusStyle.text}`}
+                >
+                  {status}
+                </Text>
+              </View>
             </View>
           </View>
         </View>
@@ -232,7 +245,7 @@ export default function Orders() {
   const filteredOrders = useMemo(() => {
     if (activeFilter === "all") return allOrders;
     return allOrders.filter((order) => {
-      const uiStatus = mapStatus(order.status);
+      const uiStatus = mapStatus(order);
       if (activeFilter === "paid") return uiStatus === "Paid";
       if (activeFilter === "pending") return uiStatus === "Pending";
       return true;
@@ -254,11 +267,11 @@ export default function Orders() {
   }, [filteredOrders]);
 
   const paidCount = useMemo(
-    () => allOrders.filter((o) => mapStatus(o.status) === "Paid").length,
+    () => allOrders.filter((o) => mapStatus(o) === "Paid").length,
     [allOrders]
   );
   const pendingCount = useMemo(
-    () => allOrders.filter((o) => mapStatus(o.status) === "Pending").length,
+    () => allOrders.filter((o) => mapStatus(o) === "Pending").length,
     [allOrders]
   );
 
@@ -437,7 +450,33 @@ export default function Orders() {
 
   return (
     <View className="bg-gray-50 flex-1">
-      <ScreenHeader title="Orders" />
+      <ScreenHeader
+        title="Orders"
+        right={
+          <Pressable
+            onPress={() => {
+              if (Platform.OS === "ios") {
+                Haptics.selectionAsync().catch(() => {});
+              }
+              navigation.navigate("LogOrder");
+            }}
+            hitSlop={8}
+            className="flex-row items-center gap-1.5 px-3 h-9 rounded-full bg-blue-600 active:bg-blue-700"
+            style={{
+              shadowColor: "#2563eb",
+              shadowOffset: { width: 0, height: 3 },
+              shadowOpacity: 0.25,
+              shadowRadius: 6,
+              elevation: 3,
+            }}
+          >
+            <Ionicons name="add" size={14} color="#ffffff" />
+            <Text className="text-white text-[12px] font-extrabold">
+              Log order
+            </Text>
+          </Pressable>
+        }
+      />
 
       <ScrollView
         ref={scrollRef}

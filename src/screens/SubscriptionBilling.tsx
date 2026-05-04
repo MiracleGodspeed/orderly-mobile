@@ -5,7 +5,6 @@ import {
   ScrollView,
   RefreshControl,
   Platform,
-  Switch,
 } from "react-native";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useNavigation } from "@react-navigation/native";
@@ -14,7 +13,6 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { useToast } from "react-native-toast-notifications";
 import SkeletonPlaceholder from "react-native-skeleton-placeholder";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { RootStackParamList } from "../navigation/types";
 import { ScreenHeader } from "../components/ScreenHeader";
@@ -22,8 +20,6 @@ import { getSubscriptionHistory } from "../api/vendor/vendor.api";
 import { SubscriptionHistory } from "../api/vendor/vendor.types";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
-
-const AUTO_RENEW_KEY = "vendor_auto_renew";
 
 type StatusKind = "trial" | "active" | "expiring" | "expired" | "none";
 
@@ -100,7 +96,6 @@ export default function SubscriptionBilling() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [history, setHistory] = useState<SubscriptionHistory[]>([]);
-  const [autoRenew, setAutoRenew] = useState(false);
 
   // Sort history newest-first so currentSub is the most recent record.
   const orderedHistory = useMemo(
@@ -132,9 +127,6 @@ export default function SubscriptionBilling() {
 
   useEffect(() => {
     fetchSubscriptionData();
-    AsyncStorage.getItem(AUTO_RENEW_KEY).then((v) => {
-      if (v === "true") setAutoRenew(true);
-    });
   }, []);
 
   const onRefresh = useCallback(() => {
@@ -228,17 +220,6 @@ export default function SubscriptionBilling() {
     navigation.navigate("SubscriptionFlow", {
       initialPlanName: currentSub?.subscriptionPlan?.name,
     } as any);
-  };
-
-  const handleAutoRenewToggle = (next: boolean) => {
-    if (Platform.OS === "ios") {
-      Haptics.selectionAsync().catch(() => {});
-    }
-    setAutoRenew(next);
-    AsyncStorage.setItem(AUTO_RENEW_KEY, next ? "true" : "false");
-    toast.show(`Auto-renewal ${next ? "enabled" : "disabled"}`, {
-      type: "success",
-    });
   };
 
   return (
@@ -441,34 +422,28 @@ export default function SubscriptionBilling() {
                 />
                 <BillingRow
                   icon="calendar-outline"
-                  label={isExpired ? "Expired on" : "Renews on"}
+                  label={isExpired ? "Expired on" : "Ends on"}
                   value={formatDate(currentSub?.expiryDate)}
                   valueClassName={isExpired ? "text-rose-700" : undefined}
                 />
                 <View className="px-5 py-4 flex-row items-start gap-3">
                   <View className="w-7 h-7 items-center justify-center mt-0.5">
                     <Ionicons
-                      name="refresh-outline"
+                      name="information-circle-outline"
                       size={16}
                       color="#9ca3af"
                     />
                   </View>
                   <View className="flex-1 min-w-0">
                     <Text className="text-[14px] font-semibold text-gray-800">
-                      Auto-renewal
+                      No auto-renewal
                     </Text>
                     <Text className="text-[12px] text-gray-500 mt-0.5 leading-[18px]">
-                      We'll renew on your default payment method when the period
-                      ends.
+                      Plans don't renew automatically. When this period ends, your
+                      storefront pauses until you start a new payment — you'll
+                      never be billed without an explicit action.
                     </Text>
                   </View>
-                  <Switch
-                    value={autoRenew}
-                    onValueChange={handleAutoRenewToggle}
-                    trackColor={{ false: "#e5e7eb", true: "#2563eb" }}
-                    thumbColor="#ffffff"
-                    ios_backgroundColor="#e5e7eb"
-                  />
                 </View>
               </View>
             )}

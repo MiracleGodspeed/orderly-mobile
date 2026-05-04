@@ -21,6 +21,7 @@ import {
   BestSellingProduct,
   StorePerformanceReportData,
 } from "../api/vendor/vendor.types";
+import { CustomDateRangeModal } from "../components/CustomDateRangeModal";
 
 type ScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -32,14 +33,25 @@ interface Props {
 }
 
 type AnalyticsView = "sales" | "growth" | "customers";
-type Period = 7 | 30 | 90 | 365;
+// Numeric values are rolling N-day windows (last 7 days, etc).
+// "alltime" sends an epoch-anchored window so the backend returns
+// every order ever placed against the store. "custom" defers the
+// {from, to} bounds to user-picked dates from the date-range modal.
+type Period = 7 | 30 | 90 | 365 | "alltime" | "custom";
 
 const PERIODS: { label: string; value: Period }[] = [
   { label: "7 days", value: 7 },
   { label: "30 days", value: 30 },
   { label: "90 days", value: 90 },
   { label: "1 year", value: 365 },
+  { label: "All time", value: "alltime" },
+  { label: "Custom", value: "custom" },
 ];
+
+// Lower bound for the "all time" preset. Any reasonable date well
+// before the platform existed works — the backend filter is `>= from`,
+// so this captures every record without ever excluding an early order.
+const ALL_TIME_LOWER_BOUND = new Date(2000, 0, 1);
 
 // ---- Formatting helpers ----------------------------------------------------
 
@@ -66,8 +78,26 @@ const haptic = () => {
   }
 };
 
-const periodLabel = (p: Period) =>
-  p === 7 ? "last 7 days" : p === 30 ? "last 30 days" : p === 90 ? "last 90 days" : "last year";
+const fmtShortDate = (d: Date) =>
+  d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+const periodLabel = (
+  p: Period,
+  customFrom?: Date | null,
+  customTo?: Date | null
+): string => {
+  if (p === "alltime") return "all time";
+  if (p === "custom") {
+    if (customFrom && customTo) {
+      return `${fmtShortDate(customFrom)} – ${fmtShortDate(customTo)}`;
+    }
+    return "custom range";
+  }
+  if (p === 7) return "last 7 days";
+  if (p === 30) return "last 30 days";
+  if (p === 90) return "last 90 days";
+  return "last year";
+};
 
 // ---- Screen ----------------------------------------------------------------
 
@@ -78,11 +108,67 @@ export default function ReportsAnalytics({ navigation }: Props) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
+  // Custom-range state — only used when `period === "custom"`. Default
+  // to a 30-day rolling window so the picker has sensible initial
+  // values whenever the user first taps Custom.
+  const [customFrom, setCustomFrom] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
+  const [customTo, setCustomTo] = useState<Date>(() => {
+    const d = new Date();
+    d.setHours(23, 59, 59, 999);
+    return d;
+  });
+  const [customModalVisible, setCustomModalVisible] = useState(false);
+
+  // Resolves a period preset (number / "alltime" / "custom") into the
+  // precise `{from, to}` UTC window the backend expects. Centralising
+  // this keeps `fetchReport` and `onRefresh` in lockstep — there's no
+  // way for the two to drift on, say, end-of-day handling.
+  const resolveWindow = useCallback(
+    (
+      p: Period,
+      cFrom: Date,
+      cTo: Date
+    ): { from: Date; to: Date } => {
+      if (p === "alltime") {
+        const to = new Date();
+        to.setHours(23, 59, 59, 999);
+        return { from: ALL_TIME_LOWER_BOUND, to };
+      }
+      if (p === "custom") {
+        // Re-normalise bounds so the picker's date-only selection
+        // captures the entire start-day and end-day in local time.
+        const from = new Date(cFrom);
+        from.setHours(0, 0, 0, 0);
+        const to = new Date(cTo);
+        to.setHours(23, 59, 59, 999);
+        return { from, to };
+      }
+      // Numeric rolling window — start-of-day N days back through
+      // end-of-day today, so "last 7 days" includes the full 7th day.
+      const from = new Date();
+      from.setDate(from.getDate() - p);
+      from.setHours(0, 0, 0, 0);
+      const to = new Date();
+      to.setHours(23, 59, 59, 999);
+      return { from, to };
+    },
+    []
+  );
+
   const fetchReport = useCallback(
-    async (p: Period, isRefresh = false) => {
+    async (p: Period, cFrom: Date, cTo: Date, isRefresh = false) => {
       if (!isRefresh) setLoading(true);
       try {
-        const result = await getStorePerformanceReport(p);
+        const { from, to } = resolveWindow(p, cFrom, cTo);
+        const result = await getStorePerformanceReport(
+          from.toISOString(),
+          to.toISOString()
+        );
         setData(result);
       } catch (error) {
         console.error("Failed to fetch report:", error);
@@ -91,23 +177,38 @@ export default function ReportsAnalytics({ navigation }: Props) {
         setRefreshing(false);
       }
     },
-    []
+    [resolveWindow]
   );
 
   useEffect(() => {
-    fetchReport(period);
-  }, [period, fetchReport]);
+    fetchReport(period, customFrom, customTo);
+  }, [period, customFrom, customTo, fetchReport]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
-    fetchReport(period, true);
-  }, [period, fetchReport]);
+    fetchReport(period, customFrom, customTo, true);
+  }, [period, customFrom, customTo, fetchReport]);
 
   const handlePeriodTap = (p: Period) => {
-    if (p === period) return;
     haptic();
+    if (p === "custom") {
+      // Tapping "Custom" always opens the picker — even if `custom` is
+      // already the active preset — so the vendor can adjust the
+      // window without first switching to another preset and back.
+      setCustomModalVisible(true);
+      return;
+    }
+    if (p === period) return;
     setPeriod(p);
   };
+
+  const handleCustomApply = useCallback((from: Date, to: Date) => {
+    haptic();
+    setCustomFrom(from);
+    setCustomTo(to);
+    setPeriod("custom");
+    setCustomModalVisible(false);
+  }, []);
 
   // ---- Derived metrics -----------------------------------------------------
 
@@ -194,7 +295,7 @@ export default function ReportsAnalytics({ navigation }: Props) {
           <View className="p-5">
             <View className="flex-row items-center justify-between mb-3">
               <Text className="text-[10.5px] font-extrabold text-blue-200 uppercase tracking-[1.4px]">
-                Revenue · {periodLabel(period)}
+                Revenue · {periodLabel(period, customFrom, customTo)}
               </Text>
               <View className="w-9 h-9 rounded-xl bg-blue-500/20 items-center justify-center border border-blue-400/30">
                 <Ionicons name="trending-up" size={16} color="#bfdbfe" />
@@ -316,6 +417,8 @@ export default function ReportsAnalytics({ navigation }: Props) {
                   topProduct={topProduct}
                   bestSellers={bestSellers}
                   period={period}
+                  customFromLabel={customFrom}
+                  customToLabel={customTo}
                 />
               )}
               {activeView === "growth" && (
@@ -332,6 +435,19 @@ export default function ReportsAnalytics({ navigation }: Props) {
           )}
         </View>
       </ScrollView>
+
+      {/* Custom-range picker — opens when the vendor taps the "Custom"
+          period pill (or taps it again to adjust). Re-uses the same
+          modal Home uses, so the vendor sees a consistent UI for date
+          ranges across the app. */}
+      <CustomDateRangeModal
+        visible={customModalVisible}
+        onClose={() => setCustomModalVisible(false)}
+        onBack={() => setCustomModalVisible(false)}
+        initialFrom={customFrom}
+        initialTo={customTo}
+        onApply={handleCustomApply}
+      />
     </SafeAreaView>
   );
 }
@@ -346,6 +462,8 @@ function SalesView({
   topProduct,
   bestSellers,
   period,
+  customFromLabel,
+  customToLabel,
 }: {
   totalRevenue: number;
   totalOrders: number;
@@ -354,6 +472,8 @@ function SalesView({
   topProduct: BestSellingProduct | undefined;
   bestSellers: BestSellingProduct[];
   period: Period;
+  customFromLabel: Date;
+  customToLabel: Date;
 }) {
   return (
     <View>
@@ -461,7 +581,7 @@ function SalesView({
             Top products
           </Text>
           <Text className="text-[12px] text-gray-500 mt-0.5">
-            Best sellers in {periodLabel(period)}
+            Best sellers in {periodLabel(period, customFromLabel, customToLabel)}
           </Text>
         </View>
 

@@ -15,6 +15,7 @@ export const FEATURES = {
   ANALYTICS_VISITS: "analytics.visits",
   CUSTOMERS_TAGS: "customers.tags",
   STORE_CUSTOM_DOMAIN: "store.custom_domain",
+  STORE_LOGO: "store.logo",
 } as const;
 
 export type FeatureKey = (typeof FEATURES)[keyof typeof FEATURES];
@@ -73,8 +74,8 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
     bullets: [
       "Look professional next to a yourbusiness.com address",
       "Easier for customers to type, share, and remember",
-      "Stronger brand on flyers, business cards, and Instagram bio",
-      "Build trust — looks like an established, legit shop",
+      "Stronger brand on flyers, business cards, and Instagram bio"
+      // "Build trust — looks like an established, legit shop",
     ],
     beforeAfter: {
       beforeLabel: "Before",
@@ -82,5 +83,16 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
       afterLabel: "After",
       after: "www.yourbusiness.com",
     },
+  },
+  [FEATURES.STORE_LOGO]: {
+    label: "Custom store logo",
+    description:
+      "Upload your own brand mark so customers see your logo across your storefront, receipts, and order updates — instead of a generic placeholder.",
+    bullets: [
+      "Build instant brand recognition on every page of your store",
+      "Look established next to a polished header logo",
+      "Show up on order confirmations, invoices, and receipts",
+      "Replace the default placeholder customers currently see",
+    ],
   },
 };

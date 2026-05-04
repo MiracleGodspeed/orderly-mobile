@@ -14,7 +14,7 @@ import {
 import { useState, useEffect } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
-import { useToast } from "react-native-toast-notifications";
+import { AppToast, AppToastTone } from "../components/AppToast";
 
 import { useVendor } from "../../context/VendorContext";
 import { ScreenHeader } from "../components/ScreenHeader";
@@ -28,7 +28,11 @@ const haptic = () => {
 
 export default function StoreInformation() {
   const { storeData } = useVendor();
-  const toast = useToast();
+  const [toast, setToast] = useState<{
+    title: string;
+    subtitle?: string;
+    tone?: AppToastTone;
+  } | null>(null);
 
   const [storeName, setStoreName] = useState("");
   const [businessAddress, setBusinessAddress] = useState("");
@@ -60,9 +64,13 @@ export default function StoreInformation() {
     haptic();
     try {
       Clipboard.setString(storeUrl);
-      toast.show("Store link copied", { type: "success" });
+      setToast({
+        title: "Store link copied",
+        subtitle: storeUrl.replace(/^https?:\/\//, ""),
+        tone: "success",
+      });
     } catch {
-      toast.show("Couldn't copy link", { type: "danger" });
+      setToast({ title: "Couldn't copy link", tone: "error" });
     }
   };
 
@@ -72,7 +80,7 @@ export default function StoreInformation() {
     try {
       await Linking.openURL(storeUrl);
     } catch {
-      toast.show("Couldn't open link", { type: "danger" });
+      setToast({ title: "Couldn't open link", tone: "error" });
     }
   };
 
@@ -91,13 +99,16 @@ export default function StoreInformation() {
               // Placeholder — admin-review endpoint hasn't shipped yet.
               // Once it does, swap this for the real request.
               await new Promise((resolve) => setTimeout(resolve, 1000));
-              toast.show(
-                "Change request submitted — pending admin approval",
-                { type: "success" }
-              );
+              setToast({
+                title: "Change request submitted",
+                subtitle: "Pending admin approval — we'll email you once it's reviewed.",
+                tone: "success",
+              });
             } catch {
-              toast.show("Couldn't submit request — try again", {
-                type: "danger",
+              setToast({
+                title: "Couldn't submit request",
+                subtitle: "Try again in a moment.",
+                tone: "error",
               });
             } finally {
               setIsSaving(false);
@@ -111,6 +122,13 @@ export default function StoreInformation() {
   return (
     <View className="flex-1 bg-gray-50">
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <AppToast
+        visible={toast != null}
+        title={toast?.title ?? ""}
+        subtitle={toast?.subtitle}
+        tone={toast?.tone}
+        onHide={() => setToast(null)}
+      />
       <ScreenHeader title="Store information" />
 
       <KeyboardScreen>

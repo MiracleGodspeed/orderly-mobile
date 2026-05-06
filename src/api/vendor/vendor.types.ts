@@ -107,7 +107,11 @@ export interface Product {
   margin: number | null;
   revenue: number | null;
   rating: number;
-  status: number;
+  // CatalogItemStatus on the API: Active = 1, Inactive = 2. With
+  // JsonStringEnumConverter wired up, the wire shape is now the enum
+  // NAME (e.g. "Active") rather than the integer. Allow both so older
+  // builds still parse and so the UI can compare tolerantly.
+  status: number | string;
   image: string | null;
   image2: string | null;
   lastSold: string | null;

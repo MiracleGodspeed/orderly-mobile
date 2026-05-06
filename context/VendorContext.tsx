@@ -82,6 +82,7 @@ interface VendorOnboardProgress {
   addedFirstProduct: boolean,
   addedDeliveryLocations: boolean,
   updatedPersonsalProfile: boolean,
+  setupPaymentMode: boolean,
 }
 
 interface StoreSubscription {
@@ -195,7 +196,9 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
         setBusinessName(processedData.storeName || "");
         setIsServiceBased(processedData.isServiceBased);
 
-        // Checklist logic
+        // Checklist logic. Display order matters — "Set up payments" sits
+        // 3rd so the high-impact online-vs-manual decision is in front of
+        // the vendor before the payout-bank step.
         if (processedData.vendorOnboardProgressResponse) {
           setChecklistItems([
             {
@@ -214,9 +217,15 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
               route: "/vendor/catalogs2"
             },
             {
+              id: 'payment-mode',
+              title: 'Set up payments',
+              description: 'Choose how customers pay you — turn on online payment to let your store sell on its own',
+              completed: processedData.vendorOnboardProgressResponse.setupPaymentMode,
+            },
+            {
               id: 'setup-payment',
-              title: 'Setup payment method',
-              description: 'Connect your bank account or payment processor to receive payments',
+              title: 'Add your payout bank',
+              description: 'Tell us which bank account your earnings should land in',
               completed: processedData.vendorOnboardProgressResponse.updatedPersonsalProfile
             }
           ]);

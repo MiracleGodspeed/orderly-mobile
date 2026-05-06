@@ -6,8 +6,8 @@ import {
   RefreshControl,
   Platform,
 } from "react-native";
-import { useState, useEffect, useCallback, useMemo } from "react";
-import { useNavigation } from "@react-navigation/native";
+import { useState, useCallback, useMemo } from "react";
+import { useNavigation, useFocusEffect } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
@@ -125,9 +125,14 @@ export default function SubscriptionBilling() {
     }
   };
 
-  useEffect(() => {
-    fetchSubscriptionData();
-  }, []);
+  // Refetch on every screen focus, not just on mount, so re-entering
+  // the screen after a successful upgrade in SubscriptionFlow shows
+  // the new "Active" state immediately instead of the stale "Expired".
+  useFocusEffect(
+    useCallback(() => {
+      fetchSubscriptionData();
+    }, [])
+  );
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -219,6 +224,15 @@ export default function SubscriptionBilling() {
     }
     navigation.navigate("SubscriptionFlow", {
       initialPlanName: currentSub?.subscriptionPlan?.name,
+      // Whether the current subscription is still in force. Drives the
+      // downgrade-restriction in the picker — when the sub has lapsed,
+      // every plan should be selectable since there's nothing left to
+      // protect on the existing one. Trial users are treated the same
+      // way: they aren't actually paying for the system-assigned default
+      // plan, so they should be able to pick ANY plan (including that
+      // default) when they convert. Without this, a trial user finds
+      // their auto-assigned starter plan greyed out as "current".
+      currentPlanActive: hasSubscription && !isExpired && !isTrial,
     } as any);
   };
 

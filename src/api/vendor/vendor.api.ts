@@ -186,6 +186,31 @@ export const deleteCatalogCategory = async (
   return response.data;
 };
 
+export const generateProductDescription = async (
+  productName: string,
+  category?: string
+): Promise<string> => {
+  const response = await apiClient.post<{
+    code: string;
+    message: string;
+    data: string | null;
+  }>(
+    "/catalog/ai/generate-description",
+    {
+      productName,
+      category: category || null,
+    },
+    { validateStatus: () => true }
+  );
+
+  if (response.data.code !== "200" || !response.data.data) {
+    throw new Error(
+      response.data.message || "Couldn't generate a description right now"
+    );
+  }
+  return response.data.data;
+};
+
 /**
  * Set / clear the store-wide discount applied to every product. Pass 0 (or
  * any value <= 0) to remove an existing discount.

@@ -13,6 +13,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../../context/AuthContext';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import { useVendor } from '../../context/VendorContext';
+import { isUserStatus } from '../lib/authStatus';
 
 
 export default function SignupScreen({ navigation }: any) {
@@ -40,12 +41,15 @@ export default function SignupScreen({ navigation }: any) {
               "role": 2
             }
             // console.log(payload, "payload")
-            await googleLogin(payload);
-             await fetchVendorData();
-             navigation.reset({
+            const data = await googleLogin(payload);
+            await fetchVendorData();
+            // Brand-new Google users come back with userStatus =
+            // PendingOnboarding and need to land on the setup wizard,
+            // not the Home tab. Returning users skip straight to Home.
+            navigation.reset({
                 index: 0,
-                routes: [{ name: 'Home' }],
-             });
+                routes: [{ name: isUserStatus(data?.userStatus, 2) ? 'SetupStep1' : 'Home' }],
+            });
           } else {
              Alert.alert("Error", "No ID token received from Google");
           }

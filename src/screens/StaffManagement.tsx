@@ -34,6 +34,7 @@ import {
   StaffPermission,
 } from "../lib/staffPermissions";
 import { formatRelativeTime } from "../lib/format";
+import KeyboardScreen from "../components/KeyboardScreen";
 
 type ScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -511,7 +512,10 @@ function InviteSheet({
             </Pressable>
           </View>
 
-          <ScrollView className="px-5 py-4" keyboardShouldPersistTaps="handled">
+          <KeyboardScreen
+            className="px-5 py-4"
+            bottomPadding={24}
+          >
             <Text className="text-[10.5px] text-gray-500 uppercase tracking-[1.2px] mb-1.5"
               style={{ fontFamily: "PlusJakartaSans_700Bold" }}>
               Full name
@@ -614,7 +618,7 @@ function InviteSheet({
                 />
               </View>
             )}
-          </ScrollView>
+          </KeyboardScreen>
 
           <View className="px-5 pt-3 pb-5 border-t border-gray-100">
             <Pressable

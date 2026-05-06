@@ -122,7 +122,12 @@ export const TrialWelcomeModal = forwardRef<TrialWelcomeModalHandle>(
   const seePlans = async () => {
     await dismiss();
     setTimeout(() => {
-      navigation.navigate("SubscriptionFlow", {} as any);
+      // Trial users haven't paid for the auto-assigned default plan, so
+      // every plan should be selectable in the picker — including the
+      // starter tier. Passing currentPlanActive=false bypasses the
+      // downgrade/same-plan gates that exist to protect paying vendors
+      // from proration issues.
+      navigation.navigate("SubscriptionFlow", { currentPlanActive: false } as any);
     }, 280);
   };
 

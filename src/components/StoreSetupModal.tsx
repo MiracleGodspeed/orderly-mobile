@@ -8,7 +8,11 @@ import { setupProgressPct } from "../lib/setupProgress";
 
 type IoniconName = keyof typeof Ionicons.glyphMap;
 
-export type SetupStepId = "add-delivery-locations" | "add-product" | "setup-payment";
+export type SetupStepId =
+  | "add-delivery-locations"
+  | "add-product"
+  | "payment-mode"
+  | "setup-payment";
 
 interface Step {
   id: SetupStepId;
@@ -19,6 +23,10 @@ interface Step {
   iconColor: string;
 }
 
+// Display order is intentional — "Set up payments" sits 3rd so it nudges
+// vendors to make the high-impact choice (online vs manual) before the
+// payout-bank step. The new step is technically the 4th item we track,
+// but surfaced at position 3 to keep it front of mind.
 const STEPS: Step[] = [
   {
     id: "add-delivery-locations",
@@ -39,11 +47,20 @@ const STEPS: Step[] = [
     iconColor: "#0891b2",
   },
   {
-    id: "setup-payment",
-    title: "Set up your payment method",
+    id: "payment-mode",
+    title: "Set up payments",
     description:
-      "Connect your bank or payment provider to start receiving payments securely.",
+      "Choose how customers pay you — turn on online payment to let your store sell on its own.",
     icon: "card-outline",
+    tint: "#eff6ff",
+    iconColor: "#2563eb",
+  },
+  {
+    id: "setup-payment",
+    title: "Add your payout bank",
+    description:
+      "Tell us which bank account your earnings should land in.",
+    icon: "wallet-outline",
     tint: "#ecfdf5",
     iconColor: "#059669",
   },

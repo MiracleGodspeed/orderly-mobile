@@ -25,6 +25,7 @@ import {
   createProduct,
   updateProduct,
   getCatalogCategories,
+  generateProductDescription,
 } from "../../src/api/vendor/vendor.api";
 import {
   CreateProductPayload,
@@ -171,6 +172,7 @@ export default function AddProductModal({
   });
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(false);
+  const [aiGenerating, setAiGenerating] = useState(false);
 
   // Feature gating — secondary photo slot is paywalled. Tapping it when
   // locked opens the upgrade sheet instead of the image picker.
@@ -745,6 +747,26 @@ export default function AddProductModal({
 
   const charCount = productDescription.length;
 
+  const handleGenerateDescription = async () => {
+    const name = productName.trim();
+    if (!name || aiGenerating) return;
+    haptic();
+    setAiGenerating(true);
+    try {
+      const categoryName =
+        vendorCategories.find((c) => c.id === catalogCategoryId)?.name ?? undefined;
+      const generated = await generateProductDescription(name, categoryName);
+      setProductDescription(generated);
+      clearError("productDescription");
+    } catch (err: any) {
+      toast.show(err?.message || "Couldn't generate a description right now", {
+        type: "danger",
+      });
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
   return (
     <Modal
       visible={visible}
@@ -753,9 +775,8 @@ export default function AddProductModal({
       onRequestClose={onClose}
     >
       <SafeAreaView className="flex-1 bg-gray-50" edges={["top"]}>
-        <KeyboardScreen>
-          <View className="flex-1">
-            {/* Premium header */}
+        <View className="flex-1">
+          {/* Premium header */}
             <View className="bg-white px-5 pt-2 pb-4 border-b border-gray-100">
               <View className="items-center pb-2">
                 <View className="w-10 h-[5px] bg-gray-200 rounded-full" />
@@ -809,10 +830,9 @@ export default function AddProductModal({
               </View>
             </View>
 
-            <ScrollView
-              showsVerticalScrollIndicator={false}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+            <KeyboardScreen
+              contentContainerStyle={{ paddingHorizontal: 20 }}
+              bottomPadding={24}
             >
               {/* IMAGES */}
               <Text className={`${SECTION_LABEL} mt-5`}>Photos</Text>
@@ -1569,6 +1589,77 @@ export default function AddProductModal({
                     : "border-gray-200"
                 }`}
               >
+                {/* Orderly AI suggestion — always visible when description
+                    is empty (so vendors discover it), and clearly explains
+                    itself in three states: enabled, disabled (name missing),
+                    and generating. */}
+                {!productDescription.trim() && (() => {
+                  const nameReady = !!productName.trim();
+                  const ready = nameReady && !aiGenerating;
+                  return (
+                    <Pressable
+                      onPress={handleGenerateDescription}
+                      disabled={!ready}
+                      className="flex-row items-center gap-3 px-3 py-3 rounded-xl mb-3"
+                      style={{
+                        backgroundColor: ready
+                          ? "#f5f9ff"
+                          : aiGenerating
+                          ? "#eff6ff"
+                          : "#f9fafb",
+                        borderWidth: 1,
+                        borderColor: ready ? "#dbeafe" : "#e5e7eb",
+                        borderStyle: "dashed",
+                        opacity: nameReady ? 1 : 0.85,
+                      }}
+                    >
+                      <View
+                        className="w-9 h-9 rounded-full items-center justify-center"
+                        style={{
+                          backgroundColor: nameReady ? "#dbeafe" : "#e5e7eb",
+                        }}
+                      >
+                        {aiGenerating ? (
+                          <ActivityIndicator size="small" color="#2563EB" />
+                        ) : (
+                          <Ionicons
+                            name="sparkles"
+                            size={16}
+                            color={nameReady ? "#2563EB" : "#9ca3af"}
+                          />
+                        )}
+                      </View>
+                      <View className="flex-1">
+                        <Text
+                          className="text-[13px] font-extrabold tracking-tight"
+                          style={{ color: nameReady ? "#1d4ed8" : "#6b7280" }}
+                        >
+                          {aiGenerating
+                            ? "Writing your description…"
+                            : "Let Orderly AI write this for you"}
+                        </Text>
+                        <Text
+                          className="text-[11px] mt-0.5"
+                          style={{ color: nameReady ? "#2563EB" : "#9ca3af" }}
+                        >
+                          {aiGenerating
+                            ? "Hang tight — almost done"
+                            : nameReady
+                            ? `Tap once — we'll handle the writing for "${productName.trim().slice(0, 28)}${productName.trim().length > 28 ? "…" : ""}"`
+                            : "Add a product name and we'll handle the rest"}
+                        </Text>
+                      </View>
+                      {ready && (
+                        <Ionicons
+                          name="chevron-forward"
+                          size={16}
+                          color="#2563EB"
+                        />
+                      )}
+                    </Pressable>
+                  );
+                })()}
+
                 <TextInput
                   value={productDescription}
                   onChangeText={(text) => {
@@ -1577,14 +1668,43 @@ export default function AddProductModal({
                   }}
                   className="text-[15px] text-gray-900"
                   style={{ minHeight: 100, textAlignVertical: "top" }}
-                  placeholder="Describe what makes this product great…"
+                  placeholder={
+                    productName.trim()
+                      ? "Or write your own description…"
+                      : "Describe what makes this product great…"
+                  }
                   placeholderTextColor="#9ca3af"
                   multiline
+                  editable={!aiGenerating}
                 />
                 <View className="flex-row items-center justify-between mt-2 pt-2 border-t border-gray-100">
-                  <Text className="text-[10.5px] text-gray-400">
-                    A clear description helps customers decide
-                  </Text>
+                  {/* When description has content AND a name is set, swap
+                      the helper for a small "Rewrite with AI" affordance so
+                      vendors can regenerate. Otherwise show the contextual
+                      hint. */}
+                  {productName.trim() && productDescription.trim() ? (
+                    <Pressable
+                      onPress={handleGenerateDescription}
+                      disabled={aiGenerating}
+                      className="flex-row items-center gap-1"
+                      hitSlop={8}
+                    >
+                      {aiGenerating ? (
+                        <ActivityIndicator size="small" color="#2563EB" />
+                      ) : (
+                        <Ionicons name="sparkles" size={11} color="#2563EB" />
+                      )}
+                      <Text className="text-[10.5px] font-extrabold text-blue-600 tracking-tight">
+                        {aiGenerating ? "Rewriting…" : "Rewrite with Orderly AI"}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Text className="text-[10.5px] text-gray-400">
+                      {!productName.trim()
+                        ? "Add a product name to use Orderly AI"
+                        : "A clear description helps customers decide"}
+                    </Text>
+                  )}
                   <Text className="text-[10.5px] font-semibold text-gray-400">
                     {charCount}
                   </Text>
@@ -1664,7 +1784,7 @@ export default function AddProductModal({
                   ))}
                 </View>
               )}
-            </ScrollView>
+            </KeyboardScreen>
 
             {/* Sticky footer */}
             <View
@@ -1740,7 +1860,6 @@ export default function AddProductModal({
               </View>
             </View>
           </View>
-        </KeyboardScreen>
 
         {/* Custom color picker overlay (in-place — same fix as BrandAssetsModal) */}
         {showColorPicker && (

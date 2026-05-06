@@ -4,9 +4,9 @@ import {
   Pressable,
   TextInput,
   Platform,
-  ScrollView,
   Alert,
 } from "react-native";
+import KeyboardScreen from "./KeyboardScreen";
 import { useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
@@ -129,10 +129,9 @@ export default function HeroSectionModal({
       subtitle="Showcase what visitors see first when they land"
       height="92%"
     >
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+      <KeyboardScreen
+        contentContainerStyle={{ paddingHorizontal: 20 }}
+        bottomPadding={24}
       >
         {slides.map((slide, index) => (
           <View
@@ -265,7 +264,7 @@ export default function HeroSectionModal({
             Add another slide
           </Text>
         </Pressable>
-      </ScrollView>
+      </KeyboardScreen>
 
       <BottomSheetFooter
         onCancel={onClose}

@@ -39,6 +39,10 @@ export default function SubscriptionFlowScreen() {
             selectedPlan={selectedPlan}
             billingCycle={cycle}
             setBillingCycle={setCycle}
+            // Default true so existing entry points (deep-link, push,
+            // etc.) keep the downgrade gate. SubscriptionBilling
+            // explicitly passes false when the current sub has lapsed.
+            currentPlanActive={route.params?.currentPlanActive ?? true}
             onContinue={(plan, chosenCycle) => {
               let finalPrice = plan.price;
               if (chosenCycle === "Quarterly") finalPrice = plan.price * 3;

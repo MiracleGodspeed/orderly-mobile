@@ -2,6 +2,11 @@ import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { getProducts } from "../api/vendor/vendor.api";
 import { PRODUCTS_PAGE_SIZE } from "./useProducts";
 
+// Mirror useProducts: products are stable enough to cache for 5 minutes
+// without surprising the user. Edits invalidate via useInvalidateInfiniteProducts.
+const PRODUCTS_STALE_TIME = 5 * 60 * 1000;
+const PRODUCTS_GC_TIME = 15 * 60 * 1000;
+
 interface UseInfiniteProductsParams {
   search?: string;
   pageSize?: number;
@@ -40,6 +45,8 @@ export function useInfiniteProducts({
       const next = (lastPage._requestedPage ?? 1) + 1;
       return next <= totalPages ? next : undefined;
     },
+    staleTime: PRODUCTS_STALE_TIME,
+    gcTime: PRODUCTS_GC_TIME,
   });
 }
 

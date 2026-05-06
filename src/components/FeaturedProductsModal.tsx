@@ -4,8 +4,8 @@ import {
   Text,
   Pressable,
   TextInput,
-  ScrollView,
 } from "react-native";
+import KeyboardScreen from "./KeyboardScreen";
 import { useState } from "react";
 import MaterialIcons from '@expo/vector-icons/MaterialIcons';
 import AntDesign from '@expo/vector-icons/AntDesign';
@@ -66,7 +66,7 @@ export default function FeaturedProductsModal({ visible, onClose }: Props) {
                       </Pressable>
                     </View>
 
-          <ScrollView className="flex-1 px-4 pt-6">
+          <KeyboardScreen className="flex-1 px-4 pt-6">
             <Text className="text-sm text-gray-700 mb-2">Heading</Text>
             <TextInput
               value={heading}
@@ -149,7 +149,7 @@ export default function FeaturedProductsModal({ visible, onClose }: Props) {
                           <Text className="text-white font-medium text-base">Save Changes</Text>
                         </Pressable>
                       </View>
-          </ScrollView>
+          </KeyboardScreen>
         </View>
       </View>
     </Modal>

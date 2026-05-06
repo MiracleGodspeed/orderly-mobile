@@ -2,7 +2,6 @@ import {
   View,
   Text,
   Pressable,
-  ScrollView,
   StatusBar,
   TextInput,
   ActivityIndicator,
@@ -131,13 +130,7 @@ export default function StoreInformation() {
       />
       <ScreenHeader title="Store information" />
 
-      <KeyboardScreen>
-        <ScrollView
-          className="flex-1"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 60 }}
-        >
+      <KeyboardScreen bottomPadding={140}>
           {/* Branded hero with store identity */}
           <View
             className="mx-5 mt-4 mb-4 rounded-3xl overflow-hidden px-5 pt-5 pb-6"
@@ -396,7 +389,7 @@ export default function StoreInformation() {
               </Text>
             </View>
           </View>
-        </ScrollView>
+        </KeyboardScreen>
 
         {/* Sticky save bar */}
         <View
@@ -438,7 +431,6 @@ export default function StoreInformation() {
             </Text>
           </Pressable>
         </View>
-      </KeyboardScreen>
     </View>
   );
 }

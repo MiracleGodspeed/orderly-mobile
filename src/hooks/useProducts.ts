@@ -9,6 +9,15 @@ import { queryKeys } from "../lib/queryClient";
 
 export const PRODUCTS_PAGE_SIZE = 12;
 
+// Products are far less volatile than orders/notifications — vendors edit
+// them in bursts but otherwise the catalog sits still. Holding the cache
+// fresh for 5 minutes (vs the global 60s) means re-opening the screen
+// during normal use renders instantly instead of triggering a refetch
+// the user does not need. Mutations call useInvalidateProducts to keep
+// edits visible immediately.
+const PRODUCTS_STALE_TIME = 5 * 60 * 1000;
+const PRODUCTS_GC_TIME = 15 * 60 * 1000;
+
 interface UseProductsParams {
   page?: number;
   search?: string;
@@ -46,6 +55,8 @@ export function useProducts({
         lowStockThreshold: params.lowStockThreshold,
       }),
     placeholderData: keepPreviousData,
+    staleTime: PRODUCTS_STALE_TIME,
+    gcTime: PRODUCTS_GC_TIME,
   });
 
   // Prefetch the next page in the background as soon as the current page
@@ -72,6 +83,8 @@ export function useProducts({
           categoryId: nextParams.categoryId,
           lowStockThreshold: nextParams.lowStockThreshold,
         }),
+      staleTime: PRODUCTS_STALE_TIME,
+      gcTime: PRODUCTS_GC_TIME,
     });
   }, [hasNextPage, page, pageSize, trimmedSearch, categoryId, lowStockThreshold, qc]);
 
@@ -105,6 +118,8 @@ export function usePrefetchProducts() {
           pageIndex: 1,
           pageSize: PRODUCTS_PAGE_SIZE,
         }),
+      staleTime: PRODUCTS_STALE_TIME,
+      gcTime: PRODUCTS_GC_TIME,
     });
   };
 }

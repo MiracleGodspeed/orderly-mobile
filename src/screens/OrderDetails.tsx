@@ -7,6 +7,7 @@ import {
   Linking,
   Alert,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation, useRoute } from "@react-navigation/native";
@@ -31,6 +32,7 @@ import { OrderActivity } from "../api/vendor/vendor.types";
 import { useStaffPermissions } from "../hooks/useStaffPermissions";
 import { STAFF_PERMISSIONS } from "../lib/staffPermissions";
 import { formatRelativeTime, parseBackendDate } from "../lib/format";
+import { useVendor } from "../../context/VendorContext";
 
 type ScreenNavigationProp = NativeStackNavigationProp<
   RootStackParamList,
@@ -236,11 +238,23 @@ export default function OrderDetailsScreen() {
   const safeOrder = order ?? ({} as Order);
   const qc = useQueryClient();
   const perms = useStaffPermissions();
+  const { storeData } = useVendor();
 
   const [status, setStatus] = useState<OrderStatus>(mapStatus(safeOrder));
   // Disables the action buttons while a status-change request is in
   // flight so a double-tap doesn't fire two API calls.
   const [statusUpdating, setStatusUpdating] = useState(false);
+
+  // Two-step flow for confirming a manual payment:
+  //   1. confirmManualPaidOpen — "Are you sure?" popover before we hit
+  //      the API. Mark-as-paid is consequential (the customer will get a
+  //      WhatsApp confirmation right after), so we don't fire it on a
+  //      stray tap.
+  //   2. paymentConfirmedOpen — "Payment confirmed!" success modal with
+  //      a one-tap shortcut to message the buyer on WhatsApp.
+  // Online-paid orders skip both — they're already auto-confirmed.
+  const [confirmManualPaidOpen, setConfirmManualPaidOpen] = useState(false);
+  const [paymentConfirmedOpen, setPaymentConfirmedOpen] = useState(false);
 
   // Permission gates — vendors and admins always pass; staff only
   // surface actions they're entitled to perform. The forward action
@@ -282,8 +296,15 @@ export default function OrderDetailsScreen() {
     qc.invalidateQueries({ queryKey: ["orders"] });
   };
 
-  const advanceTo = async (next: OrderStatus) => {
-    if (statusUpdating) return;
+  // Returns true on success, false on failure. The optional `silent` flag
+  // suppresses the success toast — used when the caller is going to show
+  // a richer success UI (e.g. a "Payment confirmed!" modal) instead.
+  // Errors still toast either way; we never want a silent failure.
+  const advanceTo = async (
+    next: OrderStatus,
+    opts?: { silent?: boolean }
+  ): Promise<boolean> => {
+    if (statusUpdating) return false;
     setStatusUpdating(true);
     const previous = status;
     // Optimistic flip — reverted on error so the UI doesn't lie.
@@ -298,19 +319,25 @@ export default function OrderDetailsScreen() {
           throw new Error("Missing payment reference for this order.");
         }
         await confirmManualPayment(safeOrder.orderNumber);
-        toast.show("Order marked as paid", { type: "success" });
+        if (!opts?.silent) {
+          toast.show("Order marked as paid", { type: "success" });
+        }
       } else if (next === "Shipped") {
         // Paid → Shipped: flip every OrderRequest line under this batch
         // to Dispatched. The mobile concept of "shipped" maps to the
         // backend's `Dispatched` enum value.
         await updateOrderStatusByBatch(safeOrder.id, "Dispatched");
-        toast.show("Order marked as shipped", { type: "success" });
+        if (!opts?.silent) {
+          toast.show("Order marked as shipped", { type: "success" });
+        }
       }
       invalidateOrders();
       refreshActivity();
+      return true;
     } catch (err: any) {
       setStatus(previous);
       toast.show(err?.message || "Couldn't update the order", { type: "danger" });
+      return false;
     } finally {
       setStatusUpdating(false);
     }
@@ -391,7 +418,12 @@ export default function OrderDetailsScreen() {
     });
   };
 
-  const handleWhatsApp = async () => {
+  // Opens WhatsApp to the buyer. Optional `prefill` is URL-encoded into the
+  // `text` param so the message is queued in the chat composer for the
+  // vendor to review and send. Using a single helper for both the generic
+  // "open chat" and the post-confirmation "Let them know" flow keeps the
+  // deep-link / web-fallback logic in one place.
+  const openBuyerWhatsApp = async (prefill?: string) => {
     if (!order.buyerPhone) {
       toast.show("No phone number available", { type: "warning" });
       return;
@@ -401,13 +433,14 @@ export default function OrderDetailsScreen() {
       toast.show("Phone number looks invalid", { type: "warning" });
       return;
     }
+    const textParam = prefill ? `&text=${encodeURIComponent(prefill)}` : "";
     // WhatsApp's deep-link spec requires international digits with NO
     // leading + and NO spaces — exactly what `normalizePhone` returns.
     // Try the app deep link first; fall back to wa.me which handles
     // both "open the app" and "show install prompt" gracefully when
     // WhatsApp isn't installed.
-    const deepLink = `whatsapp://send?phone=${phone}`;
-    const webLink = `https://wa.me/${phone}`;
+    const deepLink = `whatsapp://send?phone=${phone}${textParam}`;
+    const webLink = `https://wa.me/${phone}${prefill ? `?text=${encodeURIComponent(prefill)}` : ""}`;
     try {
       const canOpen = await Linking.canOpenURL(deepLink);
       if (canOpen) {
@@ -422,6 +455,43 @@ export default function OrderDetailsScreen() {
     } catch {
       toast.show("Couldn't open WhatsApp", { type: "warning" });
     }
+  };
+
+  const handleWhatsApp = () => openBuyerWhatsApp();
+
+  // "Let them know" — opens the buyer's WhatsApp with a pre-drafted
+  // payment-confirmed message. Only used after a manual payment confirm,
+  // since online payments already auto-receipt the buyer.
+  //
+  // Emoji choice notes: we deliberately stick to a tiny set of basic
+  // single-codepoint emojis (👋 ✅ 📦 🙏) — these have been part of the
+  // Unicode emoji standard since v1.0/6.0, render reliably across every
+  // WhatsApp client, and survive a URL-encode round-trip cleanly. Newer
+  // composite/sequence emojis (e.g. ZWJ-joined ones) have shown up as
+  // "?" on older Android devices in past integrations, so we avoid them.
+  const handleWhatsAppNotify = () => {
+    const firstName = (order.buyerName || "").trim().split(/\s+/)[0] || "there";
+    const storeName = (storeData?.storeName || "").trim();
+    const ref = order.orderNumber ? `#${order.orderNumber}` : "";
+    const total = formatNgn(order.totalPrice);
+
+    const greeting = storeName
+      ? `Hi ${firstName}! 👋 This is ${storeName}.`
+      : `Hi ${firstName}! 👋`;
+    const orderLine = ref
+      ? `Payment of ${total} received for order ${ref} - thank you!`
+      : `Payment of ${total} received - thank you!`;
+    const signoff = storeName
+      ? `Thanks for choosing ${storeName}! 🙏`
+      : `Thanks for choosing us! 🙏`;
+
+    const message =
+      `${greeting}\n\n` +
+      `✅ ${orderLine}\n\n` +
+      `📦 We're processing your order now and we'll keep you posted on next steps.\n\n` +
+      signoff;
+
+    openBuyerWhatsApp(message);
   };
 
   const avatarColor = getAvatarColor(order.buyerName);
@@ -900,27 +970,80 @@ export default function OrderDetailsScreen() {
                   Payment status
                 </Text>
               </View>
-              <View
-                className={`flex-row items-center gap-1 px-2 py-0.5 rounded-md ${
-                  isPaid ? "bg-emerald-50 border border-emerald-100" : "bg-amber-50 border border-amber-100"
-                }`}
-              >
+              <View className="flex-row items-center gap-1.5">
+                {/* Auto-confirmed badge — explains why no "undo payment"
+                    button is showing for online orders. We only display
+                    when the order is paid AND originated from an online
+                    flow (i.e. not a manual bank-transfer entry). */}
+                {isPaid && !isManualPayment ? (
+                  <View
+                    className="flex-row items-center gap-1 px-2 py-0.5 rounded-md bg-gray-50 border border-gray-200"
+                  >
+                    <Ionicons name="lock-closed" size={9} color="#475569" />
+                    <Text className="text-[9.5px] font-extrabold tracking-wide text-gray-600 uppercase">
+                      Auto-confirmed
+                    </Text>
+                  </View>
+                ) : null}
                 <View
-                  className={`w-1.5 h-1.5 rounded-full ${
-                    isPaid ? "bg-emerald-500" : "bg-amber-500"
-                  }`}
-                />
-                <Text
-                  className={`text-[10.5px] font-extrabold tracking-wide ${
-                    isPaid ? "text-emerald-700" : "text-amber-700"
+                  className={`flex-row items-center gap-1 px-2 py-0.5 rounded-md ${
+                    isPaid ? "bg-emerald-50 border border-emerald-100" : "bg-amber-50 border border-amber-100"
                   }`}
                 >
-                  {isPaid ? "PAID" : "PENDING"}
-                </Text>
+                  <View
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      isPaid ? "bg-emerald-500" : "bg-amber-500"
+                    }`}
+                  />
+                  <Text
+                    className={`text-[10.5px] font-extrabold tracking-wide ${
+                      isPaid ? "text-emerald-700" : "text-amber-700"
+                    }`}
+                  >
+                    {isPaid ? "PAID" : "PENDING"}
+                  </Text>
+                </View>
               </View>
             </View>
           </View>
         </View>
+
+        {/* "Let them know" — only after a *manual* payment confirmation.
+            Online payments already auto-receipt, so this CTA would be
+            redundant there. Persistent (not just a one-shot post-confirm
+            toast) so vendors can re-open it if they close the app or want
+            to resend. */}
+        {isPaid 
+        //&& isManualPayment 
+        && order.buyerPhone ? (
+          <View className="mx-5 mt-4">
+            <Pressable
+              onPress={handleWhatsAppNotify}
+              className="rounded-2xl overflow-hidden flex-row items-center px-4 py-4 active:opacity-90"
+              style={{
+                backgroundColor: "#ecfdf5",
+                borderWidth: 1,
+                borderColor: "#a7f3d0",
+              }}
+            >
+              <View
+                className="w-11 h-11 rounded-full items-center justify-center mr-3"
+                style={{ backgroundColor: "#25D366" }}
+              >
+                <Ionicons name="logo-whatsapp" size={22} color="white" />
+              </View>
+              <View className="flex-1">
+                <Text className="text-[14px] font-extrabold tracking-tight text-emerald-900">
+                  Let {((order.buyerName || "").trim().split(/\s+/)[0]) || "them"} know
+                </Text>
+                <Text className="text-[11.5px] text-emerald-800/80 mt-0.5">
+                  Send a quick WhatsApp confirming payment received and that the order is being processed
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#047857" />
+            </Pressable>
+          </View>
+        ) : null}
 
         {/* Audit timeline — who did what to this order. Hidden when no
             activity is recorded yet (e.g. brand-new order). */}
@@ -1069,7 +1192,19 @@ export default function OrderDetailsScreen() {
             {showForward && action ? (
               <Pressable
                 disabled={statusUpdating}
-                onPress={() => advanceTo(action.next)}
+                onPress={() => {
+                  // Manual mark-as-paid runs through the confirm popover
+                  // → success modal flow so the vendor double-checks
+                  // before the customer gets a WhatsApp confirmation.
+                  // Mark-as-shipped (and any non-manual mark-as-paid,
+                  // though that's currently impossible) goes through
+                  // immediately.
+                  if (action.next === "Paid" && isManualPayment) {
+                    setConfirmManualPaidOpen(true);
+                  } else {
+                    advanceTo(action.next);
+                  }
+                }}
                 className={`flex-1 rounded-2xl py-4 flex-row items-center justify-center gap-2 active:opacity-90 ${
                   statusUpdating ? "opacity-60" : ""
                 }`}
@@ -1100,6 +1235,169 @@ export default function OrderDetailsScreen() {
         </View>
         );
       })()}
+
+      {/* === CONFIRM MANUAL PAYMENT POPOVER ===
+          Defensive step before flipping a manual order to Paid. Vendors
+          should reach this only after eyeballing their bank app and
+          confirming the transfer cleared. We use a custom Modal (not
+          Alert.alert) so the visual is on-brand and consistent with the
+          success modal that follows. */}
+      <Modal
+        visible={confirmManualPaidOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          if (!statusUpdating) setConfirmManualPaidOpen(false);
+        }}
+      >
+        <Pressable
+          onPress={() => {
+            if (!statusUpdating) setConfirmManualPaidOpen(false);
+          }}
+          className="flex-1 items-center justify-center px-6"
+          style={{ backgroundColor: "rgba(15,23,42,0.55)" }}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            className="w-full bg-white rounded-3xl p-6"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.2,
+              shadowRadius: 24,
+              elevation: 12,
+            }}
+          >
+            <View
+              className="w-12 h-12 rounded-full items-center justify-center self-center mb-4"
+              style={{ backgroundColor: "#fef3c7" }}
+            >
+              <Ionicons name="cash-outline" size={22} color="#b45309" />
+            </View>
+            <Text className="text-center text-[18px] font-extrabold text-gray-900 tracking-tight">
+              Confirm payment received?
+            </Text>
+            <Text className="text-center text-[13px] text-gray-600 mt-2 leading-[19px]">
+              Make sure {formatNgn(order.totalPrice)} has cleared in your bank account before confirming. The customer will get a WhatsApp confirmation right after.
+            </Text>
+
+            <View className="flex-row gap-2 mt-5">
+              <Pressable
+                onPress={() => {
+                  if (!statusUpdating) setConfirmManualPaidOpen(false);
+                }}
+                disabled={statusUpdating}
+                className={`flex-1 h-12 rounded-2xl items-center justify-center border border-gray-200 bg-white active:bg-gray-50 ${
+                  statusUpdating ? "opacity-50" : ""
+                }`}
+              >
+                <Text className="text-gray-700 font-extrabold text-[14px]">
+                  Cancel
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={async () => {
+                  const ok = await advanceTo("Paid", { silent: true });
+                  setConfirmManualPaidOpen(false);
+                  if (ok) setPaymentConfirmedOpen(true);
+                }}
+                disabled={statusUpdating}
+                className={`flex-1 h-12 rounded-2xl items-center justify-center flex-row gap-2 ${
+                  statusUpdating ? "opacity-60" : ""
+                }`}
+                style={{ backgroundColor: "#059669" }}
+              >
+                {statusUpdating ? (
+                  <ActivityIndicator size="small" color="white" />
+                ) : (
+                  <>
+                    <Ionicons name="checkmark-circle" size={16} color="white" />
+                    <Text className="text-white font-extrabold text-[14px]">
+                      Confirm
+                    </Text>
+                  </>
+                )}
+              </Pressable>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* === PAYMENT CONFIRMED SUCCESS MODAL ===
+          Celebratory acknowledgement after a manual confirm + a one-tap
+          shortcut to message the buyer on WhatsApp. The persistent
+          in-page CTA ("Let them know") still hangs around afterwards in
+          case the vendor wants to resend. */}
+      <Modal
+        visible={paymentConfirmedOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setPaymentConfirmedOpen(false)}
+      >
+        <Pressable
+          onPress={() => setPaymentConfirmedOpen(false)}
+          className="flex-1 items-center justify-center px-6"
+          style={{ backgroundColor: "rgba(15,23,42,0.55)" }}
+        >
+          <Pressable
+            onPress={(e) => e.stopPropagation()}
+            className="w-full bg-white rounded-3xl p-6"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.2,
+              shadowRadius: 24,
+              elevation: 12,
+            }}
+          >
+            <View
+              className="w-14 h-14 rounded-full items-center justify-center self-center mb-4"
+              style={{ backgroundColor: "#d1fae5" }}
+            >
+              <Ionicons name="checkmark-circle" size={32} color="#059669" />
+            </View>
+            <Text className="text-center text-[19px] font-extrabold text-gray-900 tracking-tight">
+              Payment confirmed!
+            </Text>
+            <Text className="text-center text-[13px] text-gray-600 mt-2 leading-[19px]">
+              {order.orderNumber ? `Order #${order.orderNumber} is now ` : "This order is now "}
+              marked as paid and ready to be processed.
+            </Text>
+
+            {order.buyerPhone ? (
+              <Pressable
+                onPress={() => {
+                  setPaymentConfirmedOpen(false);
+                  handleWhatsAppNotify();
+                }}
+                className="mt-5 h-13 rounded-2xl flex-row items-center justify-center gap-2 px-4 py-4"
+                style={{
+                  backgroundColor: "#25D366",
+                  shadowColor: "#25D366",
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 12,
+                  elevation: 6,
+                }}
+              >
+                <Ionicons name="logo-whatsapp" size={18} color="white" />
+                <Text className="text-white font-extrabold text-[14.5px] tracking-tight">
+                  Let {((order.buyerName || "").trim().split(/\s+/)[0]) || "them"} know on WhatsApp
+                </Text>
+              </Pressable>
+            ) : null}
+
+            <Pressable
+              onPress={() => setPaymentConfirmedOpen(false)}
+              className="mt-3 h-12 rounded-2xl items-center justify-center"
+            >
+              <Text className="text-gray-500 font-bold text-[13.5px]">
+                Done
+              </Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }

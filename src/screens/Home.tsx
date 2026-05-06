@@ -78,8 +78,18 @@ const BACKDROP_ICONS: Array<keyof typeof Ionicons.glyphMap> = [
   'cube-outline',
   'receipt-outline',
   'gift-outline',
+  'bag-handle-outline',
+  'wallet-outline',
+  'card-outline',
+  'cash-outline',
+  'basket-outline',
+  'barcode-outline',
 ];
-const BACKDROP_ROTATIONS = [-14, 9, -6, 16, -3, 11, -10, 4];
+const BACKDROP_ROTATIONS = [-14, 9, -6, 16, -3, 11, -10, 4, -18, 7, -2, 13];
+// Per-cell size jitter (deterministic) so the denser tiling still reads
+// as a natural scatter — without it, the smaller icons + tighter grid
+// look like graph paper.
+const BACKDROP_SIZE_JITTER = [0, 2, -2, 1, -1, 3, -3, 2];
 
 function StoreOverviewBackdrop() {
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -88,8 +98,9 @@ function StoreOverviewBackdrop() {
     if (size.w === 0 || size.h === 0) return [];
     // Brick layout — every other row is offset by half a cell so the
     // tiling reads as a deliberate pattern instead of a stiff grid.
-    const cellW = 78;
-    const cellH = 60;
+    const cellW = 40;
+    const cellH = 32;
+    const baseSize = 18;
     const cols = Math.ceil(size.w / cellW) + 1;
     const rows = Math.ceil(size.h / cellH) + 1;
     const out: Array<{
@@ -98,19 +109,22 @@ function StoreOverviewBackdrop() {
       y: number;
       icon: keyof typeof Ionicons.glyphMap;
       rotate: number;
+      size: number;
     }> = [];
     for (let r = 0; r < rows; r++) {
       const rowOffset = r % 2 === 0 ? 0 : cellW / 2;
       for (let c = 0; c < cols; c++) {
         const idx = r * cols + c;
+        const jitter = BACKDROP_SIZE_JITTER[idx % BACKDROP_SIZE_JITTER.length];
         out.push({
           key: `${r}-${c}`,
           // Negative bleed so the edge icons clip cleanly into the
           // rounded card border instead of stopping flush with it.
-          x: c * cellW + rowOffset - 18,
-          y: r * cellH - 18,
+          x: c * cellW + rowOffset - 10,
+          y: r * cellH - 10,
           icon: BACKDROP_ICONS[idx % BACKDROP_ICONS.length],
           rotate: BACKDROP_ROTATIONS[idx % BACKDROP_ROTATIONS.length],
+          size: baseSize + jitter,
         });
       }
     }
@@ -173,8 +187,7 @@ function StoreOverviewBackdrop() {
                 transform: [{ rotate: `${it.rotate}deg` }],
               }}
             >
-              <Ionicons name={it.icon} size={30} color="rgba(15, 23, 42, 0.06)" />
-              {/* <Ionicons name={it.icon} size={30} color="rgba(15, 23, 42, 0.07)" /> */}
+              <Ionicons name={it.icon} size={it.size} color="rgba(15, 23, 42, 0.08)" />
             </View>
           ))}
         </>
@@ -548,6 +561,8 @@ export default function Home() {
         navigation.navigate('LocationManagement');
       } else if (step === 'add-product') {
         navigation.navigate('ProductsList', { openAddProduct: true } as any);
+      } else if (step === 'payment-mode') {
+        navigation.navigate('PaymentSetup');
       } else if (step === 'setup-payment') {
         navigation.navigate('PayoutSettings');
       }

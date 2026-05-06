@@ -3,11 +3,11 @@ import {
   Text,
   TextInput,
   Pressable,
-  ScrollView,
   ActivityIndicator,
   Platform,
   Alert,
 } from "react-native";
+import KeyboardScreen from "./KeyboardScreen";
 import { useEffect, useState } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
@@ -180,10 +180,9 @@ export function CategoryManagerSheet({ visible, onClose, onChanged }: Props) {
       subtitle="Group products into your own collections"
       height="85%"
     >
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32 }}
+      <KeyboardScreen
+        contentContainerStyle={{ paddingHorizontal: 20 }}
+        bottomPadding={32}
       >
         {/* Add new */}
         <View className="mt-4 mb-5 rounded-3xl border border-gray-100 bg-white p-4"
@@ -404,7 +403,7 @@ export function CategoryManagerSheet({ visible, onClose, onChanged }: Props) {
             })}
           </View>
         )}
-      </ScrollView>
+      </KeyboardScreen>
     </BottomSheet>
   );
 }

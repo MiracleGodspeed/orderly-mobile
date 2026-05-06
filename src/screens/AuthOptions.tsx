@@ -24,6 +24,7 @@ import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useVendor } from "../../context/VendorContext";
 import { AppImage } from "../components/AppImage";
+import { isUserStatus } from "../lib/authStatus";
 
 const LOGO = require("../../assets/blackLogo.png");
 const GOOGLE_LOGO = require("../../assets/Google.png");
@@ -59,7 +60,7 @@ export default function AuthOptions() {
         };
         const data = await googleLogin(payload);
         await fetchVendorData();
-        navigation.replace(data?.userStatus === 2 ? "SetupStep1" : "Home");
+        navigation.replace(isUserStatus(data?.userStatus, 2) ? "SetupStep1" : "Home");
       } else {
         Alert.alert("Error", "No ID token received from Google");
       }

@@ -2,7 +2,6 @@ import {
   View,
   Text,
   Pressable,
-  ScrollView,
   StatusBar,
   TextInput,
   ActivityIndicator,
@@ -110,13 +109,7 @@ export default function PersonalDetails() {
       />
       <ScreenHeader title="Personal details" />
 
-      <KeyboardScreen>
-        <ScrollView
-          className="flex-1"
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: 140 }}
-        >
+      <KeyboardScreen bottomPadding={140}>
           {/* Branded hero with avatar */}
           <View
             className="mx-5 mt-4 mb-4 rounded-3xl overflow-hidden px-5 pt-6 pb-7"
@@ -248,7 +241,7 @@ export default function PersonalDetails() {
               </Text>
             </View>
           </View>
-        </ScrollView>
+        </KeyboardScreen>
 
         {/* Save bar */}
         <View
@@ -286,7 +279,6 @@ export default function PersonalDetails() {
             </Text>
           </Pressable>
         </View>
-      </KeyboardScreen>
     </View>
   );
 }

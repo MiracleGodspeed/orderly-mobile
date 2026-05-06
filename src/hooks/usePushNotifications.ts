@@ -13,6 +13,24 @@ import {
   rejectManualPayment,
 } from "../api/vendor/vendor.api";
 import { navigate } from "../navigation/NavigationService";
+import { queryClient } from "../lib/queryClient";
+
+// Push handlers run outside the React tree (module-level + raw expo
+// listeners), so they reach into the singleton QueryClient directly
+// instead of using the `useInvalidate*` hooks. The cache keys here MUST
+// match the ones declared in the corresponding hooks — `["orders"]`
+// covers paid + unpaid + every page (see useOrders), `["notifications"]`
+// covers both the list and the unread-count badge.
+function invalidateOrdersAndNotifications() {
+  queryClient.invalidateQueries({ queryKey: ["orders"] });
+  queryClient.invalidateQueries({ queryKey: ["notifications"] });
+}
+
+// Push payloads with one of these `type` values imply the orders list
+// has changed server-side — a new order was placed, or a manual payment
+// is awaiting confirmation. Either case warrants nudging the cache so
+// the vendor doesn't see a stale list when they tap through.
+const ORDER_RELEVANT_PUSH_TYPES = new Set(["new_order", "manual_payment_confirm"]);
 
 const STORED_TOKEN_KEY = "orderly.pushToken";
 
@@ -183,6 +201,14 @@ export async function unregisterDeviceFromPush(): Promise<void> {
 function handleTap(data: Record<string, any> | undefined) {
   if (!data || typeof data !== "object") return;
 
+  // Refresh order-related caches BEFORE navigating so the destination
+  // screen mounts against fresh data. Without this the vendor lands on
+  // a stale list (60s staleTime) and the new order shows up a beat
+  // later, which feels broken.
+  if (typeof data.type === "string" && ORDER_RELEVANT_PUSH_TYPES.has(data.type)) {
+    invalidateOrdersAndNotifications();
+  }
+
   switch (data.type) {
     case "new_order":
       navigate("Orders" as any);
@@ -230,6 +256,11 @@ async function handleNotificationAction(
     try {
       await confirmManualPayment(reference);
       if (__DEV__) console.log("[push] confirmed payment", reference);
+      // Confirming flips the order from the unpaid bucket to the paid
+      // bucket server-side. Invalidate so when the vendor next opens
+      // the app the move is already reflected — without this they see
+      // the order still sitting in pending for up to 60s.
+      invalidateOrdersAndNotifications();
     } catch (err) {
       if (__DEV__) console.warn("[push] confirm payment failed", err);
       // The app is still backgrounded at this point — opening it would
@@ -271,9 +302,18 @@ export function usePushNotifications() {
 
     receivedSub.current = Notifications.addNotificationReceivedListener(
       (notification) => {
-        // Hook up any in-app toast / badge refresh logic here.
         if (__DEV__) {
           console.log("[push] received", notification.request.content);
+        }
+        // Foreground arrival — vendor is in the app right now. Pre-warm
+        // the orders cache so navigating to Orders (via the system
+        // banner tap or in-app) shows the new row immediately, not on
+        // the next 60s tick.
+        const data = notification.request.content.data as
+          | Record<string, any>
+          | undefined;
+        if (data && typeof data.type === "string" && ORDER_RELEVANT_PUSH_TYPES.has(data.type)) {
+          invalidateOrdersAndNotifications();
         }
       }
     );

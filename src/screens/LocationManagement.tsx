@@ -2,7 +2,6 @@ import {
   View,
   Text,
   Pressable,
-  ScrollView,
   TextInput,
   Platform,
   ActivityIndicator,
@@ -23,6 +22,7 @@ import {
 } from "../../context/VendorContext";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { SelectionDrawer } from "../components/SelectionDrawer";
+import KeyboardScreen from "../components/KeyboardScreen";
 import NIGERIA_STATES from "../utils/nigeriaLocations";
 
 interface SelectedLocation {
@@ -661,11 +661,9 @@ export default function LocationManagement() {
     <View className="flex-1 bg-gray-50">
       <ScreenHeader title="Delivery Locations" />
 
-      <ScrollView
+      <KeyboardScreen
         className="flex-1"
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: 140 }}
-        keyboardShouldPersistTaps="handled"
+        bottomPadding={140}
         onScroll={handleListScroll}
         scrollEventThrottle={400}
       >
@@ -819,7 +817,7 @@ export default function LocationManagement() {
             </>
           )}
         </View>
-      </ScrollView>
+      </KeyboardScreen>
 
       {/* Sticky save bar */}
       <View

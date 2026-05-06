@@ -28,6 +28,7 @@ import { SignupRequest, Country } from "../api/auth/auth.types";
 import { signup, getCountries } from "../api/auth/auth.api";
 import { CountryPickerDrawer } from "../components/CountryPickerDrawer";
 import { AppImage } from "../components/AppImage";
+import { isUserStatus } from "../lib/authStatus";
 import { AppToast, AppToastTone } from "../components/AppToast";
 import { useAuth } from "../../context/AuthContext";
 import { useVendor } from "../../context/VendorContext";
@@ -94,7 +95,7 @@ export default function EmailSignUp() {
         };
         const data = await googleLogin(payload);
         await fetchVendorData();
-        navigation.replace(data?.userStatus === 2 ? "SetupStep1" : "Home");
+        navigation.replace(isUserStatus(data?.userStatus, 2) ? "SetupStep1" : "Home");
       } else {
         Alert.alert("Error", "No ID token received from Google");
       }

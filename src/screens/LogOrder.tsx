@@ -3,9 +3,7 @@ import {
   Text,
   TextInput,
   Pressable,
-  ScrollView,
   StatusBar,
-  KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
   FlatList,
@@ -29,6 +27,7 @@ import type {
 import { formatNaira } from "../lib/format";
 import { AppToast, AppToastTone } from "../components/AppToast";
 import { AppImage } from "../components/AppImage";
+import KeyboardScreen from "../components/KeyboardScreen";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -245,15 +244,11 @@ export default function LogOrder() {
         </Text>
       </View>
 
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-      >
-        <ScrollView
+      <View className="flex-1">
+        <KeyboardScreen
           className="flex-1"
-          contentContainerStyle={{ paddingBottom: 140 }}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+          bottomPadding={160}
+          extraScrollHeight={40}
         >
           {/* Hero — sets the mental model for what this screen does.
               Brand-blue (#194eb8) matches the hero treatment on
@@ -537,7 +532,7 @@ export default function LogOrder() {
               />
             </View>
           </View>
-        </ScrollView>
+        </KeyboardScreen>
 
         {/* Sticky bottom bar — total + submit. */}
         <View
@@ -603,7 +598,7 @@ export default function LogOrder() {
             )}
           </Pressable>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* Product picker — full-screen list with search. */}
       {pickerOpen && (

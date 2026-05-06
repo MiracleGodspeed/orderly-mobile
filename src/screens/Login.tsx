@@ -27,6 +27,7 @@ import { useAuth } from "../../context/AuthContext";
 import { useVendor } from "../../context/VendorContext";
 import { AppImage } from "../components/AppImage";
 import { AppToast, AppToastTone } from "../components/AppToast";
+import { isRole, isUserStatus } from "../lib/authStatus";
 
 const LOGO = require("../../assets/blackLogo.png");
 const GOOGLE_LOGO = require("../../assets/Google.png");
@@ -45,10 +46,10 @@ export type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>
 // the store, they're just a teammate joining one.
 const ROLE_STAFF = 6;
 
-const routeAfterLogin = (data: { role?: number; userStatus?: number } | null | undefined):
+const routeAfterLogin = (data: { role?: number | string; userStatus?: number | string } | null | undefined):
   "SetupStep1" | "Home" => {
-  if (data?.role === ROLE_STAFF) return "Home";
-  return data?.userStatus === 2 ? "SetupStep1" : "Home";
+  if (isRole(data?.role, ROLE_STAFF)) return "Home";
+  return isUserStatus(data?.userStatus, 2) ? "SetupStep1" : "Home";
 };
 
 export default function Login() {

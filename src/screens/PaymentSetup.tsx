@@ -58,30 +58,31 @@ const MODES: ModeMeta[] = [
   {
     key: "online",
     title: "Online payment",
-    subtitle: "Paystack — card or bank transfer",
+    subtitle: "Recommended — let your store run on autopilot",
     icon: "card",
     tint: "#dbeafe",
     iconColor: "#2563eb",
     perks: [
-      "Auto-confirmation — orders move to Paid the moment Paystack confirms.",
-      "Funds settle to your bank within 24 hours.",
-      "Customer keeps a digital receipt automatically.",
+      "Sales close themselves — payments confirm automatically the moment they land, even while you sleep.",
+      "No babysitting your bank app. No \"did you pay?\" back-and-forth with customers.",
+      "Funds settle into your bank within 24 hours, with a clean receipt sent to the customer for you.",
+      "Card, transfer, USSD — customers pick what works for them and Paystack handles the rest.",
     ],
   },
   {
     key: "direct",
     title: "Direct to your bank",
-    subtitle: "Customer transfers straight to your account",
+    subtitle: "Hands-on — you confirm each payment yourself",
     icon: "wallet",
     tint: "#fef3c7",
     iconColor: "#b45309",
     perks: [
-      "Customer sees your bank details at checkout.",
-      "Push notification with Confirm / Reject buttons when they say they've paid.",
-      "No platform fee per transaction.",
+      "Customer sees your bank details at checkout and transfers manually.",
+      "We push you a Confirm / Reject prompt when they say they've paid.",
+      "Skips the platform fee on each transaction.",
     ],
     caveat:
-      "You'll manually confirm each payment when it hits your account. Pick this only if you can monitor your bank balance regularly.",
+      "Every order needs you. If a payment lands at 11pm or while you're out, the customer is left waiting until you can check your bank app and confirm. Most vendors graduate to online payment within their first month.",
   },
 ];
 
@@ -129,7 +130,7 @@ export default function PaymentSetup() {
   // Resolve the current setting into our split state. "direct" means
   // mode=direct (fee question doesn't apply); anything else is mode=online
   // with that fee-bearer.
-  const initialMode: PaymentMode = storeData?.feeBearer === ("direct" as any)
+  const initialMode: PaymentMode = storeData?.feeBearer === ("online" as any)
     ? "direct"
     : "online";
   const initialFee: FeeBearer = (
@@ -173,8 +174,8 @@ export default function PaymentSetup() {
         title: "Payment setup saved",
         subtitle:
           mode === "direct"
-            ? "Customers now pay directly to your bank."
-            : "Online payments are active.",
+            ? "You'll confirm each payment yourself from now on."
+            : "Online payments are on — your store can now sell on autopilot.",
         tone: "success",
       });
     } catch (e: any) {
@@ -252,8 +253,8 @@ export default function PaymentSetup() {
                 How do customers pay you?
               </Text>
               <Text className="text-blue-100/85 text-[12.5px] mt-0.5 leading-[17px]">
-                Pick the mode that fits your store. You can switch later as
-                often as you like.
+                Online payment lets your store run on its own — switch to manual
+                if you'd rather confirm each one yourself. Easy to change later.
               </Text>
             </View>
           </View>

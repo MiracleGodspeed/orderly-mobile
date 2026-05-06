@@ -11,8 +11,11 @@ export interface LoginResponse {
   storeId: string;
   storeName: string;
   storeSlug: string;
-  role: number;
-  userStatus: number;
+  // JsonStringEnumConverter ships these as enum names on the wire now;
+  // older builds emitted the integer. Compare via isRole / isUserStatus
+  // in src/lib/authStatus rather than strict-equality to handle both.
+  role: number | string;
+  userStatus: number | string;
 }
 
 
@@ -64,8 +67,8 @@ export interface SignupResponseComplete {
   storeId?: string | null;
   phoneNumber?: string | null;
   email: string;
-  role: number;
-  userStatus: number;
+  role: number | string;
+  userStatus: number | string;
 }
 
 export interface ChangePasswordRequest {

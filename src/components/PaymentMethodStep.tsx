@@ -16,6 +16,10 @@ import {
   createVendorSubscription,
   verifyPayment,
 } from "../api/vendor/vendor.api";
+import { useInvalidateFeatures } from "../hooks/useFeatures";
+import { useInvalidateStorePerformance } from "../hooks/useStorePerformance";
+import { useInvalidateSubscriptionUsage } from "../hooks/useSubscriptionUsage";
+import { useVendor } from "../../context/VendorContext";
 
 type PaymentOption = "card" | "bank_transfer";
 
@@ -94,8 +98,32 @@ export default function PaymentMethodStep({
   const toast = useToast();
   const [selected, setSelected] = useState<PaymentOption>("card");
   const [phase, setPhase] = useState<Phase>("idle");
+  // Refresh all the surfaces that read off the active subscription the
+  // moment payment verifies, so the rest of the app immediately
+  // reflects the new plan without a manual pull-to-refresh:
+  //   - features cache → unlocks gated UI (paywalls, Staff & permissions, etc.)
+  //   - subscription usage → up-to-date catalog/staff caps
+  //   - store performance → trial-banner state changes
+  //   - vendor context → daysRemaining / subscription status on home + more
+  const invalidateFeatures = useInvalidateFeatures();
+  const invalidateStorePerf = useInvalidateStorePerformance();
+  const invalidateUsage = useInvalidateSubscriptionUsage();
+  const { fetchVendorData } = useVendor();
 
   const isBusy = phase !== "idle";
+
+  const refreshAfterPlanChange = async () => {
+    try {
+      invalidateFeatures();
+      invalidateStorePerf();
+      invalidateUsage();
+      await fetchVendorData();
+    } catch (e) {
+      // Best-effort — the success step still renders even if a refetch
+      // fails; the user can pull-to-refresh as a last resort.
+      console.warn("Post-payment cache refresh failed", e);
+    }
+  };
 
   const handlePay = async () => {
     if (!plan.id) {
@@ -125,6 +153,7 @@ export default function PaymentMethodStep({
         if (res.reference) {
           await verifyPayment(res.reference);
         }
+        await refreshAfterPlanChange();
         toast.show("Payment confirmed", { type: "success" });
         onPaymentVerified(res.reference ?? "");
         setPhase("idle");
@@ -166,6 +195,7 @@ export default function PaymentMethodStep({
             Haptics.NotificationFeedbackType.Success
           ).catch(() => {});
         }
+        await refreshAfterPlanChange();
         onPaymentVerified(reference);
       } else {
         toast.show(

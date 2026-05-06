@@ -40,9 +40,9 @@ const slides: Slide[] = [
     id: "1",
     title: "Build your storefront\nin minutes",
     description:
-      "Pick a template, drop in your products, and you're live — no design skills, no developers.",
+      "Pick a template, add your products, and you're live — no design skills, no developers.",
     image: require("../../assets/slide1.png"),
-    badges: ["Drag & drop", "Instant publish", "Custom domain"],
+    badges: ["Ready templates", "Instant publish", "Custom domain"],
     gradient: ["#dbeafe", "#eff6ff"],
   },
   {
@@ -51,7 +51,7 @@ const slides: Slide[] = [
     description:
       "Add products, organize categories, and watch stock levels update the moment a sale happens.",
     image: require("../../assets/slide2.png"),
-    badges: ["Real-time sync", "Stock alerts", "Bulk actions"],
+    badges: ["Real-time stock", "Low-stock filter", "Variants & categories"],
     gradient: ["#dcfce7", "#f0fdf4"],
   },
   {

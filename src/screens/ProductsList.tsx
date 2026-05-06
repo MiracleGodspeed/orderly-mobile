@@ -55,6 +55,18 @@ import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
 
 type FilterType = "all" | "active" | "low_stock";
 
+// CatalogItemStatus.Active was historically the integer 1 on the wire.
+// After JsonStringEnumConverter shipped, the API now serialises the
+// enum NAME ("Active") instead, which silently broke every numeric
+// comparison (`status === 1`) — products were rendering as drafts even
+// when active. Compare tolerantly so older builds and the new wire
+// shape both resolve correctly.
+function isActiveStatus(status: Product["status"]): boolean {
+  if (typeof status === "number") return status === 1;
+  if (typeof status === "string") return status.toLowerCase() === "active";
+  return false;
+}
+
 interface ProductCardProps {
   product: Product;
   onPress: () => void;
@@ -83,7 +95,7 @@ function ProductCard({
       ? `Low · ${stock} left`
       : `${stock} in stock`;
 
-  const isDraft = product.status !== 1;
+  const isDraft = !isActiveStatus(product.status);
 
   // Resolve what the vendor (and the customer) actually sees on the card —
   // discount applied first, then platform fee added on top when feeBearer
@@ -338,12 +350,12 @@ export default function ProductsList() {
   // sent, so no extra in-memory pass is needed.
   const filteredProducts = useMemo(() => {
     if (activeFilter === "active")
-      return allProducts.filter((p) => p.status === 1);
+      return allProducts.filter((p) => isActiveStatus(p.status));
     return allProducts;
   }, [allProducts, activeFilter]);
 
   const activeCount = useMemo(
-    () => allProducts.filter((p) => p.status === 1).length,
+    () => allProducts.filter((p) => isActiveStatus(p.status)).length,
     [allProducts]
   );
 

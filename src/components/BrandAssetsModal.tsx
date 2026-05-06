@@ -124,6 +124,43 @@ function ColorSwatch({
   );
 }
 
+// "No color" tile — clears the active slot so a null is sent to the
+// backend. Looks visually distinct from the curated swatches (dashed
+// border + ban glyph) so vendors don't confuse it for an actual color.
+function NoneSwatch({
+  selected,
+  onPress,
+  size = 44,
+}: {
+  selected: boolean;
+  onPress: () => void;
+  size?: number;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={4}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        backgroundColor: "white",
+        borderWidth: selected ? 2 : 1.5,
+        borderColor: selected ? "#2563eb" : "#cbd5e1",
+        borderStyle: "dashed",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Ionicons
+        name={selected ? "checkmark" : "ban-outline"}
+        size={selected ? 20 : 18}
+        color={selected ? "#2563eb" : "#94a3b8"}
+      />
+    </Pressable>
+  );
+}
+
 export default function BrandAssetsModal({
   visible,
   onClose,
@@ -133,10 +170,13 @@ export default function BrandAssetsModal({
 }: Props) {
   const { updateVendorSettings, storeData, loading } = useVendor();
 
-  const [colors, setColors] = useState<Record<SlotKey, string>>({
-    primary: DEFAULTS.primary,
-    secondary: DEFAULTS.secondary,
-    accent: DEFAULTS.accent,
+  // null === "vendor cleared this slot" — the backend stores it as NULL
+  // and the storefront falls back to its template default. Hex string ===
+  // explicitly chosen (preset or custom).
+  const [colors, setColors] = useState<Record<SlotKey, string | null>>({
+    primary: null,
+    secondary: null,
+    accent: null,
   });
   const [selectedSlot, setSelectedSlot] = useState<SlotKey>("primary");
   const [showCustomPicker, setShowCustomPicker] = useState(false);
@@ -153,10 +193,13 @@ export default function BrandAssetsModal({
 
   useEffect(() => {
     if (visible) {
+      // Empty/missing strings hydrate as null (cleared) so the UI shows
+      // the "Not set" state instead of a default-blue swatch that looks
+      // chosen but isn't actually saved.
       setColors({
-        primary: initialPrimary || DEFAULTS.primary,
-        secondary: initialSecondary || DEFAULTS.secondary,
-        accent: initialAccent || DEFAULTS.accent,
+        primary: initialPrimary || null,
+        secondary: initialSecondary || null,
+        accent: initialAccent || null,
       });
       setSelectedSlot("primary");
     }
@@ -177,10 +220,16 @@ export default function BrandAssetsModal({
     return () => clearTimeout(t);
   }, [visible]);
 
-  const activeColor = colors[selectedSlot];
+  const activeColor = colors[selectedSlot]; // string | null
+  // Visual fallback for the live preview / slot swatches. Vendors who
+  // clear a slot still need *something* to look at; the storefront
+  // applies the same default when the backing column is null.
+  const activeColorDisplay = activeColor ?? DEFAULTS[selectedSlot];
 
   const isPresetSelected = useMemo(
-    () => PRESET_COLORS.some((c) => c.toLowerCase() === activeColor.toLowerCase()),
+    () =>
+      activeColor != null &&
+      PRESET_COLORS.some((c) => c.toLowerCase() === activeColor.toLowerCase()),
     [activeColor]
   );
 
@@ -191,6 +240,13 @@ export default function BrandAssetsModal({
     setColors((prev) => ({ ...prev, [selectedSlot]: color.toUpperCase() }));
   };
 
+  const handleClearActiveSlot = () => {
+    if (Platform.OS === "ios") {
+      Haptics.selectionAsync().catch(() => {});
+    }
+    setColors((prev) => ({ ...prev, [selectedSlot]: null }));
+  };
+
   const handleSelectSlot = (slot: SlotKey) => {
     if (Platform.OS === "ios") {
       Haptics.selectionAsync().catch(() => {});
@@ -199,7 +255,9 @@ export default function BrandAssetsModal({
   };
 
   const openCustomPicker = () => {
-    setCustomDraft(activeColor);
+    // Custom picker always starts from a real hex; if the slot is
+    // currently cleared, seed the picker with the slot's default.
+    setCustomDraft(activeColorDisplay);
     // If the picker has already laid out (it usually has by now thanks to the
     // 250ms pre-mount), reveal immediately. Otherwise show the loader and
     // let `handlePickerLaidOut` flip readiness when layout completes.
@@ -269,67 +327,76 @@ export default function BrandAssetsModal({
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 24 }}
       >
-        {/* Live preview */}
-        <View className="mx-5 mt-4 mb-5 rounded-3xl overflow-hidden border border-gray-100">
-          <View
-            className="px-5 pt-6 pb-8"
-            style={{ backgroundColor: colors.primary }}
-          >
-            <Text
-              className="text-[10px] font-bold tracking-[2px] mb-2"
-              style={{ color: isLightColor(colors.primary) ? "#475569" : "rgba(255,255,255,0.75)" }}
-            >
-              PREVIEW
-            </Text>
-            <Text
-              className="text-[22px] font-extrabold tracking-tight"
-              style={{ color: isLightColor(colors.primary) ? "#0f172a" : "white" }}
-            >
-              Your storefront vibe
-            </Text>
-            <View className="flex-row items-center gap-2 mt-4">
+        {/* Live preview — always renders with a fallback when a slot is
+            cleared, so the vendor sees what the storefront will look
+            like (template defaults kick in on the storefront side too). */}
+        {(() => {
+          const displayPrimary = colors.primary ?? DEFAULTS.primary;
+          const displaySecondary = colors.secondary ?? DEFAULTS.secondary;
+          const displayAccent = colors.accent ?? DEFAULTS.accent;
+          return (
+            <View className="mx-5 mt-4 mb-5 rounded-3xl overflow-hidden border border-gray-100">
               <View
-                className="px-3.5 h-9 rounded-full items-center justify-center"
-                style={{ backgroundColor: colors.accent }}
+                className="px-5 pt-6 pb-8"
+                style={{ backgroundColor: displayPrimary }}
               >
                 <Text
-                  className="text-[12px] font-bold"
-                  style={{ color: isLightColor(colors.accent) ? "#0f172a" : "white" }}
+                  className="text-[10px] font-bold tracking-[2px] mb-2"
+                  style={{ color: isLightColor(displayPrimary) ? "#475569" : "rgba(255,255,255,0.75)" }}
                 >
-                  Shop now
+                  PREVIEW
                 </Text>
+                <Text
+                  className="text-[22px] font-extrabold tracking-tight"
+                  style={{ color: isLightColor(displayPrimary) ? "#0f172a" : "white" }}
+                >
+                  Your storefront vibe
+                </Text>
+                <View className="flex-row items-center gap-2 mt-4">
+                  <View
+                    className="px-3.5 h-9 rounded-full items-center justify-center"
+                    style={{ backgroundColor: displayAccent }}
+                  >
+                    <Text
+                      className="text-[12px] font-bold"
+                      style={{ color: isLightColor(displayAccent) ? "#0f172a" : "white" }}
+                    >
+                      Shop now
+                    </Text>
+                  </View>
+                  <View
+                    className="px-3.5 h-9 rounded-full items-center justify-center border"
+                    style={{
+                      borderColor: isLightColor(displayPrimary) ? "#0f172a" : "rgba(255,255,255,0.55)",
+                    }}
+                  >
+                    <Text
+                      className="text-[12px] font-bold"
+                      style={{ color: isLightColor(displayPrimary) ? "#0f172a" : "white" }}
+                    >
+                      Learn more
+                    </Text>
+                  </View>
+                </View>
               </View>
               <View
-                className="px-3.5 h-9 rounded-full items-center justify-center border"
-                style={{
-                  borderColor: isLightColor(colors.primary) ? "#0f172a" : "rgba(255,255,255,0.55)",
-                }}
+                className="flex-row items-center px-5 py-3"
+                style={{ backgroundColor: displaySecondary }}
               >
+                <View
+                  className="w-2 h-2 rounded-full mr-2"
+                  style={{ backgroundColor: displayAccent }}
+                />
                 <Text
-                  className="text-[12px] font-bold"
-                  style={{ color: isLightColor(colors.primary) ? "#0f172a" : "white" }}
+                  className="text-[11px] font-semibold"
+                  style={{ color: isLightColor(displaySecondary) ? "#0f172a" : "white" }}
                 >
-                  Learn more
+                  Secondary surface — headers, footers
                 </Text>
               </View>
             </View>
-          </View>
-          <View
-            className="flex-row items-center px-5 py-3"
-            style={{ backgroundColor: colors.secondary }}
-          >
-            <View
-              className="w-2 h-2 rounded-full mr-2"
-              style={{ backgroundColor: colors.accent }}
-            />
-            <Text
-              className="text-[11px] font-semibold"
-              style={{ color: isLightColor(colors.secondary) ? "#0f172a" : "white" }}
-            >
-              Secondary surface — headers, footers
-            </Text>
-          </View>
-        </View>
+          );
+        })()}
 
         {/* Slot selector */}
         <View className="px-5 mb-4">
@@ -339,7 +406,8 @@ export default function BrandAssetsModal({
           <View className="gap-2">
             {(Object.keys(SLOT_META) as SlotKey[]).map((slot) => {
               const isActive = selectedSlot === slot;
-              const slotColor = colors[slot];
+              const slotColor = colors[slot]; // string | null
+              const isCleared = slotColor == null;
               return (
                 <Pressable
                   key={slot}
@@ -350,10 +418,25 @@ export default function BrandAssetsModal({
                       : "border-gray-100 bg-white"
                   }`}
                 >
-                  <View
-                    className="w-10 h-10 rounded-xl mr-3 border border-gray-100"
-                    style={{ backgroundColor: slotColor }}
-                  />
+                  {/* Show a real swatch when set; an empty dashed tile
+                      with a "ban" glyph when cleared. */}
+                  {isCleared ? (
+                    <View
+                      className="w-10 h-10 rounded-xl mr-3 items-center justify-center bg-white"
+                      style={{
+                        borderWidth: 1.5,
+                        borderColor: "#cbd5e1",
+                        borderStyle: "dashed",
+                      }}
+                    >
+                      <Ionicons name="ban-outline" size={16} color="#94a3b8" />
+                    </View>
+                  ) : (
+                    <View
+                      className="w-10 h-10 rounded-xl mr-3 border border-gray-100"
+                      style={{ backgroundColor: slotColor as string }}
+                    />
+                  )}
                   <View className="flex-1">
                     <Text className="text-[14px] font-bold text-gray-900">
                       {SLOT_META[slot].label}
@@ -362,8 +445,14 @@ export default function BrandAssetsModal({
                       {SLOT_META[slot].description}
                     </Text>
                   </View>
-                  <Text className="text-[11px] font-mono text-gray-500 ml-2">
-                    {slotColor.toUpperCase()}
+                  <Text
+                    className={`text-[11px] ml-2 ${
+                      isCleared
+                        ? "italic text-gray-400"
+                        : "font-mono text-gray-500"
+                    }`}
+                  >
+                    {isCleared ? "Not set" : (slotColor as string).toUpperCase()}
                   </Text>
                 </Pressable>
               );
@@ -383,11 +472,21 @@ export default function BrandAssetsModal({
           </View>
 
           <View className="flex-row flex-wrap gap-3">
+            {/* "No color" tile — clears the slot. Sits first so vendors
+                discover it before scanning the curated colors. */}
+            <NoneSwatch
+              selected={activeColor == null}
+              onPress={handleClearActiveSlot}
+            />
+
             {PRESET_COLORS.map((c) => (
               <ColorSwatch
                 key={c}
                 color={c}
-                selected={c.toLowerCase() === activeColor.toLowerCase()}
+                selected={
+                  activeColor != null &&
+                  c.toLowerCase() === activeColor.toLowerCase()
+                }
                 onPress={() => handlePickPreset(c)}
               />
             ))}
@@ -401,7 +500,9 @@ export default function BrandAssetsModal({
             </Pressable>
           </View>
 
-          {!isPresetSelected && (
+          {/* "Custom · #HEX" pill — only when the active slot has a hex
+              that's NOT in the curated palette. Hidden when cleared. */}
+          {activeColor != null && !isPresetSelected && (
             <Pressable
               onPress={openCustomPicker}
               className="flex-row items-center gap-2 mt-4 self-start bg-gray-100 px-3 py-2 rounded-full"
@@ -415,6 +516,17 @@ export default function BrandAssetsModal({
               </Text>
               <Ionicons name="create-outline" size={14} color="#374151" />
             </Pressable>
+          )}
+
+          {/* Confirmation hint when the slot is cleared, so vendors
+              know what's actually saved. */}
+          {activeColor == null && (
+            <View className="flex-row items-center gap-2 mt-4 self-start bg-gray-50 border border-gray-100 px-3 py-2 rounded-full">
+              <Ionicons name="information-circle-outline" size={13} color="#94a3b8" />
+              <Text className="text-[11.5px] text-gray-500">
+                {SLOT_META[selectedSlot].label} cleared — your storefront will use the template default
+              </Text>
+            </View>
           )}
         </View>
       </ScrollView>

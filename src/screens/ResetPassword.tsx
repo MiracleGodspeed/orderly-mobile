@@ -16,6 +16,7 @@ import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RootStackParamList } from '../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { useToast } from 'react-native-toast-notifications';
+import KeyboardScreen from '../components/KeyboardScreen';
 
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -89,7 +90,8 @@ useEffect(() => {
   return (
     <SafeAreaView className="flex-1 bg-white">
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-      <View className="pt-5 px-6">
+      <KeyboardScreen contentContainerStyle={{ paddingTop: 20, paddingHorizontal: 24 }}>
+      <View>
         <View className="flex-row items-center justify-center relative">
           <Text className="text-[20px] font-[500] text-gray-900">Reset Password</Text>
         </View>
@@ -175,8 +177,8 @@ useEffect(() => {
           </TouchableOpacity>
         </View>
       </View>
+      </KeyboardScreen>
 
-     
           <Modal
             visible={modalVisible}
             transparent = {true}

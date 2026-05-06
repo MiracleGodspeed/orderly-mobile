@@ -20,6 +20,11 @@ type Props = {
   setBillingCycle: (cycle: BillingCycle) => void;
   onContinue: (plan: ApiSubscriptionPlan, cycle: BillingCycle) => void;
   onClose: () => void;
+  /** Whether the vendor's current plan is still in force. When false
+   *  (lapsed / no subscription) every plan is selectable — there's no
+   *  active period left to protect. Defaults to true to keep existing
+   *  entry points safe. */
+  currentPlanActive?: boolean;
 };
 
 const haptic = () => {
@@ -57,6 +62,7 @@ export default function RenewSubscriptionStep({
   setBillingCycle,
   onContinue,
   onClose,
+  currentPlanActive = true,
 }: Props) {
   const [plans, setPlans] = useState<ApiSubscriptionPlan[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,7 +100,36 @@ export default function RenewSubscriptionStep({
     }, {} as Record<string, { price: number }>);
   }, [plans, billingCycle]);
 
+  // Resolve the vendor's current plan from the loaded list using the
+  // name passed in via `initialPlan`. Used to mark cheaper plans as
+  // downgrades so they can't be selected mid-cycle — the existing
+  // subscription would otherwise need a refund / proration we don't
+  // currently calculate.
+  const currentPlan = useMemo(
+    () => plans.find((p) => p.name === initialPlan.name) ?? null,
+    [plans, initialPlan.name]
+  );
+
+  const isDowngrade = (plan: ApiSubscriptionPlan): boolean => {
+    // No gate when the current sub has lapsed — at that point the
+    // vendor is effectively unsubscribed, so every plan is fair game.
+    if (!currentPlanActive) return false;
+    if (!currentPlan) return false;
+    if (plan.id === currentPlan.id) return false;
+    return plan.price < currentPlan.price;
+  };
+
   const handlePickPlan = (plan: ApiSubscriptionPlan) => {
+    if (isDowngrade(plan)) {
+      // Silently no-op — visual treatment communicates the lock; we
+      // skip a toast here to keep the picker quiet during browsing.
+      return;
+    }
+    if (currentPlanActive && currentPlan && plan.id === currentPlan.id) {
+      // Same plan they're currently on — no point selecting. Once
+      // the sub lapses this guard relaxes so they can renew.
+      return;
+    }
     haptic();
     setSelectedApiPlan(plan);
   };
@@ -207,29 +242,56 @@ export default function RenewSubscriptionStep({
           const isSelected = selectedApiPlan?.id === plan.id;
           const priceInfo = calculatedPrices[plan.id] || { price: plan.price };
           const tone = planTone(plan);
+          // Only mark a plan as "current" while the subscription is
+          // still in force. Once it lapses, the vendor needs to be
+          // able to re-pick the same plan to renew it, so the row
+          // should render normally.
+          const isCurrent = currentPlanActive && currentPlan?.id === plan.id;
+          const downgrade = isDowngrade(plan);
+          // Downgrades render disabled — vendor has to wait until the
+          // current plan ends to pick a cheaper one. Same plan reads as
+          // "Current" with no selection affordance. Both states stop
+          // the press handler in handlePickPlan above.
+          const disabled = downgrade || isCurrent;
 
           return (
             <Pressable
               key={plan.id}
               onPress={() => handlePickPlan(plan)}
               className={`relative rounded-3xl p-5 mb-7 border-2 ${
-                isSelected
+                isSelected && !disabled
                   ? "border-blue-600 bg-blue-50/40"
                   : "border-gray-100 bg-white"
-              }`}
+              } ${disabled ? "opacity-60" : ""}`}
               style={{
                 shadowColor: "#0f172a",
                 shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: isSelected ? 0.08 : 0.03,
+                shadowOpacity: isSelected && !disabled ? 0.08 : 0.03,
                 shadowRadius: 12,
-                elevation: isSelected ? 3 : 1,
+                elevation: isSelected && !disabled ? 3 : 1,
               }}
             >
-              {plan.isPopular && (
+              {plan.isPopular && !disabled && (
                 <View className="absolute -top-2.5 left-5 bg-gray-900 px-2.5 py-1 rounded-full flex-row items-center gap-1">
                   <Ionicons name="star" size={10} color="#fbbf24" />
                   <Text className="text-[9px] font-extrabold text-white tracking-wide uppercase">
                     Most popular
+                  </Text>
+                </View>
+              )}
+              {isCurrent && (
+                <View className="absolute -top-2.5 left-5 bg-emerald-600 px-2.5 py-1 rounded-full flex-row items-center gap-1">
+                  <Ionicons name="checkmark-circle" size={11} color="white" />
+                  <Text className="text-[9px] font-extrabold text-white tracking-wide uppercase">
+                    Current plan
+                  </Text>
+                </View>
+              )}
+              {downgrade && (
+                <View className="absolute -top-2.5 left-5 bg-gray-200 px-2.5 py-1 rounded-full flex-row items-center gap-1">
+                  <Ionicons name="lock-closed" size={10} color="#475569" />
+                  <Text className="text-[9px] font-extrabold text-gray-700 tracking-wide uppercase">
+                    Available at renewal
                   </Text>
                 </View>
               )}
@@ -269,7 +331,11 @@ export default function RenewSubscriptionStep({
                     <Text className="text-[16px] font-extrabold text-gray-900 mb-0.5">
                       {plan.name}
                     </Text>
-                    {plan.description ? (
+                    {downgrade ? (
+                      <Text className="text-[12px] text-gray-600 leading-[18px]">
+                        You can switch to this plan once your current plan ends.
+                      </Text>
+                    ) : plan.description ? (
                       <Text className="text-[12px] text-gray-500 leading-[18px]">
                         {plan.description}
                       </Text>
@@ -345,9 +411,27 @@ export default function RenewSubscriptionStep({
       >
         <Pressable
           onPress={handleContinue}
-          disabled={!selectedApiPlan}
+          disabled={
+            !selectedApiPlan ||
+            // Defensive: if the user lands here with their current
+            // plan or a downgrade somehow pre-selected (e.g. on a
+            // first render before the plans list resolves), keep the
+            // CTA disabled until they pick a real upgrade. Same-plan
+            // gate only applies while the current sub is still in
+            // force — lapsed subs can re-select the same plan.
+            (currentPlanActive &&
+              currentPlan != null &&
+              selectedApiPlan.id === currentPlan.id) ||
+            isDowngrade(selectedApiPlan)
+          }
           className={`h-12 rounded-2xl items-center justify-center flex-row gap-2 ${
-            !selectedApiPlan ? "bg-gray-200" : "bg-blue-600"
+            !selectedApiPlan ||
+            (currentPlanActive &&
+              currentPlan != null &&
+              selectedApiPlan.id === currentPlan.id) ||
+            isDowngrade(selectedApiPlan)
+              ? "bg-gray-200"
+              : "bg-blue-600"
           }`}
           style={{
             shadowColor: "#2563eb",

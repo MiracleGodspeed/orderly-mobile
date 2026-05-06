@@ -1,4 +1,5 @@
-import { View, Text, Pressable, TextInput, ScrollView } from "react-native";
+import { View, Text, Pressable, TextInput } from "react-native";
+import KeyboardScreen from "./KeyboardScreen";
 import { useState, useEffect } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useVendor, WorkingHours } from "../../context/VendorContext";
@@ -66,10 +67,9 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
       subtitle="How customers reach you and when you're open"
       height="88%"
     >
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+      <KeyboardScreen
+        contentContainerStyle={{ paddingHorizontal: 20 }}
+        bottomPadding={24}
       >
         <View className="mt-4">
           <FieldLabel>WhatsApp Number</FieldLabel>
@@ -161,7 +161,7 @@ export default function ContactUsSectionModal({ visible, onClose }: Props) {
             <Ionicons name="chevron-forward" size={20} color="#9ca3af" />
           </Pressable>
         </View>
-      </ScrollView>
+      </KeyboardScreen>
 
       <BottomSheetFooter
         onCancel={onClose}

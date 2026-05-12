@@ -22,6 +22,7 @@ import {
   GoogleSignin,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+import * as AppleAuthentication from "expo-apple-authentication";
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../../context/AuthContext";
 import { useVendor } from "../../context/VendorContext";
@@ -54,7 +55,7 @@ const routeAfterLogin = (data: { role?: number | string; userStatus?: number | s
 
 export default function Login() {
   const navigation = useNavigation<ScreenNavigationProp>();
-  const { login, googleLogin } = useAuth();
+  const { login, googleLogin, appleLogin } = useAuth();
   const { fetchVendorData } = useVendor();
   const [toast, setToast] = useState<{
     title: string;
@@ -67,9 +68,18 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
   const [focusedField, setFocusedField] = useState<
     "email" | "password" | null
   >(null);
+
+  React.useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    AppleAuthentication.isAvailableAsync()
+      .then(setAppleAvailable)
+      .catch(() => setAppleAvailable(false));
+  }, []);
 
   const isFormValid = email.trim() !== "" && password.trim() !== "";
 
@@ -106,6 +116,52 @@ export default function Login() {
       }
     } finally {
       setGoogleLoading(false);
+    }
+  };
+
+  const handleAppleSignIn = async () => {
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    setAppleLoading(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        Alert.alert("Error", "No identity token received from Apple");
+        return;
+      }
+
+      const fullName = credential.fullName
+        ? [credential.fullName.givenName, credential.fullName.familyName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || null
+        : null;
+
+      const data = await appleLogin({
+        idToken: credential.identityToken,
+        email: credential.email ?? null,
+        FullName: fullName,
+        role: 2,
+      });
+      await fetchVendorData();
+      navigation.replace(routeAfterLogin(data));
+    } catch (error: any) {
+      if (error?.code === "ERR_REQUEST_CANCELED") return;
+      console.error(error);
+      setToast({
+        title: "Sign in with Apple failed",
+        subtitle: error?.message ?? "Please try again.",
+        tone: "error",
+      });
+    } finally {
+      setAppleLoading(false);
     }
   };
 
@@ -337,6 +393,33 @@ export default function Login() {
                 </Text>
                 <View className="flex-1 h-px bg-gray-200" />
               </View>
+
+              {/* Sign in with Apple — iOS only. Required as an equivalent
+                  login option per App Store guideline 4.8. */}
+              {appleAvailable && (
+                <View className="mb-3">
+                  {appleLoading ? (
+                    <View className="h-12 rounded-2xl bg-black items-center justify-center flex-row gap-2">
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text className="text-[14px] font-bold text-white">
+                        Signing in…
+                      </Text>
+                    </View>
+                  ) : (
+                    <AppleAuthentication.AppleAuthenticationButton
+                      buttonType={
+                        AppleAuthentication.AppleAuthenticationButtonType.SIGN_IN
+                      }
+                      buttonStyle={
+                        AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                      }
+                      cornerRadius={16}
+                      style={{ width: "100%", height: 48 }}
+                      onPress={handleAppleSignIn}
+                    />
+                  )}
+                </View>
+              )}
 
               {/* Google */}
               <Pressable

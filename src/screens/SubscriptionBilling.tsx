@@ -107,7 +107,21 @@ export default function SubscriptionBilling() {
     [history]
   );
 
-  const currentSub = orderedHistory[0] ?? null;
+  // "Current" must be a *successful* record. Initiating a paid plan
+  // creates a Status="pending" row before the vendor reaches Paystack;
+  // if they bail at the browser, that pending row sits in history
+  // forever. Without this filter, the page picks the pending row as
+  // "current" and reads as expired even when the trial is still active.
+  // We also keep treating a row without an explicit status as success
+  // for backward compatibility (older trial rows that pre-date the
+  // status field).
+  const currentSub = useMemo(() => {
+    const isSuccess = (s?: string | null) => {
+      const v = (s || "").toLowerCase().trim();
+      return v === "" || v === "success";
+    };
+    return orderedHistory.find((s) => isSuccess(s.status)) ?? null;
+  }, [orderedHistory]);
 
   const fetchSubscriptionData = async (isRefreshing = false) => {
     try {
@@ -213,7 +227,7 @@ export default function SubscriptionBilling() {
       return { label: "Renew subscription", icon: "card-outline" as const };
     }
     if (isTrial) {
-      return { label: "Subscribe now", icon: "card-outline" as const };
+      return { label: "Manage plan", icon: "card-outline" as const };
     }
     return { label: "Upgrade plan", icon: "trending-up-outline" as const };
   }, [statusKind, isTrial]);

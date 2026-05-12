@@ -130,3 +130,26 @@ export const googleLogin = async (idToken: any): Promise<LoginResponse> => {
   // console.log(response, "gooflerespoo")
   return handleApiResponse<LoginResponse>(response);
 };
+
+// Mirrors AppleLoginDto on the backend. idToken is Apple's signed
+// identity token; email and fullName are only present on the very
+// first sign-in (Apple drops them on subsequent ones), and the
+// backend matches on the verified `sub` claim either way.
+export interface AppleLoginPayload {
+  idToken: string;
+  email?: string | null;
+  FullName?: string | null;
+  role: number;
+  ReferralCode?: string;
+}
+
+export const appleLogin = async (
+  payload: AppleLoginPayload
+): Promise<LoginResponse> => {
+  const response = await apiClient.post<any>(
+    "/auth/authenticate-with-apple",
+    payload,
+    { validateStatus: () => true }
+  );
+  return handleApiResponse<LoginResponse>(response);
+};

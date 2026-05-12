@@ -127,10 +127,12 @@ export default function PaymentSetup() {
   const navigation = useNavigation<Nav>();
   const { storeData, fetchVendorData } = useVendor();
 
-  // Resolve the current setting into our split state. "direct" means
-  // mode=direct (fee question doesn't apply); anything else is mode=online
-  // with that fee-bearer.
-  const initialMode: PaymentMode = storeData?.feeBearer === ("online" as any)
+  // Resolve the current setting into our split state. The backend
+  // stores one of: "vendor" | "customer" | "included" | "direct".
+  // "direct" → mode=direct (the fee question doesn't apply).
+  // Anything else, including null/undefined for brand-new vendors,
+  // → mode=online (default, with that fee-bearer when present).
+  const initialMode: PaymentMode = storeData?.feeBearer === ("direct" as any)
     ? "direct"
     : "online";
   const initialFee: FeeBearer = (

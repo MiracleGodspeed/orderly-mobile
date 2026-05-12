@@ -385,6 +385,24 @@ export interface BestSellingProduct {
   unitPrice: number;
 }
 
+export interface TopCustomer {
+  /** Customer's name from the most recent payment in the group.
+   *  Empty string when no name was supplied — the UI is expected to
+   *  fall back to email (or "N/A" if both are missing). */
+  name: string;
+  /** Always present — emails are the identity key used to group
+   *  customers, so anything in the list has one. */
+  email: string;
+  /** Empty when none of the customer's orders carried a phone. */
+  phoneNumber: string;
+  /** Optional — empty string today, but kept on the type so the UI can
+   *  surface a city/state once the backend starts deriving it from the
+   *  customer's most-recent order. */
+  location: string;
+  totalOrders: number;
+  totalAmount: number;
+}
+
 export interface SalesData {
   totalRevenue: number;
   totalOrders: number;
@@ -394,7 +412,7 @@ export interface SalesData {
    *  sessions, not raw page loads. */
   totalVisits: number;
   bestSellingProducts: BestSellingProduct[] | null;
-  topCustomers: any | null;
+  topCustomers: TopCustomer[] | null;
 }
 
 export interface GrowthData {

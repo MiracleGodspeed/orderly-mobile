@@ -1,6 +1,11 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { login as loginApi, googleLogin as googleLoginApi } from "./../src/api/auth/auth.api";
+import {
+  login as loginApi,
+  googleLogin as googleLoginApi,
+  appleLogin as appleLoginApi,
+  AppleLoginPayload,
+} from "./../src/api/auth/auth.api";
 import {setAuthToken} from "./../src/api/setAuthToken"
 import { LoginResponse } from "../src/api/auth/auth.types";
 import {
@@ -37,6 +42,7 @@ interface AuthContextType {
   token: string | null;
   login: (email: string, password: string) => Promise<LoginResponse>;
   googleLogin: (idToken: any) => Promise<LoginResponse>;
+  appleLogin: (payload: AppleLoginPayload) => Promise<LoginResponse>;
   logout: () => Promise<void>;
  setAuthData: (token: string, user: User) => Promise<void>;
 
@@ -170,6 +176,31 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   }
 };
 
+ const appleLogin = async (
+  payload: AppleLoginPayload
+): Promise<LoginResponse> => {
+  try {
+    const data = await appleLoginApi(payload);
+    const user: User = {
+      id: data.userId,
+      email: data.email,
+      name: data.fullName ?? undefined,
+      storeId: data.storeId,
+      userStatus: data.userStatus,
+    };
+
+    setToken(data.token);
+    setUser(user);
+
+    await saveAuthToStorage(data.token, user);
+
+    return data;
+  } catch (err) {
+    console.error("Apple Login API error:", err);
+    throw err;
+  }
+};
+
  const logout = async () => {
   // Unregister the device first so the bearer token is still present
   // when the request goes out.
@@ -199,6 +230,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         token,
         login,
         googleLogin,
+        appleLogin,
         logout,
         setAuthData,
         isLoading

@@ -663,6 +663,16 @@ export default function LocationManagement() {
 
       <KeyboardScreen
         className="flex-1"
+        // Generous cushion above the keyboard top — the price/area
+        // inputs are nested deep in stacked state cards, often near the
+        // bottom of a long list. Default 24px puts the focused input
+        // right at the keyboard edge, which reads as "covered" even
+        // when it technically isn't. 120 keeps the input clearly in
+        // view with room for the placeholder/value to breathe.
+        extraScrollHeight={120}
+        // Reserve room at the bottom of the scroll content for the
+        // sticky save bar (~110px) plus a comfort margin so the last
+        // card isn't sitting under the bar after auto-scroll.
         bottomPadding={140}
         onScroll={handleListScroll}
         scrollEventThrottle={400}

@@ -14,6 +14,7 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { RootStackParamList } from "../navigation/types";
 import { CHANNELS, ChannelMeta } from "../lib/orderChannels";
@@ -68,6 +69,7 @@ interface CartLine {
  */
 export default function LogOrder() {
   const navigation = useNavigation<Nav>();
+  const qc = useQueryClient();
 
   const [channel, setChannel] = useState<OrderChannel | null>(null);
   const [customerName, setCustomerName] = useState("");
@@ -192,6 +194,11 @@ export default function LogOrder() {
         })),
       };
       await logOfflineOrder(payload);
+      // Bust the orders cache so the new entry shows up immediately
+      // when the vendor lands back on the Orders screen — no more
+      // pull-to-refresh required. Invalidating by the "orders" prefix
+      // covers both paid + unpaid query keys regardless of page/search.
+      qc.invalidateQueries({ queryKey: ["orders"] });
       haptic("success");
       setToast({
         title: "Order logged",

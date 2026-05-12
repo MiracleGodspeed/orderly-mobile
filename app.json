@@ -12,7 +12,7 @@
       "backgroundColor": "#265CC7"
     },
     "ios": {
-      "supportsTablet": true,
+      "supportsTablet": false,
       "bundleIdentifier": "com.orderlystores.vendor",
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
@@ -34,8 +34,12 @@
         "ITSAppUsesNonExemptEncryption": false
       },
       "entitlements": {
-        "aps-environment": "production"
+        "aps-environment": "production",
+        "com.apple.developer.applesignin": [
+          "Default"
+        ]
       },
+      "usesAppleSignIn": true,
       "appleTeamId": "X456K7C6SX"
     },
     "android": {
@@ -61,6 +65,7 @@
     },
     "plugins": [
       "@react-native-google-signin/google-signin",
+      "expo-apple-authentication",
       "expo-font",
       "expo-asset",
       [

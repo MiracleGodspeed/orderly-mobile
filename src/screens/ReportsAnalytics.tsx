@@ -19,6 +19,7 @@ import { RootStackParamList } from "../navigation/types";
 import { getStorePerformanceReport } from "../api/vendor/vendor.api";
 import {
   BestSellingProduct,
+  TopCustomer,
   StorePerformanceReportData,
 } from "../api/vendor/vendor.types";
 import { CustomDateRangeModal } from "../components/CustomDateRangeModal";
@@ -228,6 +229,11 @@ export default function ReportsAnalytics({ navigation }: Props) {
   );
   const topProduct = bestSellers[0];
 
+  const topCustomers = useMemo<TopCustomer[]>(
+    () => sales?.topCustomers ?? [],
+    [sales?.topCustomers]
+  );
+
   // ---- Render --------------------------------------------------------------
 
   return (
@@ -429,6 +435,10 @@ export default function ReportsAnalytics({ navigation }: Props) {
                   totalCustomers={totalCustomers}
                   revenuePerCustomer={revenuePerCustomer}
                   ordersPerCustomer={ordersPerCustomer}
+                  topCustomers={topCustomers}
+                  period={period}
+                  customFromLabel={customFrom}
+                  customToLabel={customTo}
                 />
               )}
             </>
@@ -693,11 +703,20 @@ function CustomersView({
   totalCustomers,
   revenuePerCustomer,
   ordersPerCustomer,
+  topCustomers,
+  period,
+  customFromLabel,
+  customToLabel,
 }: {
   totalCustomers: number;
   revenuePerCustomer: number;
   ordersPerCustomer: number;
+  topCustomers: TopCustomer[];
+  period: Period;
+  customFromLabel?: Date | null;
+  customToLabel?: Date | null;
 }) {
+  const topCustomer = topCustomers[0];
   return (
     <View className="gap-3">
       {/* Headline customers card */}
@@ -756,9 +775,84 @@ function CustomersView({
         />
       </View>
 
-      {/* Coming-soon helper card */}
+      {/* Top customer hero — mirrors the "Top performer" card on the
+          Sales view so the two tabs feel like siblings. Only shows when
+          there's a real winner to celebrate. */}
+      {topCustomer ? (
+        <View
+          className="rounded-3xl overflow-hidden mt-1"
+          style={{ backgroundColor: "#1e293b" }}
+        >
+          <View
+            style={{
+              position: "absolute",
+              top: -30,
+              right: -30,
+              width: 130,
+              height: 130,
+              borderRadius: 65,
+              backgroundColor: "rgba(6, 182, 212, 0.20)",
+            }}
+          />
+          <View className="p-5">
+            <View className="flex-row items-start gap-3">
+              <View className="w-10 h-10 rounded-xl bg-cyan-500/20 items-center justify-center border border-cyan-400/40">
+                <Ionicons name="star" size={18} color="#22d3ee" />
+              </View>
+              <View className="flex-1 min-w-0">
+                <Text className="text-[10.5px] font-extrabold text-cyan-300 uppercase tracking-[1.4px]">
+                  Top customer
+                </Text>
+                <Text
+                  className="text-white text-[18px] mt-0.5"
+                  style={{
+                    fontFamily: "PlusJakartaSans_700Bold",
+                    letterSpacing: -0.4,
+                  }}
+                  numberOfLines={1}
+                >
+                  {(topCustomer.name || "").trim() ||
+                    (topCustomer.email || "").trim() ||
+                    "N/A"}
+                </Text>
+                {/* Show a quiet contact line under the headline so the
+                    vendor can recognise the customer at a glance. */}
+                {(() => {
+                  const heroHasName = !!(topCustomer.name || "").trim();
+                  const heroHasEmail = !!(topCustomer.email || "").trim();
+                  const heroPhone = (topCustomer.phoneNumber || "").trim();
+                  const heroParts: string[] = [];
+                  if (heroPhone) heroParts.push(heroPhone);
+                  if (heroHasName && heroHasEmail) heroParts.push((topCustomer.email || "").trim());
+                  if (heroParts.length === 0) return null;
+                  return (
+                    <Text
+                      className="text-cyan-100/70 text-[11.5px] mt-0.5"
+                      numberOfLines={1}
+                    >
+                      {heroParts.join(" · ")}
+                    </Text>
+                  );
+                })()}
+                <View className="flex-row items-center gap-2 mt-1.5">
+                  <Text className="text-cyan-100/85 text-[12px] font-bold">
+                    {topCustomer.totalOrders}{" "}
+                    {topCustomer.totalOrders === 1 ? "order" : "orders"}
+                  </Text>
+                  <Text className="text-cyan-100/40 text-[10px]">·</Text>
+                  <Text className="text-cyan-100/85 text-[12px] font-bold">
+                    {compactCurrency(topCustomer.totalAmount)} spent
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : null}
+
+      {/* Top customers list — same shape as Top products on Sales tab */}
       <View
-        className="bg-white rounded-3xl border border-gray-100 p-5"
+        className="bg-white rounded-3xl border border-gray-100 overflow-hidden"
         style={{
           shadowColor: "#0f172a",
           shadowOffset: { width: 0, height: 2 },
@@ -767,26 +861,136 @@ function CustomersView({
           elevation: 2,
         }}
       >
-        <View className="flex-row items-start gap-3">
-          <View className="w-10 h-10 rounded-2xl bg-blue-50 items-center justify-center">
-            <Ionicons name="sparkles-outline" size={18} color="#2563eb" />
-          </View>
-          <View className="flex-1 min-w-0">
-            <Text
-              className="text-[14px] text-gray-900"
-              style={{ fontFamily: "PlusJakartaSans_700Bold" }}
-            >
-              Per-customer breakdown coming soon
-            </Text>
-            <Text className="text-[12px] text-gray-500 mt-1 leading-[18px]">
-              Top spenders, repeat-customer rate, and lifetime value per
-              shopper will live here in a future update. Until then, the two
-              tiles above tell you how much the average shopper is worth and
-              how often they return.
-            </Text>
-          </View>
+        <View className="px-5 py-4 border-b border-gray-100">
+          <Text className="text-[14px] font-extrabold text-gray-900">
+            Top customers
+          </Text>
+          <Text className="text-[12px] text-gray-500 mt-0.5">
+            Biggest spenders in {periodLabel(period, customFromLabel, customToLabel)}
+          </Text>
         </View>
+
+        {topCustomers.length === 0 ? (
+          <View className="px-5 py-12 items-center">
+            <View className="w-12 h-12 rounded-2xl bg-gray-50 items-center justify-center mb-2">
+              <Ionicons name="people-outline" size={20} color="#9ca3af" />
+            </View>
+            <Text className="text-[13px] text-gray-500">
+              No customers yet in this period
+            </Text>
+            <Text className="text-[11.5px] text-gray-400 mt-1 text-center max-w-[240px]">
+              Once shoppers start placing orders, your top spenders will show up here.
+            </Text>
+          </View>
+        ) : (
+          topCustomers.slice(0, 5).map((c, i) => (
+            <RankedCustomerRow
+              key={`${c.name}-${i}`}
+              rank={i + 1}
+              customer={c}
+              isLast={i === Math.min(topCustomers.length, 5) - 1}
+            />
+          ))
+        )}
       </View>
+    </View>
+  );
+}
+
+// Compact row for the Top customers list. Mirrors RankedProductRow's
+// visual rhythm on purpose so the two lists feel like a set.
+function RankedCustomerRow({
+  rank,
+  customer,
+  isLast,
+}: {
+  rank: number;
+  customer: TopCustomer;
+  isLast: boolean;
+}) {
+  // Display rules:
+  //   - Primary: name when set, else email, else "N/A".
+  //   - Sub-line: phone + email when name is the primary; just phone
+  //     when email is already the primary (don't repeat it).
+  //   - Initials: derived from the primary string. "??" fallback only
+  //     hits the truly-anonymous "N/A" case.
+  const rawName = (customer.name || "").trim();
+  const rawEmail = (customer.email || "").trim();
+  const rawPhone = (customer.phoneNumber || "").trim();
+  const hasName = rawName.length > 0;
+  const hasEmail = rawEmail.length > 0;
+  const primary = hasName ? rawName : hasEmail ? rawEmail : "N/A";
+
+  const subParts: string[] = [];
+  if (rawPhone) subParts.push(rawPhone);
+  if (hasName && hasEmail) subParts.push(rawEmail);
+  const subline = subParts.join(" · ");
+
+  const initials = (() => {
+    if (!hasName && !hasEmail) return "??";
+    if (hasName) {
+      const parts = rawName.split(/\s+/).filter(Boolean);
+      if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    // Email primary — first two letters of the local part.
+    return rawEmail.slice(0, 2).toUpperCase();
+  })();
+
+  // Subtle rank-based tint — gold/silver/bronze for the top three,
+  // muted gray for the rest.
+  const rankTint =
+    rank === 1
+      ? { bg: "#fef3c7", color: "#b45309" }
+      : rank === 2
+      ? { bg: "#e0e7ff", color: "#4338ca" }
+      : rank === 3
+      ? { bg: "#ffedd5", color: "#c2410c" }
+      : { bg: "#f3f4f6", color: "#6b7280" };
+
+  return (
+    <View
+      className={`flex-row items-center gap-3 px-5 py-3.5 ${
+        isLast ? "" : "border-b border-gray-50"
+      }`}
+    >
+      <View
+        className="w-7 h-7 rounded-full items-center justify-center"
+        style={{ backgroundColor: rankTint.bg }}
+      >
+        <Text
+          className="text-[11px] font-extrabold"
+          style={{ color: rankTint.color }}
+        >
+          {rank}
+        </Text>
+      </View>
+      <View className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center">
+        <Text className="text-[12px] font-extrabold text-gray-600">
+          {initials}
+        </Text>
+      </View>
+      <View className="flex-1 min-w-0">
+        <Text
+          className="text-[13.5px] text-gray-900"
+          style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+          numberOfLines={1}
+        >
+          {primary}
+        </Text>
+        {subline ? (
+          <Text className="text-[10.5px] text-gray-500 mt-0.5" numberOfLines={1}>
+            {subline}
+          </Text>
+        ) : null}
+        <Text className="text-[10.5px] text-gray-400 mt-0.5">
+          {customer.totalOrders}{" "}
+          {customer.totalOrders === 1 ? "order" : "orders"}
+        </Text>
+      </View>
+      <Text className="text-[13px] font-extrabold text-gray-900">
+        {compactCurrency(customer.totalAmount)}
+      </Text>
     </View>
   );
 }

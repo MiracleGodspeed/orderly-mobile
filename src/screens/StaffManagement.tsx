@@ -485,7 +485,11 @@ function InviteSheet({
       <View className="flex-1 justify-end bg-black/50">
         <View
           className="bg-white rounded-t-3xl"
-          style={{ maxHeight: "92%" }}
+          // Definite height (not maxHeight) — the inner KeyboardScreen
+          // uses flex: 1, which collapses to zero inside a content-sized
+          // parent. Without this, the form fields would be squeezed out
+          // and only the header + last button would render.
+          style={{ height: "92%" }}
         >
           <View className="pt-2.5 pb-1 items-center">
             <View
@@ -704,7 +708,11 @@ function EditSheet({
       <View className="flex-1 justify-end bg-black/50">
         <View
           className="bg-white rounded-t-3xl"
-          style={{ maxHeight: "92%" }}
+          // Definite height (not maxHeight) — the inner KeyboardScreen
+          // uses flex: 1, which collapses to zero inside a content-sized
+          // parent. Without this, the form fields would be squeezed out
+          // and only the header + last button would render.
+          style={{ height: "92%" }}
         >
           <View className="pt-2.5 pb-1 items-center">
             <View

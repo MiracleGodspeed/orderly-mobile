@@ -19,6 +19,7 @@ import {
   GoogleSignin,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+import * as AppleAuthentication from "expo-apple-authentication";
 
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../../context/AuthContext";
@@ -39,10 +40,73 @@ const haptic = () => {
 
 export default function AuthOptions() {
   const navigation = useNavigation<ScreenNavigationProp>();
-  const { googleLogin } = useAuth();
+  const { googleLogin, appleLogin } = useAuth();
   const { fetchVendorData } = useVendor();
 
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  // Apple Sign-In is iOS 13+ only and the button must not render on
+  // Android per Apple's HIG. We check availability once on mount.
+  const [appleAvailable, setAppleAvailable] = useState(false);
+
+  React.useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    AppleAuthentication.isAvailableAsync()
+      .then(setAppleAvailable)
+      .catch(() => setAppleAvailable(false));
+  }, []);
+
+  const handleAppleSignIn = async () => {
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    setAppleLoading(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        Alert.alert("Error", "No identity token received from Apple");
+        return;
+      }
+
+      // Apple only ships fullName + email on the FIRST sign-in — we
+      // forward them so the backend can persist them on creation. On
+      // subsequent sign-ins they'll be null and the backend matches
+      // by the verified `sub` claim inside identityToken.
+      const fullName = credential.fullName
+        ? [credential.fullName.givenName, credential.fullName.familyName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || null
+        : null;
+
+      const data = await appleLogin({
+        idToken: credential.identityToken,
+        email: credential.email ?? null,
+        FullName: fullName,
+        role: 2,
+      });
+      await fetchVendorData();
+      navigation.replace(
+        isUserStatus(data?.userStatus, 2) ? "SetupStep1" : "Home"
+      );
+    } catch (error: any) {
+      // User cancelled — no toast, mirrors the Google cancel branch.
+      if (error?.code === "ERR_REQUEST_CANCELED") return;
+      console.error(error);
+      Alert.alert(
+        "Sign in with Apple failed",
+        error?.message ?? "Please try again."
+      );
+    } finally {
+      setAppleLoading(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     if (Platform.OS === "ios") {
@@ -185,6 +249,35 @@ export default function AuthOptions() {
             </Text>
             <View className="flex-1 h-px bg-gray-200" />
           </View>
+
+          {/* Sign in with Apple — iOS only. Required as an equivalent
+              login option per App Store guideline 4.8 because the app
+              ships Google as a third-party login. Rendered above Google
+              to match Apple's HIG prominence requirement. */}
+          {appleAvailable && (
+            <View className="mb-3">
+              {appleLoading ? (
+                <View className="h-12 rounded-2xl bg-black items-center justify-center flex-row gap-2">
+                  <ActivityIndicator size="small" color="#fff" />
+                  <Text className="text-[14px] font-bold text-white">
+                    Signing in…
+                  </Text>
+                </View>
+              ) : (
+                <AppleAuthentication.AppleAuthenticationButton
+                  buttonType={
+                    AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                  }
+                  buttonStyle={
+                    AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                  }
+                  cornerRadius={16}
+                  style={{ width: "100%", height: 48 }}
+                  onPress={handleAppleSignIn}
+                />
+              )}
+            </View>
+          )}
 
           {/* Google */}
           <Pressable

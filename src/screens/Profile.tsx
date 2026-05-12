@@ -20,6 +20,10 @@ interface MenuItem {
   title: string;
   subtitle?: string;
   screen?: keyof RootStackParamList;
+  // Destructive rows (currently just "Delete account") render in rose
+  // and skip the bold title weight so they read as a warning rather
+  // than just another menu option.
+  destructive?: boolean;
 }
 
 interface MenuGroup {
@@ -80,6 +84,19 @@ export default function Profile() {
           title: "Security",
           subtitle: "Password, sessions, 2FA",
           screen: "Security",
+        },
+        // App Store guideline 5.1.1(v): in-app account deletion must
+        // be reachable, not buried. Lives in the Account group so a
+        // reviewer (or vendor) sees it the moment they open Profile.
+        {
+          id: "delete-account",
+          icon: "trash-outline",
+          tint: "#fee2e2",
+          iconColor: "#e11d48",
+          title: "Delete account",
+          subtitle: "Permanently remove your account and data",
+          screen: "DeleteAccount",
+          destructive: true,
         },
       ],
     },
@@ -214,7 +231,9 @@ export default function Profile() {
                   key={item.id}
                   onPress={() => handleMenuPress(item)}
                   android_ripple={{ color: "#f3f4f6" }}
-                  className={`flex-row items-center px-4 py-3.5 active:bg-gray-50 ${
+                  className={`flex-row items-center px-4 py-3.5 ${
+                    item.destructive ? "active:bg-rose-50/40" : "active:bg-gray-50"
+                  } ${
                     idx !== group.items.length - 1
                       ? "border-b border-gray-100"
                       : ""
@@ -233,7 +252,9 @@ export default function Profile() {
 
                   <View className="flex-1 ml-3 pr-2">
                     <Text
-                      className="text-[14.5px] text-gray-900"
+                      className={`text-[14.5px] ${
+                        item.destructive ? "text-rose-600" : "text-gray-900"
+                      }`}
                       style={{
                         fontFamily: "PlusJakartaSans_700Bold",
                         letterSpacing: -0.2,
@@ -252,7 +273,11 @@ export default function Profile() {
                     )}
                   </View>
 
-                  <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
+                  <Ionicons
+                    name="chevron-forward"
+                    size={16}
+                    color={item.destructive ? "#fb7185" : "#9ca3af"}
+                  />
                 </Pressable>
               ))}
             </View>

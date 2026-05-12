@@ -67,7 +67,7 @@ export default function SetupStep1() {
           <SetupHeader
             step={1}
             totalSteps={3}
-            title="Tell us about your store"
+            title="Tell us about your business"
             subtitle="A clear name and short description helps customers find you and trust what you sell."
             onBack={() => navigation.goBack()}
           />

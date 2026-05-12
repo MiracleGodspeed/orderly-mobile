@@ -22,6 +22,7 @@ import {
   GoogleSignin,
   statusCodes,
 } from "@react-native-google-signin/google-signin";
+import * as AppleAuthentication from "expo-apple-authentication";
 
 import { RootStackParamList } from "../navigation/types";
 import { SignupRequest, Country } from "../api/auth/auth.types";
@@ -54,7 +55,7 @@ const haptic = () => {
 
 export default function EmailSignUp() {
   const navigation = useNavigation<ScreenNavigationProp>();
-  const { googleLogin } = useAuth();
+  const { googleLogin, appleLogin } = useAuth();
   const { fetchVendorData } = useVendor();
   const [toast, setToast] = useState<{
     title: string;
@@ -74,10 +75,67 @@ export default function EmailSignUp() {
   const [acceptMarketing, setAcceptMarketing] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [appleLoading, setAppleLoading] = useState(false);
+  const [appleAvailable, setAppleAvailable] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [focusedField, setFocusedField] = useState<
     "email" | "password" | "confirm" | "phone" | null
   >(null);
+
+  useEffect(() => {
+    if (Platform.OS !== "ios") return;
+    AppleAuthentication.isAvailableAsync()
+      .then(setAppleAvailable)
+      .catch(() => setAppleAvailable(false));
+  }, []);
+
+  const handleAppleSignIn = async () => {
+    if (Platform.OS === "ios") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
+    setAppleLoading(true);
+    try {
+      const credential = await AppleAuthentication.signInAsync({
+        requestedScopes: [
+          AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+          AppleAuthentication.AppleAuthenticationScope.EMAIL,
+        ],
+      });
+
+      if (!credential.identityToken) {
+        Alert.alert("Error", "No identity token received from Apple");
+        return;
+      }
+
+      const fullName = credential.fullName
+        ? [credential.fullName.givenName, credential.fullName.familyName]
+            .filter(Boolean)
+            .join(" ")
+            .trim() || null
+        : null;
+
+      const data = await appleLogin({
+        idToken: credential.identityToken,
+        email: credential.email ?? null,
+        FullName: fullName,
+        role: 2,
+      });
+      await fetchVendorData();
+      navigation.replace(
+        isUserStatus(data?.userStatus, 2) ? "SetupStep1" : "Home"
+      );
+    } catch (error: any) {
+      if (error?.code === "ERR_REQUEST_CANCELED") return;
+      console.error(error);
+      setToast({
+        title: "Sign in with Apple failed",
+        subtitle: error?.message ?? "Please try again.",
+        tone: "error",
+      });
+    } finally {
+      setAppleLoading(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     if (Platform.OS === "ios") {
@@ -252,7 +310,7 @@ export default function EmailSignUp() {
               </Text>
               <Text className="text-gray-500 text-[15px] mt-2 leading-[22px]">
                 Start your{" "}
-                <Text className="text-gray-900 font-bold">5-day free trial</Text>
+                <Text className="text-gray-900 font-bold">14-day free trial</Text>
                 . No card needed.
               </Text>
             </View>
@@ -270,6 +328,35 @@ export default function EmailSignUp() {
                 elevation: 2,
               }}
             >
+              {/* Sign in with Apple — iOS only. Required as an equivalent
+                  login option per App Store guideline 4.8 because the
+                  app ships Google as a third-party login. Sits above
+                  Google to match Apple's HIG prominence expectation. */}
+              {appleAvailable && (
+                <View className="mb-3">
+                  {appleLoading ? (
+                    <View className="h-12 rounded-2xl bg-black items-center justify-center flex-row gap-2">
+                      <ActivityIndicator size="small" color="#fff" />
+                      <Text className="text-[14px] font-bold text-white">
+                        Signing in…
+                      </Text>
+                    </View>
+                  ) : (
+                    <AppleAuthentication.AppleAuthenticationButton
+                      buttonType={
+                        AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP
+                      }
+                      buttonStyle={
+                        AppleAuthentication.AppleAuthenticationButtonStyle.BLACK
+                      }
+                      cornerRadius={16}
+                      style={{ width: "100%", height: 48 }}
+                      onPress={handleAppleSignIn}
+                    />
+                  )}
+                </View>
+              )}
+
               {/* Google sign-in — OAuth-first, the modern signup pattern */}
               <Pressable
                 onPress={handleGoogleSignIn}

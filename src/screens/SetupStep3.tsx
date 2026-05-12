@@ -156,7 +156,7 @@ export default function SetupStep3() {
           step={3}
           totalSteps={3}
           title="Pick your categories"
-          subtitle="Choose all that fit — this helps customers find you when they search."
+          subtitle="Choose all that fits. This helps us understand your business and create a website that fits your brand."
           onBack={() => navigation.goBack()}
         />
 

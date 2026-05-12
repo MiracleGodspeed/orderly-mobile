@@ -895,19 +895,31 @@ interface RawNotification {
   createdAt: string;
   route?: string | null;
   routeParams?: string | null;
+  /** "notification" (per-user) or "announcement" (broadcast). The
+   *  mobile passes this back to mark-as-read so the server hits the
+   *  right table. Defaults to "notification" when missing on the
+   *  wire — older API builds didn't include it. */
+  kind?: string;
+  Kind?: string;
 }
 
-const normalizeNotification = (n: RawNotification): AppNotification => ({
-  id: n.id,
-  type: (n.type as AppNotification["type"]) || "order",
-  title: n.title,
-  message: n.message,
-  // Backend may serialize as IsRead (PascalCase) or isRead — accept both.
-  isRead: (n.isRead ?? n.IsRead) === true,
-  createdAt: n.createdAt,
-  route: n.route ?? null,
-  routeParams: n.routeParams ?? null,
-});
+const normalizeNotification = (n: RawNotification): AppNotification => {
+  const rawKind = (n.kind ?? n.Kind ?? "notification").toLowerCase();
+  const kind: AppNotification["kind"] =
+    rawKind === "announcement" ? "announcement" : "notification";
+  return {
+    id: n.id,
+    type: (n.type as AppNotification["type"]) || "order",
+    title: n.title,
+    message: n.message,
+    // Backend may serialize as IsRead (PascalCase) or isRead — accept both.
+    isRead: (n.isRead ?? n.IsRead) === true,
+    createdAt: n.createdAt,
+    route: n.route ?? null,
+    routeParams: n.routeParams ?? null,
+    kind,
+  };
+};
 
 export const getNotifications = async (params?: {
   pageIndex?: number;

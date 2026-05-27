@@ -59,17 +59,37 @@ export default function Header({
             <Ionicons name="notifications-outline" size={22} color="#374151" />
             
             {unreadCount > 0 && (
-              <>
-                {unreadCount > 9 ? (
-                  <View className="absolute top-0 right-0 bg-red-500 rounded-full px-1.5 py-0.5 min-w-[18px] items-center">
-                    <Text className="text-white text-[10px] font-semibold">9+</Text>
-                  </View>
-                ) : (
-                  <View className="absolute top-0 right-0 bg-red-500 rounded-full px-1.5 py-0.5 min-w-[18px] items-center">
-                    <Text className="text-white text-[10px] font-semibold">{unreadCount}</Text>
-                  </View>
-                )}
-              </>
+              // iOS-style badge: fixed-height pill that's a circle for
+              // a single digit and auto-widens for "9+". The previous
+              // version used `min-w-[18px]` with `px-1.5`, which left
+              // ~6px of inner width — enough for "9" but not "9+", so
+              // the "+" clipped against the rounded edge. Switching to
+              // a 18px-tall pill with `paddingHorizontal: 5` + tabular
+              // nums + a 1.5px white ring keeps both states clean and
+              // also makes the badge pop against any icon underneath.
+              <View
+                className="absolute top-0 right-0 bg-red-500 items-center justify-center"
+                style={{
+                  minWidth: 15,
+                  height:  unreadCount > 9 ? 15 : 18,
+                  borderRadius: 9,
+                  paddingHorizontal: 5,
+                  borderWidth: 1.5,
+                  borderColor: "#fff",
+                }}
+              >
+                <Text
+                  className="text-white font-bold"
+                  style={{
+                    fontSize: 11,
+                    lineHeight: 12,
+                    fontVariant: ["tabular-nums"],
+                  }}
+                >
+                  {unreadCount > 9 ? "" : unreadCount}
+                  {/* 9+ */}
+                </Text>
+              </View>
             )}
           </TouchableOpacity>
           

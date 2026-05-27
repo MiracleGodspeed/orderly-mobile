@@ -9,7 +9,7 @@
     "userInterfaceStyle": "light",
     "newArchEnabled": true,
     "splash": {
-      "backgroundColor": "#265CC7"
+      "backgroundColor": "#0a3d8f"
     },
     "ios": {
       "supportsTablet": false,
@@ -85,7 +85,8 @@
           "sounds": []
         }
       ],
-      "expo-web-browser"
+      "expo-web-browser",
+      "expo-iap"
     ],
     "extra": {
       "eas": {

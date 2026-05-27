@@ -42,48 +42,52 @@ interface TypeStyle {
   label: string;
 }
 
+// Muted, mature palette — same hue families as before but desaturated
+// + darker so the row reads as "professional dashboard" rather than
+// "kid-colourful". Each type still gets a distinct identity, but the
+// page no longer looks like five different brands stacked.
 const TYPE_STYLES: Record<string, TypeStyle> = {
   order: {
     icon: "bag-handle",
-    iconColor: "#0d9488",
-    iconBg: "#ccfbf1",
-    accent: "#14b8a6",
+    iconColor: "#0f766e",
+    iconBg: "#f0fdfa",
+    accent: "#0d9488",
     label: "Order",
   },
   stock: {
     icon: "warning",
-    iconColor: "#b45309",
-    iconBg: "#fef3c7",
-    accent: "#f59e0b",
+    iconColor: "#a16207",
+    iconBg: "#fefce8",
+    accent: "#ca8a04",
     label: "Stock",
   },
   payout: {
     icon: "checkmark-circle",
-    iconColor: "#047857",
-    iconBg: "#d1fae5",
-    accent: "#10b981",
+    iconColor: "#15803d",
+    iconBg: "#f0fdf4",
+    accent: "#16a34a",
     label: "Payout",
   },
   performance: {
     icon: "trending-up",
-    iconColor: "#1d4ed8",
-    iconBg: "#dbeafe",
-    accent: "#3b82f6",
+    iconColor: "#1e40af",
+    iconBg: "#eff6ff",
+    accent: "#2563eb",
     label: "Insights",
   },
   subscription: {
     icon: "star",
-    iconColor: "#7c3aed",
-    iconBg: "#ede9fe",
-    accent: "#a855f7",
+    iconColor: "#6d28d9",
+    iconBg: "#f5f3ff",
+    accent: "#7c3aed",
     label: "Plan",
   },
 };
 const FALLBACK_STYLE: TypeStyle = {
   icon: "information-circle",
-  iconColor: "#1d4ed8",
-  iconBg: "#dbeafe",
-  accent: "#3b82f6",
+  iconColor: "#475569",
+  iconBg: "#f8fafc",
+  accent: "#64748b",
   label: "Update",
 };
 const styleFor = (type: NotificationType) =>
@@ -250,63 +254,72 @@ export default function Notifications() {
 
   const renderRow = (item: AppNotification) => {
     const style = styleFor(item.type);
+    const isUnread = !item.isRead;
+
+    // Row design notes:
+    //   • Type colour is carried by the icon disk only — the previous
+    //     coloured vertical strip on the left was redundant noise.
+    //   • State (unread/read) is carried by a single thin brand-blue
+    //     rail on the left edge AND a slight title weight bump.
+    //     This kills the old "type-label + unread dot" two-line
+    //     header above the title.
+    //   • Background tone shifts very slightly for unread so the
+    //     stack is scannable from the corner of the eye.
     return (
       <Pressable
         key={item.id}
         onPress={() => handleNotificationPress(item)}
-        className="bg-white rounded-2xl mb-2 overflow-hidden border border-gray-100 active:bg-gray-50"
+        className={`mb-2 overflow-hidden rounded-2xl border active:opacity-90 ${
+          isUnread
+            ? "bg-white border-blue-100"
+            : "bg-white border-gray-100"
+        }`}
         style={{
           shadowColor: "#0f172a",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: 0.04,
+          shadowOpacity: isUnread ? 0.05 : 0.03,
           shadowRadius: 4,
           elevation: 1,
         }}
       >
         <View className="flex-row">
-          {/* Type-tinted accent strip on the left — color-codes the row at
-              a glance without taking the icon disk's job. */}
-          <View
-            style={{ backgroundColor: style.accent, width: 4 }}
-          />
-          <View className="flex-row flex-1 p-3.5">
+          {/* Unread rail — only renders for unread, single brand-blue
+              line, narrower than the old coloured strip. */}
+          {isUnread && (
+            <View style={{ width: 3, backgroundColor: "#0080ff" }} />
+          )}
+
+          <View className="flex-row flex-1 p-4">
             <View
-              className="w-11 h-11 rounded-2xl items-center justify-center mr-3"
+              className="w-11 h-11 rounded-2xl items-center justify-center mr-3.5"
               style={{ backgroundColor: style.iconBg }}
             >
               <Ionicons name={style.icon} size={20} color={style.iconColor} />
             </View>
 
-            <View className="flex-1 mr-2">
-              <View className="flex-row items-center justify-between mb-0.5">
-                <View className="flex-row items-center gap-1.5 flex-1 min-w-0">
-                  <Text
-                    className={`text-[10px] font-extrabold uppercase tracking-[1.2px]`}
-                    style={{ color: style.accent }}
-                  >
-                    {style.label}
-                  </Text>
-                  {!item.isRead && (
-                    <View className="w-1.5 h-1.5 rounded-full bg-blue-600" />
-                  )}
-                </View>
-                <Text className="text-[11px] text-gray-400 font-medium">
+            <View className="flex-1 mr-2 min-w-0">
+              <View className="flex-row items-baseline justify-between gap-2 mb-1">
+                <Text
+                  className={`text-[15px] tracking-tight text-gray-900 flex-1 ${
+                    isUnread ? "font-extrabold" : "font-bold"
+                  }`}
+                  numberOfLines={2}
+                  style={{ lineHeight: 20 }}
+                >
+                  {item.title}
+                </Text>
+                <Text
+                  className={`text-[11px] flex-shrink-0 ${
+                    isUnread ? "text-gray-700 font-bold" : "text-gray-400 font-medium"
+                  }`}
+                  style={{ fontVariant: ["tabular-nums"] }}
+                >
                   {formatRelativeTime(item.createdAt)}
                 </Text>
               </View>
               <Text
-                className={`text-[14.5px] tracking-tight ${
-                  item.isRead
-                    ? "text-gray-900 font-semibold"
-                    : "text-gray-900 font-extrabold"
-                }`}
+                className="text-[12.5px] text-gray-500 leading-[18px]"
                 numberOfLines={2}
-              >
-                {item.title}
-              </Text>
-              <Text
-                className="text-[12.5px] text-gray-500 leading-[18px] mt-1"
-                numberOfLines={3}
               >
                 {item.message}
               </Text>
@@ -324,58 +337,100 @@ export default function Notifications() {
     );
   };
 
+  // Brand-blue (#0080ff) hero. Layout: small "Inbox" eyebrow tucked
+  // top-left, hero numeral + meta filling the body, mark-all CTA
+  // anchored on its own row so it never crowds the headline. The
+  // earlier card stacked everything left-aligned and the CTA hung
+  // off the bottom-left without breathing room.
   const HeroCard = (
     <View
-      className="mx-5 mt-4 mb-4 rounded-3xl overflow-hidden px-5 py-5"
-      style={{ backgroundColor: "#194eb8" }}
+      className="mx-5 mt-4 mb-5 rounded-3xl overflow-hidden px-5 pt-5 pb-5"
+      style={{
+        backgroundColor: "#0080ff",
+        shadowColor: "#0080ff",
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.25,
+        shadowRadius: 18,
+        elevation: 6,
+      }}
     >
-      <View className="flex-row items-start justify-between">
-        <View className="flex-1 pr-3">
-          <View className="flex-row items-center gap-2 mb-2">
-            <View className="w-10 h-10 rounded-2xl bg-white/15 border border-white/15 items-center justify-center">
-              <Ionicons name="notifications" size={18} color="white" />
-            </View>
-            <Text className="text-white/80 text-[10.5px] font-extrabold uppercase tracking-[1.4px]">
-              Inbox
+      {/* Eyebrow */}
+      <View className="flex-row items-center justify-between mb-4">
+        <View className="flex-row items-center gap-2">
+          <View className="w-7 h-7 rounded-full bg-white/15 items-center justify-center">
+            <Ionicons name="notifications" size={14} color="white" />
+          </View>
+          <Text
+            className="text-white/85 text-[10.5px] font-extrabold uppercase"
+            style={{ letterSpacing: 1.5 }}
+          >
+            Inbox
+          </Text>
+        </View>
+        {unreadCount > 0 && (
+          <View className="bg-white/15 px-2.5 h-6 rounded-full items-center justify-center">
+            <Text
+              className="text-white text-[11px] font-extrabold"
+              style={{ fontVariant: ["tabular-nums"] }}
+            >
+              {unreadCount} unread
             </Text>
           </View>
-          {unreadCount > 0 ? (
-            <>
-              <Text className="text-white text-[28px] font-extrabold tracking-tight leading-[32px]">
-                {unreadCount} new{" "}
-                <Text className="text-white/80">
-                  update{unreadCount === 1 ? "" : "s"}
-                </Text>
-              </Text>
-              <Text className="text-white/75 text-[12.5px] mt-1">
-                Tap a card to open the relevant screen
-              </Text>
-            </>
-          ) : (
-            <>
-              <Text className="text-white text-[24px] font-extrabold tracking-tight leading-[28px]">
-                You're all caught up
-              </Text>
-              <Text className="text-white/75 text-[12.5px] mt-1">
-                We'll let you know when something happens
-              </Text>
-            </>
-          )}
-        </View>
+        )}
       </View>
 
+      {/* Headline */}
+      {unreadCount > 0 ? (
+        <>
+          <View className="flex-row items-baseline gap-2">
+            <Text
+              className="text-white font-extrabold tracking-tight"
+              style={{ fontSize: 44, lineHeight: 46, fontVariant: ["tabular-nums"] }}
+            >
+              {unreadCount}
+            </Text>
+            <Text className="text-white/80 text-[18px] font-bold tracking-tight">
+              new update{unreadCount === 1 ? "" : "s"}
+            </Text>
+          </View>
+          <Text className="text-white/75 text-[12.5px] mt-1.5 leading-[18px]">
+            Tap a card to open the screen it belongs to.
+          </Text>
+        </>
+      ) : (
+        <>
+          <Text className="text-white text-[26px] font-extrabold tracking-tight leading-[30px]">
+            You&apos;re all caught up
+          </Text>
+          <Text className="text-white/75 text-[12.5px] mt-1.5 leading-[18px]">
+            We&apos;ll let you know the moment something needs you.
+          </Text>
+        </>
+      )}
+
+      {/* Mark all read — refined pill on its own row */}
       {unreadCount > 0 && (
         <Pressable
           onPress={handleMarkAllRead}
           disabled={markingAllRead}
-          className="mt-4 self-start flex-row items-center gap-1.5 bg-white/15 border border-white/20 rounded-full px-3 h-8 active:bg-white/20"
+          className="mt-5 self-start flex-row items-center gap-1.5 bg-white rounded-full px-3.5 h-9 active:bg-white/90"
+          style={{
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.12,
+            shadowRadius: 6,
+            elevation: 3,
+          }}
         >
           {markingAllRead ? (
-            <ActivityIndicator size="small" color="white" />
+            <ActivityIndicator size="small" color="#0080ff" />
           ) : (
-            <Ionicons name="checkmark-done" size={13} color="white" />
+            <Ionicons name="checkmark-done" size={14} color="#0080ff" />
           )}
-          <Text className="text-white text-[12px] font-extrabold">
+          <Text
+            className="text-[12.5px] font-extrabold"
+            style={{ color: "#0080ff" }}
+          >
             {markingAllRead ? "Marking…" : "Mark all read"}
           </Text>
         </Pressable>
@@ -434,25 +489,28 @@ export default function Notifications() {
   );
 
   const EmptyState = (
-    <View className="items-center px-8 py-16">
-      <View className="w-20 h-20 bg-blue-50 rounded-2xl items-center justify-center mb-5">
+    <View className="items-center px-8 py-20">
+      <View
+        className="w-16 h-16 rounded-3xl items-center justify-center mb-5"
+        style={{ backgroundColor: "#eff6ff" }}
+      >
         <Ionicons
           name={
             activeFilter === "unread"
               ? "checkmark-done-circle"
               : "notifications-outline"
           }
-          size={36}
-          color="#2563eb"
+          size={28}
+          color="#0080ff"
         />
       </View>
-      <Text className="text-gray-900 text-lg font-bold mb-1.5">
-        {activeFilter === "unread" ? "No unread notifications" : "Nothing yet"}
+      <Text className="text-gray-900 text-[17px] font-extrabold tracking-tight mb-1.5">
+        {activeFilter === "unread" ? "Inbox zero" : "Nothing yet"}
       </Text>
-      <Text className="text-gray-500 text-center text-sm leading-5 max-w-xs">
+      <Text className="text-gray-500 text-center text-[13px] leading-[19px] max-w-xs">
         {activeFilter === "unread"
-          ? "You've read everything — nice."
-          : "We'll notify you about orders, payouts, and other store activity."}
+          ? "Every notification has been read. Nice work."
+          : "We'll let you know about orders, payouts, and anything else that needs your attention."}
       </Text>
     </View>
   );
@@ -497,11 +555,26 @@ export default function Notifications() {
           {sections.length === 0 ? (
             EmptyState
           ) : (
-            sections.map((section) => (
-              <View key={section.title} className="mt-3">
-                <Text className="text-[11px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-2 px-1">
-                  {section.title}
-                </Text>
+            sections.map((section, sectionIdx) => (
+              <View key={section.title} className={sectionIdx === 0 ? "" : "mt-5"}>
+                {/* Section header: tiny caps label + hairline rule.
+                    Gives the inbox a documentary feel, scannable
+                    without competing with the row titles. */}
+                <View className="flex-row items-center gap-3 mb-3 mt-1">
+                  <Text
+                    className="text-[10.5px] font-extrabold text-gray-500 uppercase"
+                    style={{ letterSpacing: 1.5 }}
+                  >
+                    {section.title}
+                  </Text>
+                  <View className="flex-1 h-px bg-gray-200/70" />
+                  <Text
+                    className="text-[10.5px] font-bold text-gray-400 tabular-nums"
+                    style={{ fontVariant: ["tabular-nums"] }}
+                  >
+                    {section.data.length}
+                  </Text>
+                </View>
                 {section.data.map(renderRow)}
               </View>
             ))

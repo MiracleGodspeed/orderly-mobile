@@ -49,6 +49,7 @@ import { useProducts } from '../hooks/useProducts';
 import { useStorePerformance } from '../hooks/useStorePerformance';
 import { AppImage } from '../components/AppImage';
 import { TrendBadge } from '../components/TrendBadge';
+import PromoCardCarousel from '../components/PromoCardCarousel';
 import { formatNaira, getGreeting, computeTrend, formatRelativeTime } from '../lib/format';
 import { FeaturePaywallSheet } from '../components/FeaturePaywallSheet';
 import { useFeatures } from '../hooks/useFeatures';
@@ -892,6 +893,13 @@ export default function Home() {
               <Ionicons name="share-social-outline" size={18} color="#ffffff" />
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* Admin-managed auto-swipe promo strip. Renders nothing
+            when no active cards are scheduled — zero footprint on
+            quiet dashboards. */}
+        <View className="">
+          <PromoCardCarousel />
         </View>
 
         {/* <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl border border-gray-100 p-4 overflow-hidden"

@@ -5,8 +5,9 @@ import {
   googleLogin as googleLoginApi,
   appleLogin as appleLoginApi,
   AppleLoginPayload,
+  revokeRefreshToken,
 } from "./../src/api/auth/auth.api";
-import {setAuthToken} from "./../src/api/setAuthToken"
+import { setAuthToken, registerForcedSignOutCallback } from "./../src/api/setAuthToken";
 import { LoginResponse } from "../src/api/auth/auth.types";
 import {
   registerDeviceForPush,
@@ -25,6 +26,7 @@ import {
   saveAuthToStorage,
   clearAuthFromStorage,
   getAuthFromStorage,
+  getRefreshTokenFromStorage,
 } from "./auth.storage";
 
 
@@ -44,7 +46,12 @@ interface AuthContextType {
   googleLogin: (idToken: any) => Promise<LoginResponse>;
   appleLogin: (payload: AppleLoginPayload) => Promise<LoginResponse>;
   logout: () => Promise<void>;
- setAuthData: (token: string, user: User) => Promise<void>;
+ setAuthData: (
+    token: string,
+    user: User,
+    refreshToken?: string | null,
+    refreshTokenExpiresAt?: string | null
+  ) => Promise<void>;
 
    isLoading: boolean;
 }
@@ -77,6 +84,18 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
 
   const queryClient = useQueryClient();
+
+  // Hand the axios interceptor a way to flush React state when a
+  // refresh-failed 401 forces a sign-out — the storage clears, but
+  // without this the screen wouldn't react until next mount.
+  useEffect(() => {
+    registerForcedSignOutCallback(() => {
+      setToken(null);
+      setUser(null);
+      queryClient.clear();
+    });
+    return () => registerForcedSignOutCallback(null);
+  }, [queryClient]);
 
   useEffect(() => {
     setAuthToken(token);
@@ -141,7 +160,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setToken(data.token);
     setUser(user);
 
-    await saveAuthToStorage(data.token, user);
+    await saveAuthToStorage(
+      data.token,
+      user,
+      data.refreshToken,
+      data.refreshTokenExpiresAt
+    );
 
     return data;
   } catch (err) {
@@ -167,7 +191,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setToken(data.token);
     setUser(user);
 
-    await saveAuthToStorage(data.token, user);
+    await saveAuthToStorage(
+      data.token,
+      user,
+      data.refreshToken,
+      data.refreshTokenExpiresAt
+    );
 
     return data;
   } catch (err) {
@@ -192,7 +221,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     setToken(data.token);
     setUser(user);
 
-    await saveAuthToStorage(data.token, user);
+    await saveAuthToStorage(
+      data.token,
+      user,
+      data.refreshToken,
+      data.refreshTokenExpiresAt
+    );
 
     return data;
   } catch (err) {
@@ -209,16 +243,29 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   } catch {
     // ignore — local logout should always succeed
   }
+
+  // Best-effort revoke on the server so the refresh token can't be
+  // used again. Swallow errors — we always clear local state below.
+  const storedRefresh = await getRefreshTokenFromStorage();
+  if (storedRefresh) {
+    await revokeRefreshToken(storedRefresh);
+  }
+
   setToken(null);
   setUser(null);
   queryClient.clear();
   await clearAuthFromStorage();
 };
 
- const setAuthData = async (newToken: string, newUser: User) => {
+ const setAuthData = async (
+  newToken: string,
+  newUser: User,
+  refreshToken?: string | null,
+  refreshTokenExpiresAt?: string | null
+) => {
   setToken(newToken);
   setUser(newUser);
-  await saveAuthToStorage(newToken, newUser);
+  await saveAuthToStorage(newToken, newUser, refreshToken, refreshTokenExpiresAt);
 };
 
  if (isLoading) return null;

@@ -85,7 +85,22 @@ const formatTitle = (days: number) => {
   return `${days} days left · all features unlocked`;
 };
 
+// Two copy variants: Android (and any other non-iOS platform) gets
+// the action-oriented "pick a plan" / "upgrade" framing because the
+// purchase happens in-app via Paystack. iOS gets a neutral status
+// description — App Store guideline 3.1.3 forbids surfacing
+// upgrade/subscribe prompts for purchases not made through IAP, so
+// the iOS app doesn't push the vendor toward payment from anywhere
+// in the UI.
+const IS_IOS = Platform.OS === "ios";
+
 const formatMeta = (days: number) => {
+  if (IS_IOS) {
+    if (days <= 0) return "Your trial period has ended.";
+    if (days <= 2) return "Your trial is ending soon.";
+    if (days <= 7) return "Your trial is wrapping up.";
+    return "You're exploring Orderly on a free trial.";
+  }
   if (days <= 0)
     return "Upgrade now to keep your storefront live and avoid downtime.";
   if (days <= 2)
@@ -131,16 +146,24 @@ export function TrialBanner({ onPress }: Props = {}) {
     haptic();
     if (onPress) {
       onPress();
+    } else if (IS_IOS) {
+      // iOS routes to the status screen (SubscriptionBilling), where
+      // the only path forward is the neutral "Manage subscription"
+      // web link. The in-app purchase flow (SubscriptionFlow) must
+      // not be reachable on iOS.
+      navigation.navigate("SubscriptionBilling" as any, {});
     } else {
-      // Default: behave like the Upgrade button so the banner remains
-      // useful in contexts that don't pass a custom handler.
       navigation.navigate("SubscriptionFlow", {});
     }
   };
 
-  const handleUpgradePress = () => {
+  const handleCtaPress = () => {
     haptic();
-    navigation.navigate("SubscriptionFlow", {});
+    if (IS_IOS) {
+      navigation.navigate("SubscriptionBilling" as any, {});
+    } else {
+      navigation.navigate("SubscriptionFlow", {});
+    }
   };
 
   return (
@@ -193,10 +216,13 @@ export function TrialBanner({ onPress }: Props = {}) {
         </View>
       </Pressable>
 
-      {/* Upgrade pill — independent tap target so it always routes to
-          billing, even if the body opens an explainer instead. */}
+      {/* CTA pill — labelled neutrally on iOS ("Manage") because Apple
+          guideline 3.1.3 forbids surfacing "Upgrade"/"Subscribe" calls
+          to action for purchases not made through IAP. Android keeps
+          the action-oriented "Upgrade" since the purchase happens
+          in-app via Paystack. */}
       <Pressable
-        onPress={handleUpgradePress}
+        onPress={handleCtaPress}
         hitSlop={6}
         className="self-center mr-3 ml-1 flex-row items-center gap-1 rounded-full px-3 h-8 active:opacity-80"
         style={{
@@ -212,7 +238,7 @@ export function TrialBanner({ onPress }: Props = {}) {
           className="text-[11.5px] font-extrabold"
           style={{ color: tone.ctaText }}
         >
-          Upgrade
+          {IS_IOS ? "Manage" : "Upgrade"}
         </Text>
         <Ionicons name="arrow-forward" size={12} color={tone.ctaText} />
       </Pressable>

@@ -9,6 +9,7 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  Clipboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -26,6 +27,7 @@ import {
   suspendStaff,
   reactivateStaff,
   removeStaff,
+  resendStaffInvite,
 } from "../api/vendor/vendor.api";
 import { StaffMember, StaffStatus } from "../api/vendor/vendor.types";
 import {
@@ -94,6 +96,16 @@ export default function StaffManagement() {
   const [loading, setLoading] = useState(true);
   const [inviteOpen, setInviteOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<StaffMember | null>(null);
+  // One-shot credentials reveal — populated after Invite / Resend
+  // so the vendor can copy / share the password via WhatsApp / SMS
+  // even if the email is delayed. Cleared when they tap Done.
+  const [issuedCreds, setIssuedCreds] = useState<{
+    fullName: string;
+    email: string;
+    password: string;
+    headline: string;
+    blurb: string;
+  } | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -156,6 +168,36 @@ export default function StaffManagement() {
       refresh();
     } catch (err: any) {
       toast.show(err?.message || "Couldn't reactivate", { type: "danger" });
+    }
+  };
+
+  /**
+   * Regenerates the staff member's password and re-emails the
+   * credentials. The previous password is invalidated immediately —
+   * backend also refuses when the staff has already signed in
+   * (would lock them out of an active session). The freshly-issued
+   * password is surfaced via `issuedCreds` so the vendor can copy
+   * + share via WhatsApp / SMS if email delivery is slow.
+   */
+  const onResend = async (s: StaffMember) => {
+    try {
+      const updated = await resendStaffInvite(s.id);
+      setEditTarget(null);
+      if (updated.issuedPassword) {
+        setIssuedCreds({
+          fullName: updated.fullName,
+          email: updated.email,
+          password: updated.issuedPassword,
+          headline: "New password issued",
+          blurb:
+            "We emailed the new credentials to your teammate. Copy + share them directly if the email hasn't arrived.",
+        });
+      } else {
+        toast.show("Credentials sent", { type: "success" });
+      }
+      refresh();
+    } catch (err: any) {
+      toast.show(err?.message || "Couldn't resend invite", { type: "danger" });
     }
   };
 
@@ -305,6 +347,14 @@ export default function StaffManagement() {
             <View className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               {staff.map((s, i) => {
                 const tone = STATUS_TONE[s.status];
+                // New flow: staff land as Active immediately. Show
+                // Resend until they actually sign in (server stamps
+                // `acceptedAt` on first login) — after that,
+                // regenerating their password would lock them out
+                // of an active session.
+                const canResend =
+                  s.status === "Pending" ||
+                  (s.status === "Active" && s.acceptedAt == null);
                 return (
                   <Pressable
                     key={s.id}
@@ -385,6 +435,34 @@ export default function StaffManagement() {
                       </View>
                     </View>
 
+                    {/* "Send new credentials" pill — shown until
+                        the staff actually signs in. Lives inside the
+                        row Pressable but stops the tap from
+                        bubbling, so it doesn't also open the edit
+                        sheet right after the credentials reveal. */}
+                    {canResend && (
+                      <Pressable
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          haptic();
+                          onResend(s);
+                        }}
+                        hitSlop={8}
+                        className="flex-row items-center gap-1 px-3 py-1.5 rounded-full mr-1 bg-blue-50 active:bg-blue-100"
+                      >
+                        <Ionicons name="send" size={12} color="#1d4ed8" />
+                        <Text
+                          style={{
+                            color: "#1d4ed8",
+                            fontSize: 11.5,
+                            fontFamily: "PlusJakartaSans_700Bold",
+                          }}
+                        >
+                          Resend
+                        </Text>
+                      </Pressable>
+                    )}
+
                     <Ionicons name="chevron-forward" size={16} color="#9ca3af" />
                   </Pressable>
                 );
@@ -397,10 +475,26 @@ export default function StaffManagement() {
       <InviteSheet
         visible={inviteOpen}
         onClose={() => setInviteOpen(false)}
-        onInvited={() => {
+        onInvited={(created) => {
           setInviteOpen(false);
+          if (created.issuedPassword) {
+            setIssuedCreds({
+              fullName: created.fullName,
+              email: created.email,
+              password: created.issuedPassword,
+              headline: "Teammate added",
+              blurb:
+                "We emailed sign-in details to your teammate. Copy + share them directly so they can log in even if the email gets delayed.",
+            });
+          }
           refresh();
         }}
+      />
+
+      <CredentialsModal
+        visible={issuedCreds != null}
+        creds={issuedCreds}
+        onClose={() => setIssuedCreds(null)}
       />
 
       <EditSheet
@@ -413,6 +507,7 @@ export default function StaffManagement() {
         onSuspend={onSuspend}
         onReactivate={onReactivate}
         onRemove={onRemove}
+        onResend={onResend}
       />
     </SafeAreaView>
   );
@@ -427,11 +522,12 @@ function InviteSheet({
 }: {
   visible: boolean;
   onClose: () => void;
-  onInvited: () => void;
+  onInvited: (created: StaffMember) => void;
 }) {
   const toast = useToast();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [presetId, setPresetId] = useState<string>(PERMISSION_PRESETS[0].id);
   const [customPerms, setCustomPerms] = useState<StaffPermission[]>([]);
   const [submitting, setSubmitting] = useState(false);
@@ -445,8 +541,24 @@ function InviteSheet({
   const reset = () => {
     setName("");
     setEmail("");
+    setPassword("");
     setPresetId(PERMISSION_PRESETS[0].id);
     setCustomPerms([]);
+  };
+
+  // Same client-side charset the server falls back to. Excludes
+  // ambiguous glyphs (0/O/1/l/I) so a vendor reading the value off
+  // the screen and typing it into WhatsApp doesn't generate typo-
+  // driven login failures.
+  const generatePassword = () => {
+    haptic();
+    const alphabet =
+      "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+    let out = "";
+    for (let i = 0; i < 8; i++) {
+      out += alphabet[Math.floor(Math.random() * alphabet.length)];
+    }
+    setPassword(out);
   };
 
   const submit = async () => {
@@ -458,18 +570,22 @@ function InviteSheet({
       toast.show("Pick at least one permission", { type: "warning" });
       return;
     }
+    if (password && password.trim().length < 6) {
+      toast.show("Password must be at least 6 characters", { type: "warning" });
+      return;
+    }
     try {
       setSubmitting(true);
-      await inviteStaff({
+      const created = await inviteStaff({
         fullName: name.trim(),
         email: email.trim().toLowerCase(),
         permissions: effectivePerms,
+        password: password.trim() || undefined,
       });
-      toast.show("Invite sent", { type: "success" });
       reset();
-      onInvited();
+      onInvited(created);
     } catch (err: any) {
-      toast.show(err?.message || "Couldn't send invite", { type: "danger" });
+      toast.show(err?.message || "Couldn't add teammate", { type: "danger" });
     } finally {
       setSubmitting(false);
     }
@@ -539,12 +655,47 @@ function InviteSheet({
             <TextInput
               value={email}
               onChangeText={setEmail}
-              placeholder="Where should we send the invite?"
+              placeholder="Where should we send the credentials?"
               placeholderTextColor="#9ca3af"
               className="border border-gray-200 rounded-xl px-3.5 py-3 text-[14.5px] text-gray-900 mb-5"
               autoCapitalize="none"
               keyboardType="email-address"
             />
+
+            <View className="flex-row items-center justify-between mb-1.5">
+              <Text className="text-[10.5px] text-gray-500 uppercase tracking-[1.2px]"
+                style={{ fontFamily: "PlusJakartaSans_700Bold" }}>
+                Password{" "}
+                <Text className="text-gray-400" style={{ fontFamily: undefined }}>
+                  (optional)
+                </Text>
+              </Text>
+              <Pressable
+                onPress={generatePassword}
+                hitSlop={8}
+              >
+                <Text
+                  className="text-blue-700"
+                  style={{ fontFamily: "PlusJakartaSans_700Bold", fontSize: 11.5 }}
+                >
+                  Generate
+                </Text>
+              </Pressable>
+            </View>
+            <TextInput
+              value={password}
+              onChangeText={setPassword}
+              placeholder="Leave blank and we'll generate one"
+              placeholderTextColor="#9ca3af"
+              className="border border-gray-200 rounded-xl px-3.5 py-3 text-[14.5px] text-gray-900 mb-1.5"
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={{ fontFamily: "Menlo", letterSpacing: 0.5 }}
+            />
+            <Text className="text-[11.5px] text-gray-500 mb-5">
+              We&apos;ll email this to your teammate so they can sign in
+              right away. Min 6 characters.
+            </Text>
 
             <Text className="text-[10.5px] text-gray-500 uppercase tracking-[1.2px] mb-2"
               style={{ fontFamily: "PlusJakartaSans_700Bold" }}>
@@ -642,7 +793,7 @@ function InviteSheet({
                     fontSize: 14,
                   }}
                 >
-                  Send invite
+                  Add teammate
                 </Text>
               )}
             </Pressable>
@@ -662,6 +813,7 @@ function EditSheet({
   onSuspend,
   onReactivate,
   onRemove,
+  onResend,
 }: {
   target: StaffMember | null;
   onClose: () => void;
@@ -669,6 +821,7 @@ function EditSheet({
   onSuspend: (s: StaffMember) => void;
   onReactivate: (s: StaffMember) => void;
   onRemove: (s: StaffMember) => void;
+  onResend: (s: StaffMember) => void;
 }) {
   const toast = useToast();
   const [perms, setPerms] = useState<StaffPermission[]>([]);
@@ -749,6 +902,24 @@ function EditSheet({
             <PermissionsPicker selected={perms} onChange={setPerms} />
 
             <View className="mt-6 mb-2 gap-2">
+              {/* Show Resend until the staff has actually signed in.
+                  Suspended needs Reactivate first; staff who've
+                  already signed in would lose their session if we
+                  regenerated the password — backend also refuses
+                  that case as a hard guard so this is purely UX. */}
+              {(target.status === "Pending" ||
+                (target.status === "Active" && target.acceptedAt == null)) && (
+                <Pressable
+                  onPress={() => onResend(target)}
+                  className="flex-row items-center justify-center gap-1.5 border border-blue-200 bg-blue-50 rounded-xl py-3"
+                >
+                  <Ionicons name="send" size={13} color="#1d4ed8" />
+                  <Text className="text-blue-700"
+                    style={{ fontFamily: "PlusJakartaSans_700Bold", fontSize: 13.5 }}>
+                    Send new credentials
+                  </Text>
+                </Pressable>
+              )}
               {target.status === "Suspended" ? (
                 <Pressable
                   onPress={() => onReactivate(target)}
@@ -885,5 +1056,175 @@ function PermissionsPicker({
         </View>
       ))}
     </View>
+  );
+}
+
+// --- Credentials reveal ---
+
+interface IssuedCredsShape {
+  fullName: string;
+  email: string;
+  password: string;
+  headline: string;
+  blurb: string;
+}
+
+/**
+ * One-shot sheet that surfaces the freshly-issued password right
+ * after Invite / Resend, so the vendor can copy + share it via
+ * WhatsApp / SMS even if the email gets delayed. Same pattern most
+ * platforms use to expose a generated API key: the value isn't
+ * recoverable after dismiss, only by regenerating.
+ */
+function CredentialsModal({
+  visible,
+  creds,
+  onClose,
+}: {
+  visible: boolean;
+  creds: IssuedCredsShape | null;
+  onClose: () => void;
+}) {
+  const toast = useToast();
+  const [copied, setCopied] = useState<"email" | "password" | "both" | null>(
+    null,
+  );
+
+  React.useEffect(() => {
+    if (!visible) setCopied(null);
+  }, [visible]);
+
+  if (!visible || !creds) return null;
+
+  const copy = (
+    kind: "email" | "password" | "both",
+    text: string,
+  ) => {
+    try {
+      Clipboard.setString(text);
+      haptic();
+      setCopied(kind);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {
+      toast.show("Couldn't copy — copy manually instead.", { type: "danger" });
+    }
+  };
+
+  const both =
+    `Sign in to Orderly\n` +
+    `Email: ${creds.email}\n` +
+    `Password: ${creds.password}`;
+
+  return (
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent
+      onRequestClose={onClose}
+    >
+      <View className="flex-1 justify-center items-center bg-black/50 px-5">
+        <View className="bg-white rounded-3xl w-full max-w-[440px] overflow-hidden">
+          <View className="px-5 pt-4 pb-3 border-b border-gray-100">
+            <View className="flex-row items-center gap-2">
+              <Ionicons name="mail" size={16} color="#2563eb" />
+              <Text
+                className="text-[14.5px] text-gray-900"
+                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+              >
+                {creds.headline}
+              </Text>
+            </View>
+            <Text className="text-[12.5px] text-gray-500 mt-1 leading-[17px]">
+              {creds.blurb}
+            </Text>
+          </View>
+
+          <View className="px-5 py-4 gap-3">
+            <View>
+              <Text
+                className="text-[10.5px] text-gray-500 uppercase tracking-[1.2px] mb-1.5"
+                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+              >
+                Email
+              </Text>
+              <View className="flex-row items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
+                <Text className="flex-1 text-[13.5px] text-gray-900" numberOfLines={1}>
+                  {creds.email}
+                </Text>
+                <Pressable
+                  onPress={() => copy("email", creds.email)}
+                  hitSlop={6}
+                  className="bg-white rounded-md px-2.5 py-1"
+                >
+                  <Text
+                    className="text-gray-700"
+                    style={{ fontFamily: "PlusJakartaSans_700Bold", fontSize: 11 }}
+                  >
+                    {copied === "email" ? "Copied" : "Copy"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <View>
+              <Text
+                className="text-[10.5px] text-gray-500 uppercase tracking-[1.2px] mb-1.5"
+                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+              >
+                Password
+              </Text>
+              <View className="flex-row items-center gap-2 bg-gray-50 border border-gray-200 rounded-xl px-3 py-2.5">
+                <Text
+                  className="flex-1 text-[14px] text-gray-900"
+                  numberOfLines={1}
+                  style={{ fontFamily: "Menlo", letterSpacing: 0.5 }}
+                >
+                  {creds.password}
+                </Text>
+                <Pressable
+                  onPress={() => copy("password", creds.password)}
+                  hitSlop={6}
+                  className="bg-white rounded-md px-2.5 py-1"
+                >
+                  <Text
+                    className="text-gray-700"
+                    style={{ fontFamily: "PlusJakartaSans_700Bold", fontSize: 11 }}
+                  >
+                    {copied === "password" ? "Copied" : "Copy"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <Pressable
+              onPress={() => copy("both", both)}
+              className="flex-row items-center justify-center gap-2 bg-gray-900 rounded-xl py-3 active:bg-gray-800"
+            >
+              <Ionicons name="copy-outline" size={14} color="#ffffff" />
+              <Text
+                className="text-white"
+                style={{ fontFamily: "PlusJakartaSans_700Bold", fontSize: 13.5 }}
+              >
+                {copied === "both" ? "Copied — share it!" : "Copy email + password"}
+              </Text>
+            </Pressable>
+          </View>
+
+          <View className="px-5 py-3 border-t border-gray-100 bg-gray-50/60 items-end">
+            <Pressable
+              onPress={onClose}
+              className="bg-white rounded-lg px-3.5 py-1.5"
+            >
+              <Text
+                className="text-gray-700"
+                style={{ fontFamily: "PlusJakartaSans_700Bold", fontSize: 12.5 }}
+              >
+                Done
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }

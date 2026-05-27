@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useRef, useCallback } from "react";
 import { getStorefrontDetails, updateStorefrontSettings } from "../src/api/vendor/vendor.api";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Image } from "react-native";
+import { AppState, Image } from "react-native";
 import { useAuth } from "./AuthContext";
 
 const STORE_DATA_CACHE = "store_data_cache";
@@ -69,6 +69,13 @@ export interface StoreData {
   isPublished: boolean;
   promoBanner: string | null;
   savedPaymentMethod: PaymentMethod | null;
+  /** Custom domain stamped onto StoreSettings.CustomDomain after the
+   *  admin marks a paid DomainOrder as Active. Null when the vendor
+   *  hasn't bought one or theirs is still mid-provisioning. */
+  customDomain?: string | null;
+  /** Mirror of `StoreSettings.HasCustomDomain` — true when the admin
+   *  (or the registrar webhook) has confirmed the domain. */
+  hasCustomDomain?: boolean | null;
 }
 
 export interface PaymentMethod {
@@ -284,6 +291,28 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
     };
     loadCachedData();
   }, []);
+
+  // Refetch whenever the app returns to the foreground. The subscription
+  // banner (and any other view that reads off `storeData`) reflects
+  // server-computed fields like `daysRemaining` / `gracePeriodInDays`
+  // that drift while the app is backgrounded — without this, a vendor
+  // who got a trial extension from support won't see it until they
+  // fully kill + relaunch the app. `useFocusEffect` on Home covers
+  // navigation transitions; this covers the "left the app, came back"
+  // case it can't see.
+  const appStateRef = useRef(AppState.currentState);
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (next) => {
+      const wasBackground =
+        appStateRef.current === "background" ||
+        appStateRef.current === "inactive";
+      if (wasBackground && next === "active") {
+        fetchVendorData().catch(() => {});
+      }
+      appStateRef.current = next;
+    });
+    return () => sub.remove();
+  }, [fetchVendorData]);
 
   // Wipe in-memory vendor state the moment the auth token clears, so a fresh
   // login on the same device never sees the previous user's store details.

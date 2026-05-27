@@ -16,8 +16,50 @@ export const FEATURES = {
   CUSTOMERS_TAGS: "customers.tags",
   STORE_CUSTOM_DOMAIN: "store.custom_domain",
   STORE_LOGO: "store.logo",
+  STORE_ADVANCED_SETUP: "store.advanced_setup",
   STAFF_ACCOUNTS: "staff.accounts",
+
+  // Storefront templates — one key per template. Plans declare the
+  // templates they support by listing these keys in their FeatureKeys
+  // JSON column. Trial vendors resolve as Unlimited so every template
+  // is selectable during trial; the backend storefront resolver falls
+  // public renders back to Carte after trial for any template the
+  // active plan doesn't grant.
+  TEMPLATE_GALACTIC: "template.galactic",
+  TEMPLATE_ATELIER: "template.atelier",
+  TEMPLATE_BRIO: "template.brio",
+  TEMPLATE_CARTE: "template.carte",
+  TEMPLATE_RANGER: "template.ranger",
+  TEMPLATE_JEWL: "template.jewl",
+  TEMPLATE_SPEEDPRO: "template.speedpro",
+  TEMPLATE_DA1: "template.da1",
+  TEMPLATE_MG1: "template.mg1",
+  TEMPLATE_GRACE: "template.grace",
+  TEMPLATE_PRISM: "template.prism",
 } as const;
+
+/**
+ * Template id → feature key. Mirrors the web `TEMPLATE_FEATURE_KEY_BY_ID`
+ * and the C# `Features.TemplateFeatureKeyById`.
+ */
+export const TEMPLATE_FEATURE_KEY_BY_ID: Record<string, FeatureKey> = {
+  galactic: "template.galactic",
+  atelier: "template.atelier",
+  brio: "template.brio",
+  carte: "template.carte",
+  ranger: "template.ranger",
+  jewl: "template.jewl",
+  speedpro: "template.speedpro",
+  da1: "template.da1",
+  mg1: "template.mg1",
+  grace: "template.grace",
+  prism: "template.prism",
+};
+
+/** Fallback template id rendered when a non-trial vendor's chosen
+ *  template isn't allowed by their plan. Mirrors backend
+ *  `Features.FALLBACK_TEMPLATE_ID`. */
+export const FALLBACK_TEMPLATE_ID = "carte";
 
 export type FeatureKey = (typeof FEATURES)[keyof typeof FEATURES];
 
@@ -96,6 +138,18 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
       "Replace the default placeholder customers currently see",
     ],
   },
+  [FEATURES.STORE_ADVANCED_SETUP]: {
+    label: "Advanced storefront setup",
+    description:
+      "Take full control of your storefront's premium surfaces — featured products, customer reviews, popular categories, promo bars, and social links that turn browsers into buyers.",
+    bullets: [
+      "Spotlight your best sellers with a curated Featured Products rail",
+      "Show off real customer reviews to build instant trust",
+      "Pin the categories shoppers reach for first",
+      "Promo bar to announce sales, free delivery, or new arrivals",
+      "Link your Instagram, WhatsApp, and other socials right on the storefront",
+    ],
+  },
   [FEATURES.STAFF_ACCOUNTS]: {
     label: "Staff accounts",
     description:
@@ -107,4 +161,27 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
       "See who confirmed which order in your audit trail",
     ],
   },
+
+  // Template paywall entries. Generic across templates because the
+  // *distinguishing detail* (which plan + price) comes from the
+  // plan-list fetch surfaced via the trial info sheet.
+  [FEATURES.TEMPLATE_GALACTIC]: templatePaywallMeta("Galactic"),
+  [FEATURES.TEMPLATE_ATELIER]: templatePaywallMeta("Atelier"),
+  [FEATURES.TEMPLATE_BRIO]: templatePaywallMeta("Brio"),
+  [FEATURES.TEMPLATE_CARTE]: templatePaywallMeta("Carte"),
+  [FEATURES.TEMPLATE_RANGER]: templatePaywallMeta("Shop Ranger"),
+  [FEATURES.TEMPLATE_JEWL]: templatePaywallMeta("Jeweler-Esque"),
+  [FEATURES.TEMPLATE_SPEEDPRO]: templatePaywallMeta("Speed-Pro"),
+  [FEATURES.TEMPLATE_DA1]: templatePaywallMeta("Fresh Cart"),
+  [FEATURES.TEMPLATE_MG1]: templatePaywallMeta("Orderly Core"),
+  [FEATURES.TEMPLATE_GRACE]: templatePaywallMeta("Grace"),
+  [FEATURES.TEMPLATE_PRISM]: templatePaywallMeta("Prism"),
 };
+
+function templatePaywallMeta(name: string): FeatureMeta {
+  return {
+    label: `${name} storefront template`,
+    description:
+      "This storefront template is part of a higher plan. Upgrade to apply it to your storefront.",
+  };
+}

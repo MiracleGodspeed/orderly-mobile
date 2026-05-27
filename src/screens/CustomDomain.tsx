@@ -52,8 +52,14 @@ const formatNgn = (amount: number) => `₦${amount.toLocaleString()}`;
 
 export default function CustomDomain() {
   const toast = useToast();
+  // `query` is the live text field. `submittedQuery` is what the user
+  // committed via the Search icon or keyboard "search" submit. Only
+  // submission fires a lookup — typing alone never burns API units.
+  // Critical for the WhoisXMLAPI free-tier quota: each lookup costs
+  // one unit per TLD, so auto-firing per keystroke would drain the
+  // wallet on every distracted typo.
   const [query, setQuery] = useState("");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [submittedQuery, setSubmittedQuery] = useState("");
   const [results, setResults] = useState<DomainAvailability[]>([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
@@ -61,34 +67,39 @@ export default function CustomDomain() {
   const [myDomains, setMyDomains] = useState<MyDomain[]>([]);
   const [myDomainsLoading, setMyDomainsLoading] = useState(false);
 
-  // Debounce the search input — 400ms feels responsive without spamming
-  // the registrar on every keystroke.
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      setDebouncedQuery(query.trim().toLowerCase());
-    }, 400);
-    return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-    };
-  }, [query]);
+  // In-memory results cache keyed on the normalised SLD. TTL = 5 min;
+  // long enough that backspace-and-retype hits the cache, short
+  // enough that a slow vendor still gets fresh data when they sit on
+  // the screen. Lives in a ref so writes don't trigger re-renders.
+  const CACHE_TTL_MS = 5 * 60 * 1000;
+  const cacheRef = useRef<Map<string, { results: DomainAvailability[]; at: number }>>(
+    new Map()
+  );
 
-  // Fire the actual search whenever the debounced query settles.
+  // Fetch only when the user explicitly submits.
   useEffect(() => {
-    const sld = debouncedQuery.replace(/\..*$/, ""); // strip any pasted TLD
-    if (!sld || sld.length < 2) {
-      setResults([]);
+    const sld = submittedQuery.replace(/\..*$/, ""); // strip any pasted TLD
+    if (!sld || sld.length < 2) return;
+
+    // Cache hit → render instantly, no network call.
+    const cached = cacheRef.current.get(sld);
+    if (cached && Date.now() - cached.at < CACHE_TTL_MS) {
+      setResults(cached.results);
       setSearchError(null);
+      setSearching(false);
       return;
     }
+
     let cancelled = false;
     (async () => {
       try {
         setSearching(true);
         setSearchError(null);
         const res = await searchDomains(sld);
-        if (!cancelled) setResults(res.results);
+        if (!cancelled) {
+          setResults(res.results);
+          cacheRef.current.set(sld, { results: res.results, at: Date.now() });
+        }
       } catch (err: any) {
         if (!cancelled) setSearchError(err?.message || "Search failed");
       } finally {
@@ -98,7 +109,14 @@ export default function CustomDomain() {
     return () => {
       cancelled = true;
     };
-  }, [debouncedQuery]);
+  }, [submittedQuery]);
+
+  const handleSearch = () => {
+    const trimmed = query.trim().toLowerCase();
+    if (trimmed.length < 2) return;
+    haptic();
+    setSubmittedQuery(trimmed);
+  };
 
   // Load "my domains" on mount so the list is populated by the time the user
   // lands on the screen.
@@ -301,36 +319,63 @@ export default function CustomDomain() {
               available across .com, .ng, .com.ng and more, with prices.
             </Text>
 
-            <View className="bg-white rounded-2xl flex-row items-center px-4 h-12">
-              <Ionicons name="search" size={18} color="#9ca3af" />
-              <TextInput
-                value={query}
-                onChangeText={setQuery}
-                placeholder="myshop"
-                placeholderTextColor="#9ca3af"
-                autoCorrect={false}
-                autoCapitalize="none"
-                className="flex-1 ml-3 text-[15px] text-gray-900 h-full"
-              />
-              {query.length > 0 && (
-                <Pressable
-                  onPress={() => setQuery("")}
-                  hitSlop={8}
-                  className="p-1"
-                >
-                  <Ionicons name="close-circle" size={16} color="#cbd5e1" />
-                </Pressable>
-              )}
+            {/* Input + dedicated Search icon button. We do NOT fire a
+                lookup on every keystroke — that burns quota fast.
+                Submit on either the keyboard's "search" key or a tap
+                on the icon button. `flex-1` + `minWidth: 0` on the
+                input row prevents long queries from pushing the icon
+                button off-screen. */}
+            <View className="flex-row items-stretch gap-2">
+              <View
+                className="flex-1 bg-white rounded-2xl flex-row items-center px-4 h-12"
+                style={{ minWidth: 0 }}
+              >
+                <Ionicons name="search" size={18} color="#9ca3af" />
+                <TextInput
+                  value={query}
+                  onChangeText={setQuery}
+                  onSubmitEditing={handleSearch}
+                  returnKeyType="search"
+                  placeholder="myshop"
+                  placeholderTextColor="#9ca3af"
+                  autoCorrect={false}
+                  autoCapitalize="none"
+                  className="flex-1 ml-3 text-[15px] text-gray-900 h-full"
+                />
+                {query.length > 0 && (
+                  <Pressable
+                    onPress={() => setQuery("")}
+                    hitSlop={8}
+                    className="p-1"
+                  >
+                    <Ionicons name="close-circle" size={16} color="#cbd5e1" />
+                  </Pressable>
+                )}
+              </View>
+              <Pressable
+                onPress={handleSearch}
+                disabled={query.trim().length < 2 || searching}
+                accessibilityLabel="Search"
+                className={`h-12 w-12 rounded-2xl items-center justify-center ${
+                  query.trim().length < 2 || searching ? "bg-white/70" : "bg-white"
+                }`}
+              >
+                {searching ? (
+                  <ActivityIndicator size="small" color="#1d4ed8" />
+                ) : (
+                  <Ionicons name="search" size={20} color="#1d4ed8" />
+                )}
+              </Pressable>
             </View>
             <Text className="text-white/70 text-[11px] mt-2">
-              Letters, numbers & hyphens only. Pick your business name.
+              Letters, numbers & hyphens only. Tap the search icon to check availability.
             </Text>
           </View>
         </View>
 
         {/* Search results */}
         <View className="mt-5">
-          {!debouncedQuery || debouncedQuery.length < 2 ? (
+          {!submittedQuery || submittedQuery.length < 2 ? (
             <View className="items-center py-10 bg-white rounded-3xl border border-gray-100 mt-1">
               <View className="w-14 h-14 rounded-2xl bg-blue-50 items-center justify-center mb-3 border border-blue-100/70">
                 <Ionicons name="search" size={20} color="#2563eb" />

@@ -16,6 +16,17 @@ export interface LoginResponse {
   // in src/lib/authStatus rather than strict-equality to handle both.
   role: number | string;
   userStatus: number | string;
+  // Optional — older backend builds don't ship a refresh token. Once
+  // the new backend is deployed every login response carries both.
+  refreshToken?: string | null;
+  refreshTokenExpiresAt?: string | null;
+}
+
+// Server payload from POST /api/auth/refresh-token.
+export interface RefreshTokenResponse {
+  accessToken: string;
+  refreshToken: string;
+  refreshTokenExpiresAt: string;
 }
 
 
@@ -69,6 +80,8 @@ export interface SignupResponseComplete {
   email: string;
   role: number | string;
   userStatus: number | string;
+  refreshToken?: string | null;
+  refreshTokenExpiresAt?: string | null;
 }
 
 export interface ChangePasswordRequest {

@@ -338,6 +338,20 @@ export interface ApiSubscriptionPlan {
   badge: string | null;
   buttonText: string;
   buttonStyle: string;
+  // Apple In-App Purchase product identifiers, one per billing
+  // cycle. Null/undefined means Apple Pay is not enabled for that
+  // cycle of this plan — the iOS PaymentMethodStep hides the Apple
+  // Pay button and the vendor uses Paystack instead. Populated by
+  // an admin from App Store Connect after creating the matching
+  // Auto-Renewable Subscription products.
+  appleProductIdMonthly?: string | null;
+  appleProductIdQuarterly?: string | null;
+  appleProductIdYearly?: string | null;
+  /** Machine-readable feature keys this plan grants (mirrors backend
+   *  `SubscriptionPlan.FeatureKeys`). Null means unlimited. Used by
+   *  the storefront template picker to know which plan owns which
+   *  template for the trial info sheet. */
+  featureKeys?: string[] | null;
 }
 
 export interface GetPlansResponse {
@@ -355,6 +369,53 @@ export interface CreateVendorSubscriptionPayload {
   callbackUrl: string;
   amount: number;
   isTrialPeriod: boolean;
+  /** When true, the backend recomputes the prorated credit from the
+   *  vendor's active subscription and deducts it from the Paystack
+   *  charge. Sent after the vendor confirms the quote shown in the
+   *  upgrade-preview step. Server is authoritative — it always
+   *  recomputes the credit instead of trusting any amount we send. */
+  applyProrationCredit?: boolean;
+}
+
+/** Mirrors the server's <c>SubscriptionUpgradeQuoteDto</c>. Drives
+ *  the upgrade-preview step of the in-app subscription flow. */
+export interface SubscriptionUpgradeQuote {
+  currentPlanName?: string | null;
+  currentPlanPrice: number;
+  currentPlanExpiry?: string | null;
+  currentPaymentGateway?: string | null;
+  newPlanId: number;
+  newPlanName: string;
+  newPlanPrice: number;
+  newDuration: number;
+  newDurationUnit: string;
+  newCyclePrice: number;
+  unusedDays: number;
+  totalDaysInCurrentCycle: number;
+  prorationCredit: number;
+  /** Total credit before the cap-at-new-cycle-price rule fires. Equals
+   *  prorationCredit when the credit fits inside the new cycle's price.
+   *  Used as the headline "credit earned" number in the preview. */
+  rawCreditAvailable: number;
+  /** Excess credit the vendor will lose by picking a new cycle whose
+   *  price is lower than the credit they have. Non-zero is the foot-gun
+   *  signal — UI surfaces it as a warning row so they make an informed
+   *  choice. */
+  forfeitedCredit: number;
+  amountDue: number;
+  newExpiryDate: string;
+  isUpgrade: boolean;
+  isSamePlan: boolean;
+  isDowngrade: boolean;
+  isAppleSubscription: boolean;
+  canProceed: boolean;
+  reason?: string | null;
+}
+
+export interface GetUpgradeQuotePayload {
+  subscriptionPlanId: number;
+  subscriptionDuration: number;
+  durationUnit: "months" | "weeks" | "days" | "hours";
 }
 
 export interface CreateVendorSubscriptionData {
@@ -547,6 +608,10 @@ export interface StaffMember {
   status: StaffStatus;
   invitedAt: string;
   acceptedAt: string | null;
+  /** Plaintext password — only set on the response from `invite`
+   *  and `resend-invite` so the vendor can copy/share it. Never
+   *  populated by the `list` endpoint. */
+  issuedPassword?: string | null;
 }
 
 export interface StaffListResult {
@@ -560,6 +625,10 @@ export interface InviteStaffPayload {
   fullName: string;
   email: string;
   permissions: string[];
+  /** Optional. When omitted the server generates a random password
+   *  and returns it as `issuedPassword` so the vendor can copy
+   *  + share it even if the credentials email never arrives. */
+  password?: string;
 }
 
 export interface UpdateStaffPermissionsPayload {

@@ -570,6 +570,35 @@ export const logOfflineOrder = async (
   return { batchId: response.data.data };
 };
 
+/**
+ * Fetches a prorated-upgrade quote for the vendor's current sub →
+ * picked plan + cycle. Read-only — safe to call as the vendor flips
+ * between plans/cycles in the picker. Drives the upgrade-preview
+ * step (UpgradePreviewStep on mobile, mirrors web SubscriptionFlow
+ * Modal's "upgrade" step). Throws on transport / server error so the
+ * caller can render a clear failure state instead of a blank quote.
+ */
+export const getUpgradeQuote = async (
+  payload: import("./vendor.types").GetUpgradeQuotePayload
+): Promise<import("./vendor.types").SubscriptionUpgradeQuote> => {
+  const response = await apiClient.post<{
+    code: string;
+    message: string;
+    data: import("./vendor.types").SubscriptionUpgradeQuote;
+  }>(
+    "/vendor-subscription/upgrade-quote",
+    payload,
+    { validateStatus: () => true }
+  );
+
+  if (response.data?.code !== "200" || !response.data?.data) {
+    throw new Error(
+      response.data?.message ?? "Couldn't load your upgrade quote."
+    );
+  }
+  return response.data.data;
+};
+
 export const createVendorSubscription = async (
   payload: import("./vendor.types").CreateVendorSubscriptionPayload
 ): Promise<import("./vendor.types").CreateVendorSubscriptionData> => {
@@ -614,6 +643,54 @@ export const verifyPayment = async (
   return {
     status: status || "failed",
     reference,
+  };
+};
+
+/**
+ * Sends the Apple StoreKit receipt to the backend for verification.
+ * The backend calls Apple's `verifyReceipt` endpoint server-side,
+ * extracts the canonical transaction info, and creates a
+ * SubscriptionHistory row tied to the active vendor. Returns the
+ * Apple transaction id so the caller can pass it to onPaymentVerified
+ * (matching the Paystack `reference` shape).
+ */
+export const verifyAppleReceipt = async (payload: {
+  /** Base64 StoreKit receipt from `purchase.transactionReceipt`. */
+  receipt: string;
+  /** Apple product id of the purchased subscription. */
+  appleProductId: string;
+  /** Internal subscription plan id this product maps to. */
+  subscriptionPlanId: number;
+  /** Billing cycle in months — 1, 3, or 12. */
+  subscriptionDuration: number;
+  /** Apple transaction id from `purchase.transactionId`. */
+  transactionId: string;
+  /**
+   * StoreKit 2 JWS token (from `purchase.purchaseToken`). Used by
+   * the backend as a fallback when Apple's legacy verifyReceipt
+   * rejects the receipt blob — common with sandbox StoreKit 2.
+   */
+  jws?: string;
+}): Promise<{ status: "success" | "failed"; reference: string }> => {
+  const response = await apiClient.post<{
+    code: string;
+    message: string;
+    data?: { reference?: string };
+  }>(
+    "/vendor-subscription/verify-apple-receipt",
+    payload,
+    { validateStatus: () => true }
+  );
+
+  if (response.data?.code !== "200") {
+    throw new Error(
+      response.data?.message ?? "Couldn't verify your Apple Pay purchase."
+    );
+  }
+
+  return {
+    status: "success",
+    reference: response.data.data?.reference ?? payload.transactionId,
   };
 };
 
@@ -1191,6 +1268,25 @@ export const removeStaff = async (staffId: string): Promise<void> => {
   if (res.data?.code !== '200') {
     throw new Error(res.data?.message || "Couldn't remove staff.");
   }
+};
+
+/**
+ * Re-fires the invite email for a Pending staff member. Backend
+ * mints a fresh token + extends the 7-day TTL so an expired link is
+ * also recoverable through this single call — vendor doesn't need
+ * to delete + re-invite. No-op for Active / Suspended / Removed
+ * staff (returns 400 with a clear message).
+ */
+export const resendStaffInvite = async (staffId: string): Promise<StaffMember> => {
+  const res = await apiClient.post<{ code: string; message: string; data: StaffMember }>(
+    '/staff/resend-invite',
+    null,
+    { params: { staffId }, validateStatus: () => true }
+  );
+  if (res.data?.code !== '200') {
+    throw new Error(res.data?.message || "Couldn't resend invite.");
+  }
+  return res.data.data;
 };
 
 // Returns the audit timeline for a single order (BatchId). Newest first.

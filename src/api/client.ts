@@ -1,9 +1,11 @@
 import axios from "axios";
 import axiosRetry from "axios-retry";
 
+export const WEB_CALLBACK_URL = "https://orderlystores.com/app-callback";
+// export const WEB_CALLBACK_URL = "http://localhost:3000/app-callback";
 export const apiClient = axios.create({
     baseURL: "https://api.orderlystores.com/api",
-    //baseURL: "http://10.211.55.4/api",
+    // baseURL: "http://10.211.55.4/api",
     headers: {
         "Content-Type": "application/json",
     },

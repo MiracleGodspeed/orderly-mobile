@@ -8,6 +8,7 @@ import {
   OtpVerificationRequest,
   Country,
   ChangePasswordRequest,
+  RefreshTokenResponse,
 } from "./auth.types";
 
 const handleApiResponse = <T>(response: { data: any }): T => {
@@ -99,6 +100,30 @@ export const deleteAccount = async (): Promise<void> => {
   }
 };
 
+// Asks the backend for a short-lived (~5 min) JWT scoped to the
+// currently authenticated vendor. Used by the iOS app to hand the
+// session off to the web billing dashboard via a URL parameter,
+// because Apple App Store guideline 3.1.3 forbids in-app subscription
+// purchase outside of IAP — vendors must subscribe / renew on web.
+export const issueWebHandoffToken = async (): Promise<string> => {
+  const response = await apiClient.post<{
+    code: string;
+    message: string;
+    data?: { token?: string };
+  }>(
+    "/auth/issue-web-handoff-token",
+    {},
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== "200" || !response.data?.data?.token) {
+    const detail =
+      response.data?.message ||
+      `HTTP ${response.status} ${response.statusText ?? ""}`.trim();
+    throw new Error(detail || "Couldn't open the billing page.");
+  }
+  return response.data.data.token;
+};
+
 export const resendOtp = async (email: string): Promise<void> => {
   const response = await apiClient.post<{ code: string; message: string }>(
     "/auth/resend-otp",
@@ -152,4 +177,33 @@ export const appleLogin = async (
     { validateStatus: () => true }
   );
   return handleApiResponse<LoginResponse>(response);
+};
+
+// Exchange a refresh token for a fresh access+refresh pair. The
+// axios interceptor (src/api/client.ts) calls this on 401 and
+// retries the original request transparently.
+export const refreshAccessToken = async (
+  refreshToken: string
+): Promise<RefreshTokenResponse> => {
+  const response = await apiClient.post<any>(
+    "/auth/refresh-token",
+    { refreshToken },
+    { validateStatus: () => true, _skipAuthRefresh: true } as any
+  );
+  return handleApiResponse<RefreshTokenResponse>(response);
+};
+
+// Server-side logout. Best-effort — the mobile app should clear
+// local state regardless of whether the server call succeeds, so
+// we swallow errors here.
+export const revokeRefreshToken = async (refreshToken: string): Promise<void> => {
+  try {
+    await apiClient.post(
+      "/auth/logout",
+      { refreshToken },
+      { validateStatus: () => true, _skipAuthRefresh: true } as any
+    );
+  } catch {
+    // intentionally swallowed — logout is fire-and-forget
+  }
 };

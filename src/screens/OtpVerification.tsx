@@ -182,17 +182,24 @@ export default function OtpVerification({ route, navigation }: Props) {
         fullName,
         storeId,
         email: userEmail,
+        refreshToken,
+        refreshTokenExpiresAt,
       } = response;
 
       if (!token) throw new Error("Token missing in response");
       if (!storeId) throw new Error("Store ID missing in response");
 
-      setAuthData(token, {
-        id: userId,
-        email: userEmail,
-        name: fullName ?? undefined,
-        storeId,
-      });
+      setAuthData(
+        token,
+        {
+          id: userId,
+          email: userEmail,
+          name: fullName ?? undefined,
+          storeId,
+        },
+        refreshToken,
+        refreshTokenExpiresAt
+      );
 
       if (Platform.OS === "ios") {
         Haptics.notificationAsync(

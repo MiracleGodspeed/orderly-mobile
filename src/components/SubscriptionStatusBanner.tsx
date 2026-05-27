@@ -9,8 +9,10 @@ import { RootStackParamList } from "../navigation/types";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
+const IS_IOS = Platform.OS === "ios";
+
 const haptic = () => {
-  if (Platform.OS === "ios") {
+  if (IS_IOS) {
     Haptics.selectionAsync().catch(() => {});
   }
 };
@@ -111,6 +113,7 @@ export function SubscriptionStatusBanner() {
   // Phase derivation. The 5-day expiring window is a soft heads-up; the
   // grace and expired phases are non-negotiable — vendors must see them.
   let phase: "expiring" | "grace" | "expired";
+  console.log(storeData, "daays")
   if (days > 5) {
     return null; // healthy active sub — no banner needed
   } else if (days > 0) {
@@ -123,25 +126,40 @@ export function SubscriptionStatusBanner() {
 
   const tone = TONES[phase];
 
+  // iOS-safe copy: no "renew now" / "pick a plan" / purchase prompts
+  // anywhere visible to a vendor. Apple guideline 3.1.3 treats those
+  // as in-app purchase nudges when the purchase doesn't go through
+  // IAP. Android keeps the urgency-oriented framing because it pays
+  // via Paystack in-app.
   let title: string;
   let meta: string;
   if (phase === "expiring") {
     title = formatExpiringTitle(days);
-    meta =
-      "Renew now to avoid downtime — your storefront stays live without interruption.";
+    meta = IS_IOS
+      ? "Your current billing period is nearing its end."
+      : "Renew now to avoid downtime — your storefront stays live without interruption.";
   } else if (phase === "grace") {
     title = formatGraceTitle(grace);
-    meta =
-      "Your subscription expired but your storefront is still live during grace. Renew before grace ends to keep selling.";
+    meta = IS_IOS
+      ? "Your billing period has ended; your storefront is still live during the grace window."
+      : "Your subscription expired but your storefront is still live during grace. Renew before grace ends to keep selling.";
   } else {
     title = "Subscription expired";
-    meta =
-      "Your storefront features are limited until you pick a plan. Renew to restore access.";
+    meta = IS_IOS
+      ? "Storefront features are limited until the next billing period is started."
+      : "Your storefront features are limited until you pick a plan. Renew to restore access.";
   }
 
+  // iOS routes to the status screen, where the only path forward is
+  // the neutral "Manage subscription" web link. The in-app purchase
+  // flow (SubscriptionFlow) must not be reachable on iOS.
   const onPress = () => {
     haptic();
-    navigation.navigate("SubscriptionFlow", {});
+    if (IS_IOS) {
+      navigation.navigate("SubscriptionBilling" as any, {});
+    } else {
+      navigation.navigate("SubscriptionFlow", {});
+    }
   };
 
   return (
@@ -204,7 +222,11 @@ export function SubscriptionStatusBanner() {
             className="text-[11.5px] font-extrabold"
             style={{ color: tone.ctaText }}
           >
-            {tone.ctaLabel}
+            {/* "Renew" / "Renew now" / "Pick a plan" on Android (in-app
+                Paystack flow). iOS uses neutral "Manage" since the
+                destination is the web billing dashboard, not an
+                in-app purchase. */}
+            {IS_IOS ? "Manage" : tone.ctaLabel}
           </Text>
           <Ionicons name="arrow-forward" size={12} color={tone.ctaText} />
         </View>

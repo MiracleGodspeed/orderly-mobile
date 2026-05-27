@@ -27,6 +27,11 @@ import StoreLogoModal from "../components/StoreLogoModal";
 import BrandAssetsModal from "../components/BrandAssetsModal";
 import ThemeLayoutModal from "../components/ThemeAndLayout";
 import ContactUsSectionModal from "../components/ContactUsModal";
+import CustomerReviewsModal from "../components/CustomerReviewsModal";
+import FeaturedProductsModal from "../components/FeaturedProductsModal";
+import PopularCategoriesModal from "../components/PopularCategoriesModal";
+import PromoSocialModal from "../components/PromoSocialModal";
+import WhyChooseUsModal from "../components/WhyChooseUsModal";
 import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
 import { useFeatures } from "../hooks/useFeatures";
 import { FEATURES, FeatureKey } from "../lib/features";
@@ -168,11 +173,26 @@ export default function ManageStoreScreen() {
   const [showBrandAssetsModal, setShowBrandAssetsModal] = useState(false);
   const [showStoreLogoModal, setShowStoreLogoModal] = useState(false);
   const [showThemeLayoutModal, setShowThemeLayoutModal] = useState(false);
+  // Advanced storefront content (Grace template). Each section is a
+  // standalone bottom-sheet editor that mutates one slice of
+  // `storeFrontJson` and saves through the shared
+  // `updateVendorSettings` path used by the other modals above.
+  const [showReviewsModal, setShowReviewsModal] = useState(false);
+  const [showFeaturedModal, setShowFeaturedModal] = useState(false);
+  const [showCategoriesModal, setShowCategoriesModal] = useState(false);
+  const [showPromoSocialModal, setShowPromoSocialModal] = useState(false);
+  const [showWhyChooseUsModal, setShowWhyChooseUsModal] = useState(false);
   const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(null);
 
   const { storeData, updateVendorSettings, loading } = useVendor();
   const { has: hasFeature } = useFeatures();
   const canUseLogo = hasFeature(FEATURES.STORE_LOGO);
+  // Gates the four "Advanced Content" rows (Reviews / Featured /
+  // Categories / Promo & Social) as a single bundle — the feature
+  // copy in FEATURE_META already lists all four together so vendors
+  // on the lower plan see one paywall that explains the whole set
+  // instead of being nibbled by four separate locked rows.
+  const canUseAdvancedSetup = hasFeature(FEATURES.STORE_ADVANCED_SETUP);
 
   const heroConfigured = useMemo(() => {
     const arr = (storeData as any)?.storeFrontJson?.heroArr;
@@ -184,6 +204,31 @@ export default function ManageStoreScreen() {
   }, [storeData]);
   const contactConfigured = useMemo(() => {
     return !!(storeData as any)?.storeFrontJson?.contactSection;
+  }, [storeData]);
+  const reviewsConfigured = useMemo(() => {
+    const arr = (storeData as any)?.storeFrontJson?.testimonials;
+    return Array.isArray(arr) && arr.length > 0;
+  }, [storeData]);
+  const featuredConfigured = useMemo(() => {
+    const arr = (storeData as any)?.storeFrontJson?.featuredProductIds;
+    return Array.isArray(arr) && arr.length > 0;
+  }, [storeData]);
+  const categoriesConfigured = useMemo(() => {
+    const arr = (storeData as any)?.storeFrontJson?.popularCategories;
+    return Array.isArray(arr) && arr.length > 0;
+  }, [storeData]);
+  const promoSocialConfigured = useMemo(() => {
+    const json: any = (storeData as any)?.storeFrontJson;
+    const hasPromo = !!(json?.promoBar?.text ?? "").trim();
+    const social = json?.socialLinks ?? {};
+    const hasSocial = Object.values(social).some(
+      (v) => typeof v === "string" && v.trim().length > 0,
+    );
+    return hasPromo || hasSocial;
+  }, [storeData]);
+  const whyChooseUsConfigured = useMemo(() => {
+    const arr = (storeData as any)?.storeFrontJson?.whyChooseUs;
+    return Array.isArray(arr) && arr.length > 0;
   }, [storeData]);
   const themeConfigured = !!storeData?.templateId;
   const logoConfigured = !!storeData?.logoUrl;
@@ -199,21 +244,33 @@ export default function ManageStoreScreen() {
     .filter(Boolean).length;
 
   const isPublished = !!storeData?.isPublished;
-  const storeUrl = storeData?.slugUrl
-    ? `${storeData.slugUrl}.orderlystores.com`
-    : "yourstore.orderlystores.com";
+  // Prefer the vendor's custom domain when an admin has marked their
+  // DomainOrder as Active (which stamps `customDomain` +
+  // `hasCustomDomain` server-side). Otherwise fall back to the
+  // `{slug}.orderlystores.com` form. The fallback ensures the screen
+  // never blanks out during cutover or for vendors who never bought a
+  // domain.
+  const customDomain = storeData?.customDomain?.trim() || null;
+  const hasCustomDomain = !!storeData?.hasCustomDomain;
+  const activeUrlHost =
+    customDomain && hasCustomDomain
+      ? customDomain
+      : storeData?.slugUrl
+        ? `${storeData.slugUrl}.orderlystores.com`
+        : null;
+  const storeUrl = activeUrlHost ?? "yourstore.orderlystores.com";
 
   const openStoreFrontLink = () => {
-    if (storeData?.slugUrl) {
-      Linking.openURL(`https://${storeData.slugUrl}.orderlystores.com/`).catch(
-        (err) => console.error("Couldn't load page", err)
+    if (activeUrlHost) {
+      Linking.openURL(`https://${activeUrlHost}/`).catch((err) =>
+        console.error("Couldn't load page", err)
       );
     }
   };
 
   const handleCopyLink = () => {
-    if (storeData?.slugUrl) {
-      Clipboard.setString(`https://${storeData.slugUrl}.orderlystores.com/`);
+    if (activeUrlHost) {
+      Clipboard.setString(`https://${activeUrlHost}/`);
       if (Platform.OS === "ios") {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(
           () => {}
@@ -438,6 +495,114 @@ export default function ManageStoreScreen() {
                 configured={contactConfigured}
                 onPress={() => setShowContactUsModal(true)}
               />
+
+              {/* Advanced storefront content — Grace template slots.
+                  Vendors on basic templates can still set these; the
+                  data is ignored until they switch to a richer
+                  template. */}
+              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mt-6 mb-3 px-1">
+                Advanced Content
+              </Text>
+
+              <SectionRow
+                icon="chatbubble-ellipses-outline"
+                title="Customer Reviews"
+                subtitle={
+                  canUseAdvancedSetup
+                    ? "Quotes that build trust at a glance"
+                    : "Available on a higher plan"
+                }
+                tone="purple"
+                configured={canUseAdvancedSetup && reviewsConfigured}
+                locked={!canUseAdvancedSetup}
+                onPress={() => {
+                  if (!canUseAdvancedSetup) {
+                    setPaywallFeature(FEATURES.STORE_ADVANCED_SETUP);
+                    return;
+                  }
+                  setShowReviewsModal(true);
+                }}
+              />
+
+              <SectionRow
+                icon="star-outline"
+                title="Featured Products"
+                subtitle={
+                  canUseAdvancedSetup
+                    ? "Pick up to 3 to highlight"
+                    : "Available on a higher plan"
+                }
+                tone="orange"
+                configured={canUseAdvancedSetup && featuredConfigured}
+                locked={!canUseAdvancedSetup}
+                onPress={() => {
+                  if (!canUseAdvancedSetup) {
+                    setPaywallFeature(FEATURES.STORE_ADVANCED_SETUP);
+                    return;
+                  }
+                  setShowFeaturedModal(true);
+                }}
+              />
+
+              <SectionRow
+                icon="grid-outline"
+                title="Popular Categories"
+                subtitle={
+                  canUseAdvancedSetup
+                    ? "Surface up to 6 category tiles"
+                    : "Available on a higher plan"
+                }
+                tone="cyan"
+                configured={canUseAdvancedSetup && categoriesConfigured}
+                locked={!canUseAdvancedSetup}
+                onPress={() => {
+                  if (!canUseAdvancedSetup) {
+                    setPaywallFeature(FEATURES.STORE_ADVANCED_SETUP);
+                    return;
+                  }
+                  setShowCategoriesModal(true);
+                }}
+              />
+
+              <SectionRow
+                icon="megaphone-outline"
+                title="Promo Bar & Social"
+                subtitle={
+                  canUseAdvancedSetup
+                    ? "Top strip text and footer social links"
+                    : "Available on a higher plan"
+                }
+                tone="pink"
+                configured={canUseAdvancedSetup && promoSocialConfigured}
+                locked={!canUseAdvancedSetup}
+                onPress={() => {
+                  if (!canUseAdvancedSetup) {
+                    setPaywallFeature(FEATURES.STORE_ADVANCED_SETUP);
+                    return;
+                  }
+                  setShowPromoSocialModal(true);
+                }}
+              />
+
+              <SectionRow
+                icon="ribbon-outline"
+                title="Why Choose Us"
+                subtitle={
+                  canUseAdvancedSetup
+                    ? "Up to 4 short promises shown below the hero"
+                    : "Available on a higher plan"
+                }
+                tone="emerald"
+                configured={canUseAdvancedSetup && whyChooseUsConfigured}
+                locked={!canUseAdvancedSetup}
+                onPress={() => {
+                  if (!canUseAdvancedSetup) {
+                    setPaywallFeature(FEATURES.STORE_ADVANCED_SETUP);
+                    return;
+                  }
+                  setShowWhyChooseUsModal(true);
+                }}
+              />
             </>
           ) : (
             <>
@@ -605,6 +770,28 @@ export default function ManageStoreScreen() {
         visible={paywallFeature != null}
         onClose={() => setPaywallFeature(null)}
         feature={paywallFeature}
+      />
+
+      {/* Advanced storefront content modals — Grace template slots. */}
+      <CustomerReviewsModal
+        visible={showReviewsModal}
+        onClose={() => setShowReviewsModal(false)}
+      />
+      <FeaturedProductsModal
+        visible={showFeaturedModal}
+        onClose={() => setShowFeaturedModal(false)}
+      />
+      <PopularCategoriesModal
+        visible={showCategoriesModal}
+        onClose={() => setShowCategoriesModal(false)}
+      />
+      <PromoSocialModal
+        visible={showPromoSocialModal}
+        onClose={() => setShowPromoSocialModal(false)}
+      />
+      <WhyChooseUsModal
+        visible={showWhyChooseUsModal}
+        onClose={() => setShowWhyChooseUsModal(false)}
       />
     </View>
   );

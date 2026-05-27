@@ -2007,13 +2007,26 @@ export default function AddProductModal({
           primaryAction={
             saveError?.isPlanLimit
               ? {
-                  label: "Upgrade plan",
+                  // iOS uses neutral "Manage subscription" copy and
+                  // routes to the status screen, where the only path
+                  // forward is the web billing dashboard (Apple 3.1.3
+                  // forbids surfacing "Upgrade" CTAs for purchases
+                  // not made through IAP). Android keeps the in-app
+                  // Paystack flow with action-oriented copy.
+                  label:
+                    Platform.OS === "ios"
+                      ? "Manage subscription"
+                      : "Upgrade plan",
                   primary: true,
                   icon: "arrow-up-circle",
                   onPress: () => {
                     setSaveError(null);
                     onClose();
-                    navigation.navigate("SubscriptionFlow", {});
+                    if (Platform.OS === "ios") {
+                      navigation.navigate("SubscriptionBilling" as any, {});
+                    } else {
+                      navigation.navigate("SubscriptionFlow", {});
+                    }
                   },
                 }
               : {

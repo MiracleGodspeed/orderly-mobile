@@ -4,10 +4,9 @@ import {
   Pressable,
   ScrollView,
   RefreshControl,
-  Platform,
 } from "react-native";
-import { useState, useCallback, useMemo } from "react";
-import { useNavigation, useFocusEffect } from "@react-navigation/native";
+import { useCallback, useEffect, useMemo } from "react";
+import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
@@ -16,8 +15,14 @@ import SkeletonPlaceholder from "react-native-skeleton-placeholder";
 
 import { RootStackParamList } from "../navigation/types";
 import { ScreenHeader } from "../components/ScreenHeader";
-import { getSubscriptionHistory } from "../api/vendor/vendor.api";
-import { SubscriptionHistory } from "../api/vendor/vendor.types";
+import { useSubscriptionHistory } from "../hooks/useSubscriptionHistory";
+
+// Per App Store guideline 3.1.3(b) the subscription flow now lives
+// in-app on both iOS and Android. iOS adds Apple Pay (IAP) as a
+// payment-method option inside the existing PaymentMethodStep; the
+// web handoff endpoint and consumer code (auth.api → issueWebHandoffToken,
+// Next.js proxy.ts, legacy web index.js) remain in the repo as dormant
+// fallback paths that can be re-activated if Apple policy shifts.
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -93,9 +98,31 @@ export default function SubscriptionBilling() {
   const toast = useToast();
   const navigation = useNavigation<ScreenNavigationProp>();
 
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [history, setHistory] = useState<SubscriptionHistory[]>([]);
+  // History is now served stale-while-revalidate from React Query:
+  // a cached snapshot renders instantly on screen mount while the
+  // live fetch runs in the background. The screen never blanks out
+  // for the user after the first ever load. See
+  // hooks/useSubscriptionHistory.ts for the persistence + caching
+  // strategy (AsyncStorage warm cache + 30s stale window).
+  const {
+    history,
+    isLoading: loading,
+    isFetching,
+    refetch,
+    error: historyError,
+  } = useSubscriptionHistory();
+
+  // Surface fetch failures as a non-blocking toast — same behaviour
+  // as the old hand-rolled try/catch. We only fire when error
+  // transitions from null to non-null so back-to-back refetch
+  // failures don't spam toasts.
+  useEffect(() => {
+    if (historyError) {
+      const message =
+        (historyError as Error)?.message || "Failed to load subscription data";
+      toast.show(message, { type: "danger" });
+    }
+  }, [historyError, toast]);
 
   // Sort history newest-first so currentSub is the most recent record.
   const orderedHistory = useMemo(
@@ -123,35 +150,14 @@ export default function SubscriptionBilling() {
     return orderedHistory.find((s) => isSuccess(s.status)) ?? null;
   }, [orderedHistory]);
 
-  const fetchSubscriptionData = async (isRefreshing = false) => {
-    try {
-      if (!isRefreshing) setLoading(true);
-      const data = await getSubscriptionHistory({ pageIndex: 1, pageSize: 20 });
-      setHistory(data ?? []);
-    } catch (error: any) {
-      console.error("Error fetching subscription:", error);
-      toast.show(error?.message || "Failed to load subscription data", {
-        type: "danger",
-      });
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  };
-
-  // Refetch on every screen focus, not just on mount, so re-entering
-  // the screen after a successful upgrade in SubscriptionFlow shows
-  // the new "Active" state immediately instead of the stale "Expired".
-  useFocusEffect(
-    useCallback(() => {
-      fetchSubscriptionData();
-    }, [])
-  );
-
+  // Pull-to-refresh forces a network refetch regardless of stale
+  // time. `isFetching` already reflects the in-flight state for
+  // the indicator below, so we just have to invoke refetch.
   const onRefresh = useCallback(() => {
-    setRefreshing(true);
-    fetchSubscriptionData(true);
-  }, []);
+    refetch();
+  }, [refetch]);
+
+  const refreshing = isFetching && !loading;
 
   const formatDate = (dateString?: string | null) => {
     if (!dateString) return "—";
@@ -222,6 +228,13 @@ export default function SubscriptionBilling() {
     ? "bg-blue-500"
     : "bg-emerald-500";
 
+  // Per App Store guideline 3.1.3(b) (Multiplatform Services), iOS and
+  // Android now share the same in-app subscription flow. iOS additionally
+  // offers Apple Pay (IAP) as a payment method inside that flow, which
+  // satisfies the "must be available for purchase using In-App Purchase"
+  // requirement while letting vendors who can't pay with an Apple-linked
+  // card (Verve / local bank / mobile money users) still complete the
+  // purchase through Paystack as a separate payment method option.
   const primaryCta = useMemo(() => {
     if (statusKind === "expired" || statusKind === "none") {
       return { label: "Renew subscription", icon: "card-outline" as const };
@@ -232,10 +245,8 @@ export default function SubscriptionBilling() {
     return { label: "Upgrade plan", icon: "trending-up-outline" as const };
   }, [statusKind, isTrial]);
 
-  const handlePrimaryCta = () => {
-    if (Platform.OS === "ios") {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
-    }
+  const handlePrimaryCta = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
     navigation.navigate("SubscriptionFlow", {
       initialPlanName: currentSub?.subscriptionPlan?.name,
       // Whether the current subscription is still in force. Drives the
@@ -294,7 +305,8 @@ export default function SubscriptionBilling() {
               </View>
             </View>
 
-            {/* Action banners — only when actionable */}
+            {/* Action banners — only when there's something the vendor
+                needs to act on (expired / expiring / on trial). */}
             {statusKind === "expired" && (
               <ActionBanner
                 tone="rose"
@@ -413,11 +425,7 @@ export default function SubscriptionBilling() {
                     elevation: 4,
                   }}
                 >
-                  <Ionicons
-                    name={primaryCta.icon}
-                    size={16}
-                    color="white"
-                  />
+                  <Ionicons name={primaryCta.icon} size={16} color="white" />
                   <Text className="text-white font-bold text-[15px]">
                     {primaryCta.label}
                   </Text>
@@ -494,7 +502,7 @@ export default function SubscriptionBilling() {
                   </Text>
                 </View>
                 <View className="px-5 py-3">
-                  {currentSub.planFeatures.map((feature, i) => (
+                  {currentSub.planFeatures.map((feature: string, i: number) => (
                     <View
                       key={`${feature}-${i}`}
                       className="flex-row items-start gap-2.5 py-1.5"

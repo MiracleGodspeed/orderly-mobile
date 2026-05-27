@@ -1,6 +1,5 @@
 import React, { useEffect } from "react";
 import { View, Text, StatusBar } from "react-native";
-import LinearGradient from "react-native-linear-gradient";
 import Animated, {
   useSharedValue,
   useAnimatedStyle,
@@ -21,14 +20,18 @@ const LOGO = require("../../assets/orderlySplash.png");
 const MIN_DISPLAY_MS = 2500;
 const FADE_OUT_MS = 450;
 
+// Single solid brand deep-blue. Kept in sync with app.json's splash
+// backgroundColor so the native splash and this React splash share
+// the exact same canvas — no color flash on JS mount.
+const SPLASH_BG = "#0a3d8f";
+
 export default function SplashScreen({ navigation }: any) {
-  const imageScale = useSharedValue(0.85);
+  const imageScale = useSharedValue(0.92);
   const imageOpacity = useSharedValue(0);
   const taglineOpacity = useSharedValue(0);
-  const taglineTranslate = useSharedValue(8);
+  const taglineTranslate = useSharedValue(6);
   const fadeOutOpacity = useSharedValue(1);
 
-  // Pulse loader values
   const dot1 = useSharedValue(0.4);
   const dot2 = useSharedValue(0.4);
   const dot3 = useSharedValue(0.4);
@@ -36,7 +39,6 @@ export default function SplashScreen({ navigation }: any) {
   useEffect(() => {
     let cancelled = false;
 
-    // Logo entrance — single, smooth, no bounce
     imageOpacity.value = withTiming(1, {
       duration: 700,
       easing: Easing.out(Easing.cubic),
@@ -46,7 +48,6 @@ export default function SplashScreen({ navigation }: any) {
       easing: Easing.out(Easing.cubic),
     });
 
-    // Tagline reveal slightly after the logo
     taglineOpacity.value = withDelay(
       400,
       withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) })
@@ -56,7 +57,6 @@ export default function SplashScreen({ navigation }: any) {
       withTiming(0, { duration: 600, easing: Easing.out(Easing.cubic) })
     );
 
-    // Pulsing dot loader, staggered
     const pulse = (sv: typeof dot1, delay: number) => {
       sv.value = withDelay(
         delay,
@@ -74,14 +74,11 @@ export default function SplashScreen({ navigation }: any) {
     pulse(dot2, 800);
     pulse(dot3, 1000);
 
-    // Wait for both: the entrance animation to play out, and the auth check to resolve.
-    // This way we never flash past the splash, and we never strand the user on it either.
     const minHold = new Promise((r) => setTimeout(r, MIN_DISPLAY_MS));
     const ready = IsLoggedIn();
 
     Promise.all([minHold, ready]).then(([, isLoggedIn]) => {
       if (cancelled) return;
-      // Trigger fade out, then navigate after the fade completes
       fadeOutOpacity.value = withTiming(0, { duration: FADE_OUT_MS });
       setTimeout(() => {
         if (cancelled) return;
@@ -111,167 +108,68 @@ export default function SplashScreen({ navigation }: any) {
   const dot3Style = useAnimatedStyle(() => ({ opacity: dot3.value }));
 
   return (
-    <Animated.View style={[{ flex: 1 }, containerStyle]}>
-      <StatusBar barStyle="light-content" backgroundColor="#0d2a6e" />
+    <Animated.View
+      style={[{ flex: 1, backgroundColor: SPLASH_BG }, containerStyle]}
+    >
+      <StatusBar barStyle="light-content" backgroundColor={SPLASH_BG} />
 
-      {/* Brand gradient — deep indigo into Orderly blue */}
-      <LinearGradient
-        colors={["#0d2a6e", "#194eb8", "#2c6cd1"]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{ flex: 1 }}
-      >
-        {/* Decorative soft circles for depth — same language as the web hero */}
-        <View
-          style={{
-            position: "absolute",
-            top: -80,
-            right: -80,
-            width: 220,
-            height: 220,
-            borderRadius: 110,
-            backgroundColor: "rgba(255,255,255,0.06)",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            bottom: -60,
-            left: -60,
-            width: 180,
-            height: 180,
-            borderRadius: 90,
-            backgroundColor: "rgba(255,255,255,0.05)",
-          }}
-        />
-        <View
-          style={{
-            position: "absolute",
-            top: "35%",
-            left: -40,
-            width: 90,
-            height: 90,
-            borderRadius: 45,
-            backgroundColor: "rgba(255,255,255,0.04)",
-          }}
-        />
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+        <Animated.View style={imageStyle}>
+          <AppImage
+            source={LOGO}
+            contentFit="contain"
+            style={{ width: 180, height: 180 }}
+          />
+        </Animated.View>
 
-        <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-          <Animated.View
-            style={[
-              imageStyle,
-              {
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 18 },
-                shadowOpacity: 0.3,
-                shadowRadius: 28,
-                elevation: 14,
-              },
-            ]}
-          >
-            <AppImage
-              source={LOGO}
-              contentFit="contain"
-              style={{ width: 210, height: 210 }}
-            />
-          </Animated.View>
-
-          <Animated.View
-            style={[
-              taglineStyle,
-              { marginTop: 28, alignItems: "center", paddingHorizontal: 32 },
-            ]}
-          >
-            {/* Eyebrow — light, tracked. Anchors the brand without
-                competing with the logo. */}
-            <Text
-              style={{
-                color: "rgba(255,255,255,0.6)",
-                fontSize: 11,
-                fontWeight: "700",
-                letterSpacing: 2.4,
-                textTransform: "uppercase",
-                fontFamily: "PlusJakartaSans_700Bold",
-              }}
-            >
-              Vendor app
-            </Text>
-
-            {/* Primary tagline — confident, two lines, tight tracking. */}
-            <Text
-              style={{
-                color: "white",
-                fontSize: 26,
-                fontWeight: "800",
-                letterSpacing: -0.6,
-                lineHeight: 32,
-                marginTop: 10,
-                textAlign: "center",
-                fontFamily: "PlusJakartaSans_800ExtraBold",
-              }}
-            >
-              Sell anything,{"\n"}beautifully.
-            </Text>
-
-            {/* Subtle divider — visual breath between headline and the
-                feature row that grounds it. */}
-            <View
-              style={{
-                width: 32,
-                height: 2,
-                borderRadius: 1,
-                backgroundColor: "rgba(255,255,255,0.35)",
-                marginTop: 18,
-              }}
-            />
-
-            {/* Feature trio — what the app actually delivers. Tracked,
-                muted, small enough to read as supporting copy. */}
-            <Text
-              style={{
-                color: "rgba(255,255,255,0.7)",
-                fontSize: 12.5,
-                fontWeight: "600",
-                letterSpacing: 0.6,
-                marginTop: 14,
-                textAlign: "center",
-                fontFamily: "PlusJakartaSans_600SemiBold",
-              }}
-            >
-              Storefronts  ·  Payments  ·  Insights
-            </Text>
-          </Animated.View>
-        </View>
-
-        {/* Pulsing dot loader at the bottom */}
-        <View
-          style={{
-            position: "absolute",
-            bottom: 70,
-            left: 0,
-            right: 0,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 8,
-          }}
+        <Animated.View
+          style={[
+            taglineStyle,
+            { marginTop: 24, alignItems: "center", paddingHorizontal: 32 },
+          ]}
         >
-          {[dot1Style, dot2Style, dot3Style].map((s, i) => (
-            <Animated.View
-              key={i}
-              style={[
-                {
-                  width: 8,
-                  height: 8,
-                  borderRadius: 4,
-                  backgroundColor: "white",
-                },
-                s,
-              ]}
-            />
-          ))}
-        </View>
-      </LinearGradient>
+          <Text
+            style={{
+              color: "white",
+              fontSize: 30,
+              letterSpacing: -0.8,
+              lineHeight: 36,
+              textAlign: "center",
+              fontFamily: "PlusJakartaSans_800ExtraBold",
+            }}
+          >
+            Built for sellers.
+          </Text>
+        </Animated.View>
+      </View>
+
+      <View
+        style={{
+          position: "absolute",
+          bottom: 70,
+          left: 0,
+          right: 0,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+        }}
+      >
+        {[dot1Style, dot2Style, dot3Style].map((s, i) => (
+          <Animated.View
+            key={i}
+            style={[
+              {
+                width: 7,
+                height: 7,
+                borderRadius: 3.5,
+                backgroundColor: "rgba(255,255,255,0.85)",
+              },
+              s,
+            ]}
+          />
+        ))}
+      </View>
     </Animated.View>
   );
 }

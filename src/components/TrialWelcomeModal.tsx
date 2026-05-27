@@ -122,6 +122,14 @@ export const TrialWelcomeModal = forwardRef<TrialWelcomeModalHandle>(
   const seePlans = async () => {
     await dismiss();
     setTimeout(() => {
+      if (Platform.OS === "ios") {
+        // iOS routes to the status screen; the in-app purchase flow
+        // (SubscriptionFlow) must not be reachable on iOS — Apple
+        // guideline 3.1.3. Vendors get to plans via the neutral
+        // "Manage subscription" web link on the billing screen.
+        navigation.navigate("SubscriptionBilling" as any, {});
+        return;
+      }
       // Trial users haven't paid for the auto-assigned default plan, so
       // every plan should be selectable in the picker — including the
       // starter tier. Passing currentPlanActive=false bypasses the
@@ -243,7 +251,13 @@ export const TrialWelcomeModal = forwardRef<TrialWelcomeModalHandle>(
             >
               <Ionicons name="rocket" size={15} color="white" />
               <Text className="text-white font-extrabold text-[14.5px]">
-                See plans & pricing
+                {/* "See plans & pricing" on Android; iOS uses neutral
+                    "Manage subscription" because Apple 3.1.3 treats
+                    pricing CTAs for non-IAP purchases as in-app
+                    purchase nudges. */}
+                {Platform.OS === "ios"
+                  ? "Manage subscription"
+                  : "See plans & pricing"}
               </Text>
             </Pressable>
 

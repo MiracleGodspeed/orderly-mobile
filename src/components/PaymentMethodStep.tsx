@@ -15,21 +15,48 @@ import { useToast } from "react-native-toast-notifications";
 import {
   createVendorSubscription,
   verifyPayment,
+  verifyAppleReceipt,
 } from "../api/vendor/vendor.api";
+import type { SubscriptionUpgradeQuote } from "../api/vendor/vendor.types";
 import { useInvalidateFeatures } from "../hooks/useFeatures";
 import { useInvalidateStorePerformance } from "../hooks/useStorePerformance";
 import { useInvalidateSubscriptionUsage } from "../hooks/useSubscriptionUsage";
+import { useInvalidateSubscriptionHistory } from "../hooks/useSubscriptionHistory";
 import { useVendor } from "../../context/VendorContext";
+import { resolveAppleProductId } from "../lib/appleIapConfig";
+import {
+  purchaseAppleSubscription,
+  finishAppleTransaction,
+} from "../lib/appleIap";
+import { WEB_CALLBACK_URL } from "src/api/client";
 
-type PaymentOption = "card" | "bank_transfer";
+// Apple Pay is offered as an additional payment-method option on iOS
+// for vendors with an Apple-linked card, per App Store guideline
+// 3.1.3(b) (Multiplatform Services). Vendors on local rails (Verve /
+// bank transfer / mobile money) continue to use the Paystack options.
+type PaymentOption = "card" | "bank_transfer" | "apple_pay";
 
 type Props = {
   plan: {
     id: number | null;
     name: string;
     price: number;
+    // Apple StoreKit product IDs per cycle, threaded down from
+    // RenewSubscriptionStep so the Apple Pay option knows which SKU
+    // to charge. Null/undefined means Apple Pay isn't configured
+    // for that (plan, cycle); the option card stays hidden and the
+    // vendor uses Paystack.
+    appleProductIdMonthly?: string | null;
+    appleProductIdQuarterly?: string | null;
+    appleProductIdYearly?: string | null;
   };
   billingCycle: "Monthly" | "Quarterly" | "Yearly";
+  /** When present, this is a prorated upgrade: amount charged is
+   *  quote.amountDue (not plan.price), the create-subscription call
+   *  sets applyProrationCredit=true so the server re-computes and
+   *  deducts the credit, and the summary shows the credit line. Null
+   *  for first-time subs, renewals, and trial conversions. */
+  upgradeQuote?: SubscriptionUpgradeQuote | null;
   onBack: () => void;
   /** Fires after the user has paid AND we've verified the reference with the
       backend. The reference is what the backend / Paystack assigned. */
@@ -82,8 +109,8 @@ function getRefFromUrl(url: string): string | null {
 // Public web bounce that flips Paystack's HTTPS redirect into our `orderly://`
 // scheme. Lives at /app-callback (NOT a protected vendor route — paying users
 // aren't logged in on the web, so an auth guard would intercept them).
-const WEB_CALLBACK_URL = "https://orderlystores.com/app-callback";
-//const WEB_CALLBACK_URL = "http://localhost:3000/app-callback";
+// const WEB_CALLBACK_URL = "https://orderlystores.com/app-callback";
+// // const WEB_CALLBACK_URL = "http://localhost:3000/app-callback";
 
 const APP_DEEPLINK_PREFIX = "orderly://billing/callback";
 
@@ -92,12 +119,28 @@ type Phase = "idle" | "starting" | "paying" | "verifying";
 export default function PaymentMethodStep({
   plan,
   billingCycle,
+  upgradeQuote,
   onBack,
   onPaymentVerified,
 }: Props) {
   const toast = useToast();
-  const [selected, setSelected] = useState<PaymentOption>("card");
+  // Default to Apple Pay on iOS first-time flows (per Apple HIG
+  // prominence guidance), but fall back to card when this is an
+  // upgrade — Apple Pay is hidden there because StoreKit can't
+  // honour our prorated charge, only Paystack can.
+  const [selected, setSelected] = useState<PaymentOption>(
+    upgradeQuote ? "card" : "apple_pay"
+  );
   const [phase, setPhase] = useState<Phase>("idle");
+
+  // Effective charge for the entire flow. Prorated when an upgrade
+  // quote is in hand, full cycle price otherwise. Kept in one place
+  // so the order summary, CTA label, and outbound payload can't drift.
+  const chargeAmount = upgradeQuote?.canProceed
+    ? upgradeQuote.amountDue
+    : plan.price;
+  const showCredit =
+    !!upgradeQuote?.canProceed && upgradeQuote.prorationCredit > 0;
   // Refresh all the surfaces that read off the active subscription the
   // moment payment verifies, so the rest of the app immediately
   // reflects the new plan without a manual pull-to-refresh:
@@ -108,6 +151,7 @@ export default function PaymentMethodStep({
   const invalidateFeatures = useInvalidateFeatures();
   const invalidateStorePerf = useInvalidateStorePerformance();
   const invalidateUsage = useInvalidateSubscriptionUsage();
+  const invalidateHistory = useInvalidateSubscriptionHistory();
   const { fetchVendorData } = useVendor();
 
   const isBusy = phase !== "idle";
@@ -117,6 +161,10 @@ export default function PaymentMethodStep({
       invalidateFeatures();
       invalidateStorePerf();
       invalidateUsage();
+      // Wipe the cached subscription history so the next visit to
+      // SubscriptionBilling renders the new "Active" plan row instead
+      // of the now-stale snapshot from before this payment.
+      invalidateHistory();
       await fetchVendorData();
     } catch (e) {
       // Best-effort — the success step still renders even if a refetch
@@ -125,7 +173,81 @@ export default function PaymentMethodStep({
     }
   };
 
+  const handleApplePay = async () => {
+    if (!plan.id) {
+      toast.show("Pick a plan first", { type: "danger" });
+      return;
+    }
+    const productId = resolveAppleProductId(plan, billingCycle);
+    if (!productId) {
+      // Shouldn't reach here — the UI hides the Apple Pay card when
+      // the product isn't configured — but defend anyway so a stale
+      // selection doesn't crash the flow.
+      toast.show("Apple Pay isn't available for this plan yet.", {
+        type: "danger",
+      });
+      return;
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
+
+    try {
+      setPhase("paying");
+      const purchase = await purchaseAppleSubscription(productId);
+      if (!purchase) {
+        // Vendor cancelled out of the Apple sheet — stay on the
+        // payment screen, no toast (cancellation isn't an error).
+        setPhase("idle");
+        return;
+      }
+
+      const receipt = purchase.transactionReceipt;
+      const transactionId = purchase.transactionId;
+      if (!receipt || !transactionId) {
+        throw new Error(
+          "Apple didn't return a receipt — please try again or contact support."
+        );
+      }
+
+      // Backend validates the receipt against Apple's servers and
+      // creates the SubscriptionHistory row. Only after success do
+      // we finishTransaction — otherwise a verification blip would
+      // leave the vendor charged without a record on our side.
+      setPhase("verifying");
+      const verify = await verifyAppleReceipt({
+        receipt,
+        jws: purchase.jws,
+        appleProductId: productId,
+        subscriptionPlanId: plan.id,
+        subscriptionDuration: cycleToDuration(billingCycle),
+        transactionId,
+      });
+
+      await finishAppleTransaction(purchase);
+
+      Haptics.notificationAsync(
+        Haptics.NotificationFeedbackType.Success
+      ).catch(() => {});
+      await refreshAfterPlanChange();
+      onPaymentVerified(verify.reference);
+    } catch (err: any) {
+      console.error("Apple Pay flow error:", err);
+      toast.show(
+        err?.message ??
+          "Couldn't complete your Apple Pay purchase. Try again, or pick another payment method.",
+        { type: "danger" }
+      );
+    } finally {
+      setPhase((p) => (p === "verifying" || p === "paying" ? "idle" : p));
+    }
+  };
+
   const handlePay = async () => {
+    if (selected === "apple_pay") {
+      await handleApplePay();
+      return;
+    }
+
     if (!plan.id) {
       toast.show("Pick a plan first", { type: "danger" });
       return;
@@ -140,11 +262,14 @@ export default function PaymentMethodStep({
         subscriptionPlanId: plan.id,
         subscriptionDuration: cycleToDuration(billingCycle),
         durationUnit: "months",
-        paymentMethod: selected,
+        // `selected` is narrowed away from "apple_pay" by the guard at
+        // the top of handlePay, so this cast is safe.
+        paymentMethod: selected as "card" | "bank_transfer",
         hasCustomDomain: false,
         callbackUrl: WEB_CALLBACK_URL,
-        amount: plan.price,
+        amount: chargeAmount,
         isTrialPeriod: false,
+        applyProrationCredit: !!upgradeQuote?.canProceed,
       });
 
       // Saved-card direct charge — backend already debited, no browser needed.
@@ -160,34 +285,55 @@ export default function PaymentMethodStep({
         return;
       }
 
-      // Open Paystack inside an in-app browser session. The session resolves
-      // the moment the browser is redirected to a URL starting with our
-      // custom scheme (the web callback page bounces to it for us).
+      // Open Paystack inside an in-app browser session. The session
+      // resolves the moment the in-app browser navigates to a URL
+      // starting with the orderly://billing/callback prefix (our
+      // /app-callback bridge page does that for us after Paystack's
+      // redirect lands).
+      //
+      // Logs are intentional — they let us see in Metro which of
+      // these states the flow actually hits when something goes
+      // wrong: dismiss/cancel means iOS didn't intercept the URL
+      // (usually because the bridge page never loaded — most often
+      // because a dev device couldn't reach `localhost:3000`).
       setPhase("paying");
+      console.log("[subscription] opening Paystack:", res.authorizationUrl);
+
       const result = await WebBrowser.openAuthSessionAsync(
         res.authorizationUrl,
         APP_DEEPLINK_PREFIX
       );
+      console.log(
+        "[subscription] auth session resolved:",
+        result.type,
+        (result as { url?: string }).url ?? ""
+      );
 
       if (result.type !== "success" || !result.url) {
-        // User dismissed the sheet without paying. Stay on the screen.
+        // User dismissed the sheet without paying — OR iOS dismissed
+        // the session for another reason (URL not intercepted, bridge
+        // page unreachable). Stay on the screen so the vendor can
+        // retry without losing their plan selection.
         setPhase("idle");
         return;
       }
 
       const reference = getRefFromUrl(result.url);
       if (!reference) {
+        console.log("[subscription] no reference in url:", result.url);
         toast.show("Couldn't read the payment reference. Try again.", {
           type: "danger",
         });
         setPhase("idle");
         return;
       }
+      console.log("[subscription] verifying reference:", reference);
 
       // Re-confirm with the backend even though the webhook is the real
       // source of truth — this gives the user immediate UI feedback.
       setPhase("verifying");
       const verify = await verifyPayment(reference);
+      console.log("[subscription] verify result:", verify);
 
       if (verify.status === "success") {
         if (Platform.OS === "ios") {
@@ -196,6 +342,7 @@ export default function PaymentMethodStep({
           ).catch(() => {});
         }
         await refreshAfterPlanChange();
+        console.log("[subscription] advancing to success step with ref:", reference);
         onPaymentVerified(reference);
       } else {
         toast.show(
@@ -204,7 +351,7 @@ export default function PaymentMethodStep({
         );
       }
     } catch (err: any) {
-      console.error("Payment flow error:", err);
+      console.error("[subscription] payment flow error:", err);
       toast.show(err?.message || "Something went wrong starting your payment.", {
         type: "danger",
       });
@@ -293,6 +440,41 @@ export default function PaymentMethodStep({
                 ₦{plan.price.toLocaleString()}
               </Text>
             </View>
+            {showCredit && (
+              <>
+                <View className="flex-row justify-between">
+                  <Text className="text-[12.5px] font-bold text-emerald-700">
+                    Credit from {upgradeQuote!.currentPlanName ?? "current plan"}
+                  </Text>
+                  <Text className="text-[12.5px] font-extrabold text-emerald-700">
+                    − ₦{upgradeQuote!.rawCreditAvailable.toLocaleString()}
+                  </Text>
+                </View>
+                {upgradeQuote!.forfeitedCredit > 0 && (
+                  <View>
+                    <View className="flex-row justify-between">
+                      <View className="flex-row items-center gap-1">
+                        <Ionicons
+                          name="alert-circle"
+                          size={12}
+                          color="#b45309"
+                        />
+                        <Text className="text-[12px] font-bold text-amber-700">
+                          Forfeited
+                        </Text>
+                      </View>
+                      <Text className="text-[12px] font-bold text-amber-700">
+                        + ₦{upgradeQuote!.forfeitedCredit.toLocaleString()}
+                      </Text>
+                    </View>
+                    <Text className="text-[10.5px] text-amber-700/90 leading-[14px] mt-0.5 pl-[16px]">
+                      Unused {upgradeQuote!.currentPlanName ?? "plan"} time that
+                      won't carry over because this cycle is shorter.
+                    </Text>
+                  </View>
+                )}
+              </>
+            )}
             <View className="flex-row justify-between">
               <Text className="text-[12.5px] text-gray-600">Next renewal</Text>
               <Text className="text-[12.5px] font-bold text-gray-900">
@@ -305,7 +487,7 @@ export default function PaymentMethodStep({
                 Total today
               </Text>
               <Text className="text-[20px] font-extrabold text-gray-900 tracking-tight">
-                ₦{plan.price.toLocaleString()}
+                ₦{chargeAmount.toLocaleString()}
               </Text>
             </View>
           </View>
@@ -315,6 +497,35 @@ export default function PaymentMethodStep({
         <Text className="text-[11px] font-extrabold uppercase tracking-[1.2px] text-gray-500 mb-3 px-1">
           Pay with
         </Text>
+
+        {/* Apple Pay (IAP) — iOS only, only when an Apple product is
+            configured for this plan + cycle. Hidden on the prorated
+            upgrade path because Apple's StoreKit doesn't accept the
+            arbitrary "amount due after credit" we'd need to charge —
+            it can only sell the SKU at its App Store list price. The
+            vendor uses Paystack to capture their credit; full Apple
+            renewals stay available for first-time subs and renewals
+            (where upgradeQuote is null).
+
+            Listed first per Apple's HIG prominence guidance; vendors
+            who can't pay via Apple (no Apple-linked card) fall back to
+            the Paystack options below. */}
+        {Platform.OS === "ios" &&
+          !upgradeQuote &&
+          resolveAppleProductId(plan, billingCycle) != null && (
+            <PaymentOptionCard
+              icon="logo-apple"
+              title="Apple Pay"
+              description="Pay through your Apple ID — Face ID or Touch ID"
+              selected={selected === "apple_pay"}
+              disabled={isBusy}
+              onPress={() => {
+                haptic();
+                setSelected("apple_pay");
+              }}
+              tone="slate"
+            />
+          )}
 
         <PaymentOptionCard
           icon="card-outline"
@@ -391,7 +602,7 @@ export default function PaymentMethodStep({
             <>
               <ActivityIndicator size="small" color="white" />
               <Text className="text-white font-bold text-[15px]">
-                Waiting for Paystack…
+                  Initiating Payment…
               </Text>
             </>
           ) : phase === "verifying" ? (
@@ -405,7 +616,7 @@ export default function PaymentMethodStep({
             <>
               <Ionicons name="lock-closed" size={14} color="white" />
               <Text className="text-white font-bold text-[15px]">
-                Pay ₦{plan.price.toLocaleString()}
+                Pay ₦{chargeAmount.toLocaleString()}
               </Text>
             </>
           )}
@@ -430,12 +641,17 @@ function PaymentOptionCard({
   selected: boolean;
   disabled?: boolean;
   onPress: () => void;
-  tone: "blue" | "emerald";
+  tone: "blue" | "emerald" | "slate";
 }) {
+  // Apple Pay uses the dark slate variant so the row visually pops as
+  // "Apple-branded" without breaking the existing card/bank colour
+  // language we use for the Paystack options.
   const toneStyle =
     tone === "blue"
       ? { iconBg: "bg-blue-50", iconColor: "#2563eb" }
-      : { iconBg: "bg-emerald-50", iconColor: "#059669" };
+      : tone === "emerald"
+      ? { iconBg: "bg-emerald-50", iconColor: "#059669" }
+      : { iconBg: "bg-gray-900", iconColor: "#ffffff" };
 
   return (
     <Pressable

@@ -1,10 +1,4 @@
-import {
-  View,
-  Text,
-  ScrollView,
-  KeyboardAvoidingView,
-  Platform,
-} from "react-native";
+import { View, Text, ScrollView } from "react-native";
 import { useState, useEffect, useRef } from "react";
 import { useVendor } from "../../context/VendorContext";
 import { RichEditor, RichToolbar, actions } from "react-native-pell-rich-editor";
@@ -66,10 +60,9 @@ export default function AboutSectionModal({
       subtitle="Tell your story — visitors trust stores that feel human"
       height="92%"
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
+      {/* Keyboard handling lives in BottomSheet; the outer sheet lifts
+          everything above the keyboard so we don't need a local KAV. */}
+      <View style={{ flex: 1 }}>
         {/* Rich-text toolbar */}
         <View className="bg-gray-50 border-b border-gray-100">
           <RichToolbar
@@ -154,7 +147,7 @@ export default function AboutSectionModal({
           onSave={handleSave}
           loading={loading}
         />
-      </KeyboardAvoidingView>
+      </View>
     </BottomSheet>
   );
 }

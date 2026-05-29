@@ -205,7 +205,12 @@ export type OrderLineStatus =
 export type Order = {
   id: string;
   orderNumber: string;
-  status: 'success' | 'pending' | 'failed' | 'pending_vendor_manual_confirmation';
+  status:
+    | 'success'
+    | 'pending'
+    | 'failed'
+    | 'pending_vendor_manual_confirmation'
+    | 'pending_whatsapp_handoff';
   /** Row-level status driven by vendor actions like "Mark as Shipped".
    *  Unset for legacy rows where the backend hasn't been redeployed yet. */
   orderStatus?: OrderLineStatus;

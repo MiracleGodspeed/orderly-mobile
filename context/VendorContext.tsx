@@ -64,6 +64,15 @@ export interface StoreData {
   isEmailVerified: boolean;
   workingDaysHours?: WorkingHours[] | null;
   transferDirectlyToVendor: boolean;
+  /** WhatsApp checkout mode — mutually exclusive with online payment
+   *  and direct-to-vendor. When true, the storefront hands customers
+   *  off to the vendor's WhatsApp with a pre-typed invoice instead
+   *  of running Paystack or showing bank details. */
+  whatsappCheckoutEnabled?: boolean;
+  /** Digits-only WhatsApp number (10-15 digits, including country
+   *  code) the storefront opens chats to. Set via the storefront's
+   *  `/whatsapp-checkout-number` endpoint. */
+  whatsappCheckoutNumber?: string | null;
   isServiceBased: boolean;
   templateId: string;
   isPublished: boolean;

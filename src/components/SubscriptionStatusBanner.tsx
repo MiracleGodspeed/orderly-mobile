@@ -113,7 +113,7 @@ export function SubscriptionStatusBanner() {
   // Phase derivation. The 5-day expiring window is a soft heads-up; the
   // grace and expired phases are non-negotiable — vendors must see them.
   let phase: "expiring" | "grace" | "expired";
-  console.log(storeData, "daays")
+  console.log(sub, "daays")
   if (days > 5) {
     return null; // healthy active sub — no banner needed
   } else if (days > 0) {
@@ -150,21 +150,31 @@ export function SubscriptionStatusBanner() {
       : "Your storefront features are limited until you pick a plan. Renew to restore access.";
   }
 
-  // iOS routes to the status screen, where the only path forward is
-  // the neutral "Manage subscription" web link. The in-app purchase
-  // flow (SubscriptionFlow) must not be reachable on iOS.
-  const onPress = () => {
-    haptic();
-    if (IS_IOS) {
-      navigation.navigate("SubscriptionBilling" as any, {});
-    } else {
-      navigation.navigate("SubscriptionFlow", {});
-    }
-  };
+  // Android routes to the in-app Paystack flow. iOS has no CTA at
+  // all — the banner becomes purely informational and vendors must
+  // navigate to More themselves, where "Manage account" (web,
+  // Paystack via handoff) is psychologically prominent and "Billing"
+  // (IAP) reads as admin chrome. This shape minimises IAP volume
+  // without crossing Apple's 3.1.1 anti-steering line — the most
+  // visible payment-urgency CTA on Home simply doesn't exist on iOS,
+  // so there's no surface to read as "steering away from IAP".
+  const onPress = IS_IOS
+    ? undefined
+    : () => {
+        haptic();
+        navigation.navigate("SubscriptionFlow", {});
+      };
+
+  // The banner uses Pressable on Android (tappable CTA) and a plain
+  // View on iOS (informational only). We branch the wrapper rather
+  // than passing onPress={undefined} to Pressable so iOS doesn't get
+  // a pressed-state ripple on a non-interactive surface.
+  const Wrapper: any = IS_IOS ? View : Pressable;
+  const wrapperProps = IS_IOS ? {} : { onPress };
 
   return (
-    <Pressable
-      onPress={onPress}
+    <Wrapper
+      {...wrapperProps}
       className="mx-4 mt-3 rounded-2xl overflow-hidden border"
       style={{
         backgroundColor: tone.bg,
@@ -207,30 +217,31 @@ export function SubscriptionStatusBanner() {
           </Text>
         </View>
 
-        <View
-          className="ml-2 flex-row items-center gap-1 rounded-full px-3 h-8"
-          style={{
-            backgroundColor: tone.ctaBg,
-            shadowColor: tone.ctaBg,
-            shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: 0.3,
-            shadowRadius: 8,
-            elevation: 3,
-          }}
-        >
-          <Text
-            className="text-[11.5px] font-extrabold"
-            style={{ color: tone.ctaText }}
+        {/* CTA pill is Android-only. On iOS the banner is purely
+            informational — vendors navigate to More themselves,
+            which puts "Manage account" (web) psychologically first. */}
+        {!IS_IOS && (
+          <View
+            className="ml-2 flex-row items-center gap-1 rounded-full px-3 h-8"
+            style={{
+              backgroundColor: tone.ctaBg,
+              shadowColor: tone.ctaBg,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 8,
+              elevation: 3,
+            }}
           >
-            {/* "Renew" / "Renew now" / "Pick a plan" on Android (in-app
-                Paystack flow). iOS uses neutral "Manage" since the
-                destination is the web billing dashboard, not an
-                in-app purchase. */}
-            {IS_IOS ? "Manage" : tone.ctaLabel}
-          </Text>
-          <Ionicons name="arrow-forward" size={12} color={tone.ctaText} />
-        </View>
+            <Text
+              className="text-[11.5px] font-extrabold"
+              style={{ color: tone.ctaText }}
+            >
+              {tone.ctaLabel}
+            </Text>
+            <Ionicons name="arrow-forward" size={12} color={tone.ctaText} />
+          </View>
+        )}
       </View>
-    </Pressable>
+    </Wrapper>
   );
 }

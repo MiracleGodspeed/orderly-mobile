@@ -77,7 +77,7 @@ export default function App() {
       placement="top"
     >
       <View style={styles.root} onLayout={onLayoutRootView}>
-        <StatusBar style="light" backgroundColor="#265CC7" />
+        <StatusBar style="light" backgroundColor="#0a3d8f" />
         <RootNavigator />
       </View>
        </ToastProvider>
@@ -89,6 +89,6 @@ export default function App() {
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    backgroundColor: "#265CC7", 
+    backgroundColor: "#0a3d8f", 
   },
 });

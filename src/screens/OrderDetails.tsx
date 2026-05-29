@@ -121,6 +121,7 @@ const mapStatus = (order: Pick<Order, "status" | "orderStatus">): OrderStatus =>
       return "Paid";
     case "pending":
     case "pending_vendor_manual_confirmation":
+    case "pending_whatsapp_handoff":
     default:
       return "Pending";
   }
@@ -281,12 +282,14 @@ export default function OrderDetailsScreen() {
     refreshActivity();
   }, [refreshActivity]);
 
-  // Whether this order originated from the manual bank-transfer flow.
-  // The backwards "Move back to Pending" action only makes sense for
-  // manual orders (rejecting a Paystack-confirmed payment isn't a thing
-  // the vendor can do client-side), so we use this to gate the alert.
+  // Whether this order originated from a flow where the vendor confirms
+  // the payment themselves — either the direct-bank-transfer flow
+  // (`pending_vendor_manual_confirmation`) or a WhatsApp handoff
+  // (`pending_whatsapp_handoff`). Both surface the Confirm/Reject
+  // prompts; Paystack-confirmed orders don't need them.
   const isManualPayment =
     (safeOrder.status || "").toLowerCase() === "pending_vendor_manual_confirmation" ||
+    (safeOrder.status || "").toLowerCase() === "pending_whatsapp_handoff" ||
     safeOrder.isManualEntry === true;
 
   // Invalidates the orders list so the next open of the Orders screen

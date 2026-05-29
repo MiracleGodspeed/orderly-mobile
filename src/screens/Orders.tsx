@@ -43,6 +43,7 @@ const mapStatus = (order: Pick<Order, "status" | "orderStatus">): UIStatus => {
       return "Paid";
     case "pending":
     case "pending_vendor_manual_confirmation":
+    case "pending_whatsapp_handoff":
     default:
       return "Pending";
   }

@@ -156,7 +156,7 @@ export default function OnboardingScreen() {
 
   const handleSkip = () => {
     haptic();
-    navigation.navigate("EmailSignUp");
+    navigation.navigate("Login");
     // navigation.navigate("Splash");
   };
 
@@ -174,12 +174,19 @@ export default function OnboardingScreen() {
     return (
       // PagerView gives each page its own native frame matching the
       // PagerView's measured width — no explicit `width: screenWidth`
-      // needed (and it'd actually fight the native sizing). We just
-      // centre + cap the inner content so iPad doesn't stretch.
+      // needed (and it'd actually fight the native sizing). We
+      // centre + cap the inner content so iPad doesn't stretch
+      // horizontally, AND `justifyContent: "center"` so the slide
+      // content sits in the middle of the available vertical space
+      // on tall screens (iPad). Without it, content hugged the top
+      // of the page and the badges/dots cluster at the bottom of
+      // the description bunched up — Apple flagged the iPad layout
+      // as Guideline 4 ("content not fully displayed / cramped").
       <View
         style={{
           flex: 1,
           alignItems: "center",
+          justifyContent: "center",
           paddingHorizontal: 24,
         }}
       >
@@ -238,8 +245,11 @@ export default function OnboardingScreen() {
             {item.description}
           </Text>
 
-          {/* Feature chips */}
-          <View className="flex-row flex-wrap justify-center gap-2 mt-5">
+          {/* Feature chips. Gap above bumped from mt-5 → mt-8 so the
+              chips don't crowd the bottom of the (potentially 2-line)
+              description on iPad — the visual congestion zone Apple
+              flagged in the Guideline 4 review. */}
+          <View className="flex-row flex-wrap justify-center gap-2 mt-8">
             {item.badges.map((badge) => (
               <View
                 key={badge}
@@ -326,8 +336,11 @@ export default function OnboardingScreen() {
         </PagerView>
       </View>
 
-      {/* Tappable progress dots */}
-      <View className="flex-row justify-center items-center mt-2 mb-6 gap-2">
+      {/* Tappable progress dots. Top margin bumped from mt-2 → mt-5
+          so the dots sit a clear distance below the PagerView's slide
+          content — on iPad the previous spacing made the dots read
+          as part of the badges row. */}
+      <View className="flex-row justify-center items-center mt-5 mb-6 gap-2">
         {slides.map((_, index) => {
           const isActive = index === currentIndex;
           return (

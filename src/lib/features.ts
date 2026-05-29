@@ -18,6 +18,13 @@ export const FEATURES = {
   STORE_LOGO: "store.logo",
   STORE_ADVANCED_SETUP: "store.advanced_setup",
   STAFF_ACCOUNTS: "staff.accounts",
+  /** Orderly AI product-description generation in the catalog form.
+   *  Boolean gate — vendors on plans without this key see the AI
+   *  suggestion locked behind the paywall sheet. Per-day quota is
+   *  separately surfaced via `useFeatures().aiDescriptionCreditsPerDay`
+   *  (mirrors the `staffLimit` shape). Mirrors backend
+   *  `Features.AI_DESCRIPTIONS`. */
+  AI_DESCRIPTIONS: "ai.descriptions",
 
   // Storefront templates — one key per template. Plans declare the
   // templates they support by listing these keys in their FeatureKeys
@@ -159,6 +166,17 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
       "Pick what they can see and do — orders, catalog, customers",
       "Suspend or remove access in one tap when someone leaves",
       "See who confirmed which order in your audit trail",
+    ],
+  },
+  [FEATURES.AI_DESCRIPTIONS]: {
+    label: "Orderly AI descriptions",
+    description:
+      "Skip the writer's block. Tap once and Orderly AI drafts a clean, customer-ready description for any product from just its name — saving you minutes on every catalog add.",
+    bullets: [
+      "Turn a product name into a polished description in seconds",
+      "Sounds natural, not robotic — written for shoppers, not search engines",
+      "Edit before saving, or save as-is when you're in a hurry",
+      "Daily credits refresh every morning so it's there when you need it",
     ],
   },
 

@@ -5,8 +5,6 @@ import {
   ScrollView,
   TextInput,
   Alert,
-  Platform,
-  KeyboardAvoidingView,
 } from "react-native";
 import { useEffect, useState } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -173,10 +171,9 @@ export default function PromoSocialModal({ visible, onClose }: Props) {
       subtitle="Top strip and footer social links"
       height="92%"
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
+      {/* Keyboard handling lives in BottomSheet; the outer sheet lifts
+          everything above the keyboard. */}
+      <View style={{ flex: 1 }}>
         <ScrollView
           contentContainerStyle={{ padding: 20, paddingBottom: 140 }}
           showsVerticalScrollIndicator={false}
@@ -309,7 +306,7 @@ export default function PromoSocialModal({ visible, onClose }: Props) {
             </Text>
           </Pressable>
         </SheetFooter>
-      </KeyboardAvoidingView>
+      </View>
     </BottomSheet>
   );
 }

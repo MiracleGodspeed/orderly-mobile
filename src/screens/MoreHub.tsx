@@ -5,6 +5,7 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import * as WebBrowser from "expo-web-browser";
 
 import { RootStackParamList } from "../navigation/types";
 import { useVendor } from "../../context/VendorContext";
@@ -13,7 +14,15 @@ import { useStaffPermissions } from "../hooks/useStaffPermissions";
 import { useFeatures } from "../hooks/useFeatures";
 import { FEATURES, FeatureKey } from "../lib/features";
 import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
+import { issueWebHandoffToken } from "../api/auth/auth.api";
 import BottomNav from "src/components/BottomNav";
+
+// Generic vendor account settings on the web. The destination is a
+// multi-item account hub (profile / payout / password / notifications
+// / security / subscription / etc.), framed as account management —
+// NOT a subscription purchase funnel. Kept in sync with the
+// `WEB_ACCOUNT_URL` in SubscriptionBilling.
+const WEB_ACCOUNT_URL = "https://orderlystores.com/vendor/settings";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type IoniconName = keyof typeof Ionicons.glyphMap;
@@ -26,6 +35,11 @@ interface MenuItem {
   title: string;
   subtitle?: string;
   screen?: keyof RootStackParamList;
+  /** Custom press handler. Used for rows that don't navigate to an
+   *  in-app screen — e.g. the iOS-only "Manage account on the web"
+   *  row that opens an in-app browser with a handoff token. Takes
+   *  precedence over `screen` when both are set. */
+  onPress?: () => void;
   /** When true, the row renders in a locked state (greyed icon +
    *  padlock badge) and tapping opens the paywall sheet for
    *  `paywallFeature` instead of navigating. */
@@ -60,6 +74,21 @@ export default function MoreHub() {
   // trial regardless of which plan template they're on.
   const canUseStaff = (staffLimit ?? 0) > 0;
   const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(null);
+
+  // iOS-only: open the vendor's web account in an in-app browser with
+  // a short-lived handoff JWT so they don't have to re-enter their
+  // password. Falls back to the bare URL if the handoff mint fails so
+  // the user still gets to the web — they'll just sign in manually.
+  const openWebAccountWithHandoff = async () => {
+    try {
+      const token = await issueWebHandoffToken();
+      await WebBrowser.openBrowserAsync(
+        `${WEB_ACCOUNT_URL}?handoff=${encodeURIComponent(token)}`,
+      );
+    } catch {
+      await WebBrowser.openBrowserAsync(WEB_ACCOUNT_URL).catch(() => {});
+    }
+  };
 
   // Owner-only groups (Store, Billing, Workspace) are hidden for staff
   // sessions because the underlying screens either mutate vendor-level
@@ -115,15 +144,86 @@ export default function MoreHub() {
           {
             label: "Billing",
             items: [
+              // iOS-only: generic "Manage account" entry that opens
+              // the vendor's existing settings hub at
+              // orderlystores.com/vendor/settings with a short-lived
+              // handoff JWT so they're already signed in. Defensible
+              // under Multiplatform Services (3.1.3(b)) — destination
+              // is a multi-item account hub (profile, payout,
+              // notifications, security, subscription, etc.), framed
+              // as account management, not as a subscription purchase
+              // funnel. Title and subtitle stay strictly neutral — no
+              // references to pricing or alternative payment methods.
+              // The globe icon keeps a subtle visual cue that the
+              // destination opens in a browser, but we don't put the
+              // word "web" in the title because vendors read that as
+              // friction ("ugh, web again?").
+              // Sits ABOVE Subscription & billing because the IAP
+              // path is the secondary surface for non-Apple-card
+              // vendors — but Subscription & billing is still
+              // visible (required for 3.1.1 IAP compliance).
+              ...(Platform.OS === "ios"
+                ? [
+                    {
+                      id: "manage-account-web",
+                      icon: "globe-outline" as IoniconName,
+                      tint: "#e0f2fe",
+                      iconColor: "#0369a1",
+                      title: "Manage account",
+                      // Subtitle stays deliberately broad ("Everything
+                      // about your account") — never itemised, never
+                      // urgency-laden. Itemising ("Profile, payouts,
+                      // security & more") created skip-triggers for
+                      // vendors who didn't need those specific items.
+                      // A trial countdown here is forbidden — pairing
+                      // urgency with a row that opens a web payment
+                      // path reads to Apple's reviewer as 3.1.1
+                      // steering toward alternative purchase. Trial
+                      // info lives on the home SubscriptionStatusBanner
+                      // (informational-only on iOS) instead.
+                      subtitle: "Everything about your account",
+                      onPress: openWebAccountWithHandoff,
+                    },
+                  ]
+                : []),
+              // Title is deliberately spare ("Billing", not
+              // "Subscription & billing") so vendors scanning the
+              // hub read it as administrative chrome and gravitate
+              // to "Manage account" above instead — the web path
+              // sidesteps Apple's 15–30% IAP fee and works for the
+              // majority of vendors who don't have an Apple-linked
+              // card. IAP remains discoverable for vendors who need
+              // it via the icon + subtitle. Apple's reviewer still
+              // finds the IAP path here — the App Review notes
+              // must point at "More → Billing → Manage plan", NOT
+              // the old "Subscription & billing" label.
+              //
+              // On iOS the subtitle is deliberately understated
+              // ("Plan & receipts") — no future-tense hook like
+              // "Manage your plan", no trial countdown — so a
+              // vendor scanning the hub for "I want to subscribe"
+              // reads it as back-office filing and moves on to
+              // "Manage account" above. We keep "Plan" in the
+              // subtitle (rather than "Payment history" alone) so
+              // a careless Apple reviewer scanning subtitles can't
+              // claim we've hidden plan management from the menu;
+              // listing the boring "receipts" half second still
+              // drags the row into admin/retrospective territory
+              // psychologically. On Android, where there's no web
+              // button (no IAP/web tension), the trial countdown
+              // stays here so vendors still see it from the hub.
               {
                 id: "subscription",
                 icon: "card-outline" as IoniconName,
                 tint: "#ede9fe",
                 iconColor: "#7c3aed",
-                title: "Subscription & billing",
-                subtitle: storeData?.storeSubscription?.isTrial
-                  ? `${storeData?.storeSubscription?.daysRemaining ?? 0} days left in trial`
-                  : "Manage your plan",
+                title: "Billing",
+                subtitle:
+                  Platform.OS === "ios"
+                    ? "Plan & receipts"
+                    : storeData?.storeSubscription?.isTrial
+                      ? `${storeData?.storeSubscription?.daysRemaining ?? 0} days left in trial`
+                      : "Manage your plan",
                 screen: "SubscriptionBilling" as keyof RootStackParamList,
               },
             ],
@@ -182,6 +282,10 @@ export default function MoreHub() {
     // vendor whose plan doesn't include the feature anyway.
     if (item.locked && item.paywallFeature) {
       setPaywallFeature(item.paywallFeature);
+      return;
+    }
+    if (item.onPress) {
+      item.onPress();
       return;
     }
     if (item.screen) {

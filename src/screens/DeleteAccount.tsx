@@ -194,8 +194,19 @@ export default function DeleteAccount() {
                   text: "Past orders, payouts, and invoices are kept anonymized for accounting and legal records.",
                 },
                 {
+                  // Platform-conditional copy: iOS auto-renews through
+                  // Apple, so deleting the Orderly account doesn't
+                  // cancel the App Store subscription (the user has to
+                  // do that themselves in iOS Settings → Apple ID).
+                  // Android subscriptions are pay-per-cycle via
+                  // Paystack and don't need any extra action. Apple's
+                  // reviewer flagged the flat "don't auto-renew" claim
+                  // under 2.3.1.
                   icon: "card-outline" as const,
-                  text: "Subscriptions don't auto-renew, so nothing extra to do. Any time left on your current paid period is not refunded.",
+                  text:
+                    Platform.OS === "ios"
+                      ? "If you have an active Apple subscription, it does not cancel automatically. To stop future charges, open iPhone Settings → Apple ID → Subscriptions and cancel before the next renewal date."
+                      : "Subscriptions don't auto-renew, so nothing extra to do. Any time left on your current paid period is not refunded.",
                 },
               ].map((item, i, arr) => (
                 <View

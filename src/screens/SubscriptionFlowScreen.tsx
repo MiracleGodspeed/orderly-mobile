@@ -10,9 +10,9 @@ import SubscriptionSuccessStep from "../components/SubscriptionSuccessStep";
 import type { SubscriptionUpgradeQuote } from "../api/vendor/vendor.types";
 
 // Selected-plan snapshot threaded into PaymentMethodStep. Carries the
-// three Apple product IDs so PaymentMethodStep can decide whether to
-// render the Apple Pay option and which SKU to charge — without re-
-// fetching the plan list.
+// three Apple StoreKit product IDs so PaymentMethodStep can decide
+// whether to render the IAP path and which SKU to charge — without
+// re-fetching the plan list.
 type SelectedPlan = {
   id: number | null;
   name: string;
@@ -20,6 +20,12 @@ type SelectedPlan = {
   appleProductIdMonthly?: string | null;
   appleProductIdQuarterly?: string | null;
   appleProductIdYearly?: string | null;
+  /** Plan feature bullets threaded into PaymentMethodStep so the
+   *  payment screen can display "what you're getting" alongside the
+   *  price. Required by guideline 3.1.2 item #3 ("Content/services
+   *  provided per period" must be visible at the moment of purchase,
+   *  not only on a prior plan-picker step). */
+  features?: string[];
 };
 
 export default function SubscriptionFlowScreen() {
@@ -80,6 +86,7 @@ export default function SubscriptionFlowScreen() {
                 appleProductIdMonthly: plan.appleProductIdMonthly,
                 appleProductIdQuarterly: plan.appleProductIdQuarterly,
                 appleProductIdYearly: plan.appleProductIdYearly,
+                features: plan.features,
               };
               setSelectedPlan(nextPlan);
               setCycle(chosenCycle);

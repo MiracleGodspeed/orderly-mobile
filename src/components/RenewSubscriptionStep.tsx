@@ -10,7 +10,7 @@ import { useState, useEffect, useMemo } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { ApiSubscriptionPlan } from "../api/vendor/vendor.types";
-import { getAvailablePlans } from "../api/vendor/vendor.api";
+import { usePlans } from "../hooks/usePlans";
 
 type BillingCycle = "Monthly" | "Quarterly" | "Yearly";
 
@@ -64,31 +64,27 @@ export default function RenewSubscriptionStep({
   onClose,
   currentPlanActive = true,
 }: Props) {
-  const [plans, setPlans] = useState<ApiSubscriptionPlan[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Plans now come from the TanStack-Query cache (pre-warmed by
+  // AuthContext at login). When the cache is hot — which it almost
+  // always is on this screen — `plans` arrives synchronously and
+  // `isLoading` is false on first render: no spinner, no gap.
+  // First-launch / cache-cold cases still see the loading state.
+  const { data: plansData, isLoading } = usePlans();
+  const plans = plansData ?? [];
+  const loading = isLoading;
   const [selectedApiPlan, setSelectedApiPlan] =
     useState<ApiSubscriptionPlan | null>(null);
 
+  // Lock the selected plan to whatever matches the initial plan
+  // name the parent passed in, or default to the first plan. Re-runs
+  // when the plans array first arrives from cache.
   useEffect(() => {
-    let isMounted = true;
-    (async () => {
-      try {
-        setLoading(true);
-        const data = await getAvailablePlans();
-        if (!isMounted || !data) return;
-        setPlans(data);
-        const current = data.find((p) => p.name === initialPlan.name) ?? data[0];
-        setSelectedApiPlan(current ?? null);
-      } catch (err) {
-        if (isMounted) console.error("Plan Fetch Error:", err);
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    })();
-    return () => {
-      isMounted = false;
-    };
-  }, []);
+    if (!plans.length) return;
+    setSelectedApiPlan((prev) => {
+      if (prev) return prev;
+      return plans.find((p) => p.name === initialPlan.name) ?? plans[0];
+    });
+  }, [plans, initialPlan.name]);
 
   const calculatedPrices = useMemo(() => {
     return plans.reduce((acc, plan) => {

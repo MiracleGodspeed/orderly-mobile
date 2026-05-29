@@ -7,6 +7,7 @@ import {
   StyleProp,
   ViewStyle,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 
@@ -57,29 +58,38 @@ export function BottomSheet({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <View className="flex-1 bg-black/45 justify-end">
-        <Pressable
-          className="absolute inset-0"
-          onPress={onClose}
-          accessibilityRole="button"
-          accessibilityLabel="Close"
-        />
-        <View
-          className="bg-white rounded-t-[28px] overflow-hidden"
-          style={[
-            {
-              height: typeof height === "number" ? height : undefined,
-              minHeight: 200,
-              ...(typeof height === "string"
-                ? { maxHeight: "95%", height: undefined }
-                : {}),
-            },
-            typeof height === "string"
-              ? ({ height } as ViewStyle)
-              : null,
-            style,
-          ]}
-        >
+      {/* Outer KAV lifts the whole sheet above the keyboard so the
+          sticky footer (Save/Cancel) isn't covered when an input is
+          focused. KAV measures its own frame, so inner KAV / KAS
+          inside child sheets see zero remaining keyboard overlap and
+          won't double-shift the layout. */}
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={{ flex: 1 }}
+      >
+        <View className="flex-1 bg-black/45 justify-end">
+          <Pressable
+            className="absolute inset-0"
+            onPress={onClose}
+            accessibilityRole="button"
+            accessibilityLabel="Close"
+          />
+          <View
+            className="bg-white rounded-t-[28px] overflow-hidden"
+            style={[
+              {
+                height: typeof height === "number" ? height : undefined,
+                minHeight: 200,
+                ...(typeof height === "string"
+                  ? { maxHeight: "95%", height: undefined }
+                  : {}),
+              },
+              typeof height === "string"
+                ? ({ height } as ViewStyle)
+                : null,
+              style,
+            ]}
+          >
           {/* Drag handle */}
           <View className="items-center pt-2.5 pb-1">
             <View className="w-10 h-[5px] bg-gray-200 rounded-full" />
@@ -114,8 +124,9 @@ export function BottomSheet({
           </View>
 
           {children}
+          </View>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

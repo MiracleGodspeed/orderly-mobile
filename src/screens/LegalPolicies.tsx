@@ -16,6 +16,7 @@ import { useToast } from "react-native-toast-notifications";
 import Constants from "expo-constants";
 
 import { RootStackParamList } from "../navigation/types";
+import { useRestoreApplePurchases } from "../hooks/useRestoreApplePurchases";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -74,6 +75,17 @@ export default function LegalPolicies() {
 
   const appVersion =
     (Constants.expoConfig?.version as string | undefined) ?? "1.0.0";
+
+  // Restore Purchases is required by guideline 3.1.2. We surface it
+  // on this screen because it's the only legal/account screen that's
+  // reachable BEFORE the vendor has an active subscription — i.e.
+  // exactly the path Apple's reviewer hits on a fresh install when
+  // testing the restore affordance.
+  // Feedback renders via native Alert.alert inside the hook
+  // (see useRestoreApplePurchases) — bulletproof versus the toast
+  // library which was silently no-op'ing on this screen in build 29.
+  const { restore: restoreApple, restoring: restoringApple } =
+    useRestoreApplePurchases();
 
   const openLink = async (row: LinkRow) => {
     haptic();
@@ -221,7 +233,14 @@ export default function LegalPolicies() {
         </View>
 
         {/* Subscription disclosure — surfaces the key billing facts so
-            vendors aren't surprised. Mirrors Section 5 of the Terms. */}
+            vendors aren't surprised. The copy is platform-conditional
+            because the billing model genuinely differs:
+              - iOS: subscription is an auto-renewable through StoreKit;
+                Apple's 3.1.2 requires explicit auto-renewal disclosure.
+              - Android: vendor pays via Paystack each cycle; we do not
+                auto-debit, so the "no surprise charges" framing applies.
+            A flat "no auto-renewal" claim on both platforms was a
+            2.3.1 mismatch the reviewer flagged. */}
         <Text className="text-[10.5px] font-extrabold uppercase tracking-[1.4px] text-gray-400 mx-5 mt-6 mb-2">
           Subscription & billing
         </Text>
@@ -245,13 +264,27 @@ export default function LegalPolicies() {
                 className="text-[14px] text-gray-900"
                 style={{ fontFamily: "PlusJakartaSans_700Bold" }}
               >
-                No auto-renewal · No surprise charges
+                {Platform.OS === "ios"
+                  ? "Auto-renewing subscription"
+                  : "No auto-renewal · No surprise charges"}
               </Text>
               <Text className="text-[12.5px] text-gray-600 mt-1 leading-[18px]">
-                Paid plans don't renew automatically. You only pay when you
-                start or extend a plan inside Orderly. When your period ends,
-                your storefront pauses until you renew — your data is preserved
-                and you'll never be billed without an explicit action.
+                {Platform.OS === "ios" ? (
+                  <>
+                    Subscriptions auto-renew at the end of each billing cycle
+                    using your Apple ID. You can cancel at any time from your
+                    iPhone Settings → Apple ID → Subscriptions, at least 24
+                    hours before the period ends to avoid the next charge.
+                  </>
+                ) : (
+                  <>
+                    Paid plans don&apos;t renew automatically. You only pay
+                    when you start or extend a plan inside Orderly. When your
+                    period ends, your storefront pauses until you renew —
+                    your data is preserved and you&apos;ll never be billed
+                    without an explicit action.
+                  </>
+                )}
               </Text>
               <Pressable
                 onPress={() =>
@@ -276,6 +309,49 @@ export default function LegalPolicies() {
             </View>
           </View>
         </View>
+
+        {/* Restore Purchases — iOS-only. Required by 3.1.2 to be a
+            functional affordance reachable WITHOUT an active
+            subscription, which this screen is (it sits in the legal
+            area, accessible from MoreHub even pre-signup). On Android
+            there's no equivalent concept (Paystack is per-transaction),
+            so the row is hidden. */}
+        {Platform.OS === "ios" && (
+          <Pressable
+            onPress={restoreApple}
+            disabled={restoringApple}
+            className="mx-4 mt-3 bg-white rounded-2xl border border-gray-100 p-4 flex-row items-center active:bg-gray-50"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.04,
+              shadowRadius: 10,
+              elevation: 2,
+              opacity: restoringApple ? 0.6 : 1,
+            }}
+          >
+            <View className="w-11 h-11 rounded-2xl bg-blue-50 items-center justify-center mr-3 border border-blue-100">
+              <Ionicons
+                name={restoringApple ? "sync" : "refresh-outline"}
+                size={19}
+                color="#2563eb"
+              />
+            </View>
+            <View className="flex-1 pr-2">
+              <Text
+                className="text-[14px] text-gray-900"
+                style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+              >
+                {restoringApple ? "Restoring…" : "Restore purchases"}
+              </Text>
+              <Text className="text-[12px] text-gray-500 mt-0.5 leading-[16px]">
+                Already subscribed on another device? Tap here to recover
+                your subscription on this one.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+          </Pressable>
+        )}
 
         {/* Account section — Apple guideline 5.1.1(v) requires in-app
             account deletion. Lives on the Legal screen so vendors can find

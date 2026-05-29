@@ -14,22 +14,26 @@ import { AppImage } from "../components/AppImage";
 
 const LOGO = require("../../assets/orderlySplash.png");
 
-// Minimum time the splash stays on screen, even if everything resolves sooner.
-// If readiness checks (auth, prefetch, etc.) take longer than this, the splash
-// holds until they're done — there's no upper bound.
-const MIN_DISPLAY_MS = 2500;
-const FADE_OUT_MS = 450;
+// The native splash (configured in app.json) already shows the same
+// logo on the same background. This React splash is just a brief
+// continuation while we resolve auth state, so it MUST mount at the
+// exact same visual state — no entrance animation, no logo growing
+// in, no tagline sliding up. Anything else reads as a "remount" to
+// the user even though the JS layer is just taking over from native.
+//
+// The only animation we keep is the fade-out to the destination
+// screen, since that's a real transition the user expects.
+//
+// MIN_DISPLAY_MS guarantees a minimum on-screen time. Without this
+// the splash can flash past in <100ms on a warm JS bundle (hot
+// reload, background→foreground), which feels jarring even though
+// it's technically fast.
+const MIN_DISPLAY_MS = 2000;
+const FADE_OUT_MS = 350;
 
-// Single solid brand deep-blue. Kept in sync with app.json's splash
-// backgroundColor so the native splash and this React splash share
-// the exact same canvas — no color flash on JS mount.
 const SPLASH_BG = "#0a3d8f";
 
 export default function SplashScreen({ navigation }: any) {
-  const imageScale = useSharedValue(0.92);
-  const imageOpacity = useSharedValue(0);
-  const taglineOpacity = useSharedValue(0);
-  const taglineTranslate = useSharedValue(6);
   const fadeOutOpacity = useSharedValue(1);
 
   const dot1 = useSharedValue(0.4);
@@ -38,24 +42,6 @@ export default function SplashScreen({ navigation }: any) {
 
   useEffect(() => {
     let cancelled = false;
-
-    imageOpacity.value = withTiming(1, {
-      duration: 700,
-      easing: Easing.out(Easing.cubic),
-    });
-    imageScale.value = withTiming(1, {
-      duration: 700,
-      easing: Easing.out(Easing.cubic),
-    });
-
-    taglineOpacity.value = withDelay(
-      400,
-      withTiming(1, { duration: 600, easing: Easing.out(Easing.cubic) })
-    );
-    taglineTranslate.value = withDelay(
-      400,
-      withTiming(0, { duration: 600, easing: Easing.out(Easing.cubic) })
-    );
 
     const pulse = (sv: typeof dot1, delay: number) => {
       sv.value = withDelay(
@@ -70,13 +56,14 @@ export default function SplashScreen({ navigation }: any) {
         )
       );
     };
-    pulse(dot1, 600);
-    pulse(dot2, 800);
-    pulse(dot3, 1000);
+    pulse(dot1, 0);
+    pulse(dot2, 150);
+    pulse(dot3, 300);
 
-    const minHold = new Promise((r) => setTimeout(r, MIN_DISPLAY_MS));
+    // Wait for both: the minimum display time AND the auth check.
+    // Whichever finishes last determines when we transition off.
+    const minHold = new Promise<void>((r) => setTimeout(r, MIN_DISPLAY_MS));
     const ready = IsLoggedIn();
-
     Promise.all([minHold, ready]).then(([, isLoggedIn]) => {
       if (cancelled) return;
       fadeOutOpacity.value = withTiming(0, { duration: FADE_OUT_MS });
@@ -95,14 +82,6 @@ export default function SplashScreen({ navigation }: any) {
   const containerStyle = useAnimatedStyle(() => ({
     opacity: fadeOutOpacity.value,
   }));
-  const imageStyle = useAnimatedStyle(() => ({
-    transform: [{ scale: imageScale.value }],
-    opacity: imageOpacity.value,
-  }));
-  const taglineStyle = useAnimatedStyle(() => ({
-    opacity: taglineOpacity.value,
-    transform: [{ translateY: taglineTranslate.value }],
-  }));
   const dot1Style = useAnimatedStyle(() => ({ opacity: dot1.value }));
   const dot2Style = useAnimatedStyle(() => ({ opacity: dot2.value }));
   const dot3Style = useAnimatedStyle(() => ({ opacity: dot3.value }));
@@ -114,33 +93,33 @@ export default function SplashScreen({ navigation }: any) {
       <StatusBar barStyle="light-content" backgroundColor={SPLASH_BG} />
 
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
-        <Animated.View style={imageStyle}>
-          <AppImage
-            source={LOGO}
-            contentFit="contain"
-            style={{ width: 180, height: 180 }}
-          />
-        </Animated.View>
+        <AppImage
+          source={LOGO}
+          contentFit="contain"
+          style={{ width: 180, height: 180 }}
+        />
 
-        <Animated.View
-          style={[
-            taglineStyle,
-            { marginTop: 24, alignItems: "center", paddingHorizontal: 32 },
-          ]}
+        {/* <View
+          style={{
+            marginTop: 24,
+            alignItems: "center",
+            paddingHorizontal: 32,
+          }}
         >
+         
           <Text
             style={{
               color: "white",
-              fontSize: 30,
+              fontSize: 20,
               letterSpacing: -0.8,
               lineHeight: 36,
               textAlign: "center",
               fontFamily: "PlusJakartaSans_800ExtraBold",
             }}
           >
-            Built for sellers.
+            Business, made orderly
           </Text>
-        </Animated.View>
+        </View> */}
       </View>
 
       <View

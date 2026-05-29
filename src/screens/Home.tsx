@@ -99,9 +99,9 @@ function StoreOverviewBackdrop() {
     if (size.w === 0 || size.h === 0) return [];
     // Brick layout — every other row is offset by half a cell so the
     // tiling reads as a deliberate pattern instead of a stiff grid.
-    const cellW = 40;
+    const cellW =90;
     const cellH = 32;
-    const baseSize = 18;
+    const baseSize = 30;
     const cols = Math.ceil(size.w / cellW) + 1;
     const rows = Math.ceil(size.h / cellH) + 1;
     const out: Array<{
@@ -188,7 +188,7 @@ function StoreOverviewBackdrop() {
                 transform: [{ rotate: `${it.rotate}deg` }],
               }}
             >
-              <Ionicons name={it.icon} size={it.size} color="rgba(15, 23, 42, 0.08)" />
+              <Ionicons name={it.icon} size={it.size} color="rgba(15, 23, 42, 0.05)" />
             </View>
           ))}
         </>
@@ -615,6 +615,24 @@ export default function Home() {
     setCustomDateModalVisible(false);
   }, []);
 
+  // Dynamic trial-end label for the trial welcome modal below.
+  // Previously hard-coded "January 28, 2025" — leftover from the
+  // original launch placeholder; rendered a past date by 2026 and
+  // read as broken/misleading on review. Now derived from the
+  // live subscription's daysRemaining, with a graceful fallback
+  // when the trial isn't active or the data hasn't loaded yet.
+  const trialEndLabel = (() => {
+    const days = storeData?.storeSubscription?.daysRemaining;
+    if (typeof days !== 'number' || days <= 0) return null;
+    const end = new Date();
+    end.setDate(end.getDate() + days);
+    return end.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+  })();
+
   return (
     // Top: white safe-area band that lets the Header bleed into the notch.
     // Body: gray scroll area that fills the rest.
@@ -1017,21 +1035,26 @@ export default function Home() {
               </Text>
             </View>
             <TouchableOpacity
-              className="flex-row items-center gap-1 bg-white border border-gray-200 px-2.5 py-1 rounded-full"
+              className="flex-row items-center gap-1.5 bg-white border border-gray-100 pl-3 pr-2.5 py-1.5 rounded-full"
               activeOpacity={0.7}
               onPress={() => setDurationModalVisible(true)}
               style={{
-                // shadowColor: '#0f172a',
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.05,
-                shadowRadius: 3,
-                elevation: 1,
+                shadowColor: '#0f172a',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.06,
+                shadowRadius: 6,
+                elevation: 2,
               }}
             >
-              <Text className="text-[11.5px] text-gray-800 font-bold">
+              <Text
+                className="text-[12px] text-gray-900 font-semibold"
+                style={{ letterSpacing: -0.1 }}
+              >
                 {durationLabel}
               </Text>
-              <Feather name="chevron-down" size={12} color="#374151" />
+              <View className="w-4 h-4 rounded-full bg-gray-100 items-center justify-center">
+                <Feather name="chevron-down" size={10} color="#475569" />
+              </View>
             </TouchableOpacity>
           </View>
 
@@ -1796,7 +1819,7 @@ export default function Home() {
           </View>
 
           <Text className="text-[24px] font-[400] text-gray-900 text-center mb-4">
-            Welcome to Your 5-Day{'\n'}Free Trial on us.
+            Welcome to Your 14-Day{'\n'}Free Trial on us.
           </Text>
 
           <View className="items-center mb-5">
@@ -1816,13 +1839,15 @@ export default function Home() {
           </Text>
 
           <Text className="text-[12px] text-gray-500 text-center mb-8 px-4">
-            Your trial includes unlimited access to the website builder, product
-            management, analytics, and customer tools.
+            Full access to every Orderly feature, with no restrictions during
+            your trial.
           </Text>
 
-          <Text className="text-sm text-red-500 text-center mb-4">
-            Trial Ends: January 28, 2025
-          </Text>
+          {trialEndLabel && (
+            <Text className="text-sm text-red-500 text-center mb-4">
+              Trial Ends: {trialEndLabel}
+            </Text>
+          )}
 
           <TouchableOpacity
             activeOpacity={0.8}

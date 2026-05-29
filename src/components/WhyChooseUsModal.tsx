@@ -6,7 +6,6 @@ import {
   TextInput,
   Alert,
   Platform,
-  KeyboardAvoidingView,
 } from "react-native";
 import { useState, useEffect } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -192,10 +191,9 @@ export default function WhyChooseUsModal({ visible, onClose }: Props) {
       }
       height="92%"
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
-      >
+      {/* Keyboard handling lives in BottomSheet; the outer sheet lifts
+          everything above the keyboard. */}
+      <View style={{ flex: 1 }}>
         {editing ? (
           <PillarForm
             draft={editing}
@@ -216,7 +214,7 @@ export default function WhyChooseUsModal({ visible, onClose }: Props) {
             onDelete={handleDelete}
           />
         )}
-      </KeyboardAvoidingView>
+      </View>
     </BottomSheet>
   );
 }

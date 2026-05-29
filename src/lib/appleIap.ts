@@ -7,6 +7,7 @@ import {
   finishTransaction,
   purchaseUpdatedListener,
   purchaseErrorListener,
+  getAvailablePurchases,
   type Purchase,
   type ProductSubscription,
 } from "expo-iap";
@@ -50,8 +51,29 @@ let pendingResolver:
       productId: string;
       resolve: (value: Purchase | null) => void;
       reject: (reason: unknown) => void;
+      /** Watchdog timer cleared whenever the resolver settles. Guards
+       *  against the "Pay button hangs forever" failure mode (see
+       *  comment on `purchaseAppleSubscription`). */
+      timeoutId: ReturnType<typeof setTimeout>;
     }
   | null = null;
+
+/** Settle the pending resolver and clear its watchdog. Centralised so
+ *  every listener / timer / error path goes through one code path
+ *  that can't leak a timer or leave a stale resolver behind. */
+function settlePendingResolver(
+  outcome: { ok: true; value: Purchase | null } | { ok: false; error: unknown },
+): void {
+  if (!pendingResolver) return;
+  const resolver = pendingResolver;
+  pendingResolver = null;
+  clearTimeout(resolver.timeoutId);
+  if (outcome.ok) {
+    resolver.resolve(outcome.value);
+  } else {
+    resolver.reject(outcome.error);
+  }
+}
 
 function attachListenersOnce(): void {
   if (listenersAttached) return;
@@ -63,11 +85,29 @@ function attachListenersOnce(): void {
       id: purchase.id,
       pendingFor: pendingResolver?.productId ?? null,
     });
-    if (!pendingResolver) return;
-    if (purchase.productId !== pendingResolver.productId) return;
-    const resolver = pendingResolver;
-    pendingResolver = null;
-    resolver.resolve(purchase);
+    if (!pendingResolver) {
+      // No active resolver — purchase arrived out-of-band. Common
+      // causes: StoreKit replaying an unfinished transaction on app
+      // launch, an in-app renewal pushed by Apple, or a family-shared
+      // entitlement. We don't try to handle it here (would need a
+      // plan/cycle to verify against), but the safety net is the
+      // user's "Restore Purchases" button which re-queries
+      // `getAvailablePurchases` and processes anything still unacked.
+      return;
+    }
+    if (purchase.productId !== pendingResolver.productId) {
+      // Different SKU from the one we requested — could be a renewal
+      // for a previously-active subscription firing during this buy
+      // session. Don't resolve the wrong purchase; keep the resolver
+      // waiting for the matching one (with the timeout below as the
+      // ultimate fallback so the user can never get stuck).
+      console.log(
+        "[IAP] purchase productId mismatch — keeping resolver pending",
+        { received: purchase.productId, expected: pendingResolver.productId },
+      );
+      return;
+    }
+    settlePendingResolver({ ok: true, value: purchase });
   });
 
   purchaseErrorListener((err) => {
@@ -77,16 +117,15 @@ function attachListenersOnce(): void {
       pendingFor: pendingResolver?.productId ?? null,
     });
     if (!pendingResolver) return;
-    const resolver = pendingResolver;
-    pendingResolver = null;
     const code = String(err?.code ?? "");
     if (code === "E_USER_CANCELLED" || code === "user-cancelled") {
-      resolver.resolve(null);
+      settlePendingResolver({ ok: true, value: null });
       return;
     }
-    resolver.reject(
-      new Error(err?.message || "Apple Pay purchase failed"),
-    );
+    settlePendingResolver({
+      ok: false,
+      error: new Error(err?.message || "Subscription purchase failed"),
+    });
   });
 }
 
@@ -128,7 +167,7 @@ export async function purchaseAppleSubscription(
   productId: string,
 ): Promise<ApplePurchase | null> {
   if (Platform.OS !== "ios") {
-    throw new Error("Apple Pay is only available on iOS");
+    throw new Error("Subscriptions are only available on iOS");
   }
   await initIap();
 
@@ -162,14 +201,30 @@ export async function purchaseAppleSubscription(
     );
   }
 
+  // 90s watchdog on the pending resolver — guards against the
+  // "tapped Pay, nothing happens" failure mode where StoreKit fires
+  // an event we silently drop (e.g. mismatched productId from a
+  // promotional-offer variant, or the event listener teardown racing
+  // a background → foreground transition). Without this, the
+  // resolver promise would hang forever and the user would see the
+  // Pay button spin indefinitely. Apple's reviewer flagged exactly
+  // this symptom under 2.1(b). The timer is cleared by
+  // `settlePendingResolver` on every settle path.
   const purchase = await new Promise<Purchase | null>((resolve, reject) => {
-    pendingResolver = { productId, resolve, reject };
+    const timeoutId = setTimeout(() => {
+      settlePendingResolver({
+        ok: false,
+        error: new Error(
+          "We didn't hear back from Apple in time. Please try again, or use Restore Purchases if you've already been charged.",
+        ),
+      });
+    }, 90_000);
+    pendingResolver = { productId, resolve, reject, timeoutId };
     requestPurchase({
       request: { apple: { sku: productId } },
       type: "subs",
     }).catch((err) => {
-      pendingResolver = null;
-      reject(err);
+      settlePendingResolver({ ok: false, error: err });
     });
   });
 
@@ -233,4 +288,60 @@ export async function finishAppleTransaction(
 ): Promise<void> {
   if (Platform.OS !== "ios") return;
   await finishTransaction({ purchase: purchase.raw, isConsumable: false });
+}
+
+/**
+ * Result of a Restore Purchases attempt.
+ *
+ * - `count` — how many active or unfinished Apple purchases are
+ *   currently held by this Apple ID for this app. Drives the
+ *   "Restored X subscription(s)" vs "Nothing to restore" UX branch.
+ * - `purchases` — the raw expo-iap Purchase rows (each carrying its
+ *   own productId + transactionId + JWS token). Caller can hand
+ *   these to the backend to re-sync subscription state.
+ */
+export interface AppleRestoreResult {
+  count: number;
+  purchases: Purchase[];
+}
+
+/**
+ * Re-query Apple for any purchases this Apple ID still holds for
+ * this app — active auto-renewable subscriptions plus any
+ * non-consumable transactions that haven't been `finishTransaction`'d
+ * yet. Required by guideline 3.1.2 (Restore Purchases must be a
+ * functional, reachable affordance) and by 2.1(b) (the buy flow must
+ * be recoverable on a fresh device / reinstall).
+ *
+ * Behaviour:
+ *   - Empty list → caller renders "No purchases to restore"
+ *   - Non-empty list → caller surfaces a success message and
+ *     (optionally) hands each purchase to the backend so it can
+ *     resurrect the subscription record for this device/account.
+ *   - Network error / StoreKit failure → throws; caller surfaces an
+ *     error toast. Apple's reviewer wants a real failure path here,
+ *     not a silent no-op.
+ *
+ * The raw `Purchase` shape from expo-iap is intentionally exposed so
+ * the caller can iterate (most flows will need the `productId` to
+ * cross-walk against the plan list).
+ */
+export async function restoreApplePurchases(): Promise<AppleRestoreResult> {
+  if (Platform.OS !== "ios") {
+    throw new Error("Restore Purchases is only available on iOS");
+  }
+  await initIap();
+  console.log("[IAP] restorePurchases — calling getAvailablePurchases");
+  const purchases = (await getAvailablePurchases({
+    // iOS-only flag: skip expired / consumed entries so we only
+    // surface what could meaningfully resurrect a current entitlement.
+    onlyIncludeActiveItemsIOS: true,
+  })) as Purchase[];
+  console.log(
+    "[IAP] restorePurchases — found:",
+    purchases.length,
+    "skus:",
+    purchases.map((p) => p.productId),
+  );
+  return { count: purchases.length, purchases };
 }

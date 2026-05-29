@@ -26,6 +26,8 @@ import {
   updateProduct,
   getCatalogCategories,
   generateProductDescription,
+  getAiDescriptionCredits,
+  AiDescriptionLimitError,
 } from "../../src/api/vendor/vendor.api";
 import {
   CreateProductPayload,
@@ -176,10 +178,31 @@ export default function AddProductModal({
 
   // Feature gating — secondary photo slot is paywalled. Tapping it when
   // locked opens the upgrade sheet instead of the image picker.
-  const { has: hasFeature } = useFeatures();
+  const { has: hasFeature, aiDescriptionCreditsPerDay: aiDailyLimit } =
+    useFeatures();
   const canUseSecondaryImage = hasFeature(FEATURES.PRODUCTS_SECONDARY_IMAGE);
   const canUseVariants = hasFeature(FEATURES.PRODUCTS_VARIANTS);
   const canUseCategories = hasFeature(FEATURES.PRODUCTS_CATEGORIES);
+  // Orderly AI is gated by both the boolean feature key AND the
+  // per-day quota — a plan can technically have the key but a 0/null
+  // quota would still mean "no access" (defensive belt-and-braces;
+  // shouldn't happen in practice).
+  const canUseAi =
+    hasFeature(FEATURES.AI_DESCRIPTIONS) && (aiDailyLimit ?? 0) > 0;
+  // Remaining-today counter. Pre-fetched from the read-only
+  // `/catalog/ai/credits` endpoint when the modal opens (so the
+  // "X left today" chip surfaces BEFORE the vendor taps Generate),
+  // then refreshed from the X-RateLimit-Remaining header after each
+  // generation. The pre-fetch is gated on `canUseAi` so plans
+  // without the feature don't incur the round-trip.
+  const [aiRemainingToday, setAiRemainingToday] = useState<number | null>(null);
+  // Trial sentinel: backend sends int.MaxValue for trial vendors so
+  // every gate passes regardless of quota. The actual int value the
+  // mobile sees is implementation-defined-large; the safe heuristic
+  // is "treat anything bigger than a daily cap a human plan would
+  // ever set as unlimited" — pick a number that's clearly out of
+  // band for any real plan (1000+/day).
+  const aiIsUnlimited = (aiDailyLimit ?? 0) >= 1000;
   const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(
     null
   );
@@ -188,6 +211,29 @@ export default function AddProductModal({
   const [draftsSheetOpen, setDraftsSheetOpen] = useState(false);
   const [savingDraft, setSavingDraft] = useState(false);
   const [draftCount, setDraftCount] = useState(0);
+  // Pre-fetch the daily AI credits when the modal opens so the chip
+  // ("X left today") is visible BEFORE the vendor taps Generate.
+  // Skipped when the plan doesn't grant AI (no point asking for
+  // credits we can't use) and on unlimited plans where the chip is
+  // hidden anyway. Reset on close so a stale count from another
+  // session can't bleed in.
+  useEffect(() => {
+    if (!visible) {
+      setAiRemainingToday(null);
+      return;
+    }
+    if (!canUseAi || aiIsUnlimited) return;
+    let cancelled = false;
+    (async () => {
+      const snapshot = await getAiDescriptionCredits();
+      if (cancelled || !snapshot) return;
+      setAiRemainingToday(snapshot.remainingToday);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, canUseAi, aiIsUnlimited]);
+
   // Refresh the draft count + vendor categories whenever the modal opens.
   // Categories are needed for the dropdown options; we load them every open
   // so a freshly-added category in the manager sheet shows up immediately.
@@ -751,17 +797,48 @@ export default function AddProductModal({
     const name = productName.trim();
     if (!name || aiGenerating) return;
     haptic();
+
+    // Plan-level gate. Vendors without the AI feature on their plan
+    // see the upgrade paywall instead of making a doomed API call.
+    // Trial vendors bypass this gate via the int.MaxValue sentinel,
+    // which makes `canUseAi` resolve true.
+    if (!canUseAi) {
+      setPaywallFeature(FEATURES.AI_DESCRIPTIONS);
+      return;
+    }
+
     setAiGenerating(true);
     try {
       const categoryName =
         vendorCategories.find((c) => c.id === catalogCategoryId)?.name ?? undefined;
-      const generated = await generateProductDescription(name, categoryName);
-      setProductDescription(generated);
+      const result = await generateProductDescription(name, categoryName);
+      setProductDescription(result.description);
+      if (result.remainingToday != null) {
+        setAiRemainingToday(result.remainingToday);
+      }
       clearError("productDescription");
-    } catch (err: any) {
-      toast.show(err?.message || "Couldn't generate a description right now", {
-        type: "danger",
-      });
+    } catch (err: unknown) {
+      if (err instanceof AiDescriptionLimitError) {
+        if (err.kind === "feature_locked") {
+          // Race condition fallback — the local features cache thought
+          // we had access but the server disagreed (e.g. a downgrade
+          // that hasn't propagated yet). Show the paywall rather than
+          // a confusing toast.
+          setPaywallFeature(FEATURES.AI_DESCRIPTIONS);
+        } else {
+          // Rate-limited — pin remaining to 0 so the inline counter
+          // immediately reflects exhaustion, then surface the
+          // server's friendly "resets at HH:MM UTC" message.
+          setAiRemainingToday(0);
+          toast.show(err.message, { type: "danger" });
+        }
+        return;
+      }
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Couldn't generate a description right now";
+      toast.show(message, { type: "danger" });
     } finally {
       setAiGenerating(false);
     }
@@ -1590,31 +1667,48 @@ export default function AddProductModal({
                 }`}
               >
                 {/* Orderly AI suggestion — always visible when description
-                    is empty (so vendors discover it), and clearly explains
-                    itself in three states: enabled, disabled (name missing),
-                    and generating. */}
+                    is empty (so vendors discover it). States:
+                      - locked: plan doesn't include AI → tap opens
+                        the upgrade paywall (handler decides this).
+                      - exhausted: feature available but today's
+                        credits are spent → tap surfaces a 429 toast.
+                      - name-missing: needs the product name first.
+                      - generating: in-flight call.
+                      - ready: tap fires the generation.
+                    The Pressable stays enabled in `locked` so the
+                    handler can open the paywall — disabling it would
+                    swallow the tap. */}
                 {!productDescription.trim() && (() => {
                   const nameReady = !!productName.trim();
-                  const ready = nameReady && !aiGenerating;
+                  const tappable = nameReady && !aiGenerating;
+                  const exhausted = canUseAi && aiRemainingToday === 0;
+                  // Credit chip: shown when the plan has a finite
+                  // quota AND we've made at least one call so the
+                  // remaining count is known. Trial sentinel
+                  // (`aiIsUnlimited`) hides the chip so vendors
+                  // don't see a confusing huge number.
+                  const showCreditChip =
+                    canUseAi && !aiIsUnlimited && aiRemainingToday != null;
                   return (
                     <Pressable
                       onPress={handleGenerateDescription}
-                      disabled={!ready}
+                      disabled={!tappable}
                       className="flex-row items-center gap-3 px-3 py-3 rounded-xl mb-3"
                       style={{
-                        backgroundColor: ready
+                        backgroundColor: tappable && !exhausted
                           ? "#f5f9ff"
                           : aiGenerating
                           ? "#eff6ff"
                           : "#f9fafb",
                         borderWidth: 1,
-                        borderColor: ready ? "#dbeafe" : "#e5e7eb",
+                        borderColor:
+                          tappable && !exhausted ? "#dbeafe" : "#e5e7eb",
                         borderStyle: "dashed",
                         opacity: nameReady ? 1 : 0.85,
                       }}
                     >
                       <View
-                        className="w-9 h-9 rounded-full items-center justify-center"
+                        className="w-9 h-9 rounded-full items-center justify-center relative"
                         style={{
                           backgroundColor: nameReady ? "#dbeafe" : "#e5e7eb",
                         }}
@@ -1627,6 +1721,23 @@ export default function AddProductModal({
                             size={16}
                             color={nameReady ? "#2563EB" : "#9ca3af"}
                           />
+                        )}
+                        {/* Lock badge mirrors the Staff & permissions
+                            lock affordance in MoreHub — vendors
+                            recognise the same pattern across the app. */}
+                        {!canUseAi && !aiGenerating && (
+                          <View
+                            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-white items-center justify-center"
+                            style={{
+                              shadowColor: "#0f172a",
+                              shadowOffset: { width: 0, height: 1 },
+                              shadowOpacity: 0.12,
+                              shadowRadius: 2,
+                              elevation: 2,
+                            }}
+                          >
+                            <Ionicons name="lock-closed" size={8} color="#6b7280" />
+                          </View>
                         )}
                       </View>
                       <View className="flex-1">
@@ -1644,18 +1755,38 @@ export default function AddProductModal({
                         >
                           {aiGenerating
                             ? "Hang tight — almost done"
+                            : !canUseAi
+                            ? "Upgrade your plan to unlock"
+                            : exhausted
+                            ? "You've used today's credits — they reset overnight"
                             : nameReady
                             ? `Tap once — we'll handle the writing for "${productName.trim().slice(0, 28)}${productName.trim().length > 28 ? "…" : ""}"`
                             : "Add a product name and we'll handle the rest"}
                         </Text>
                       </View>
-                      {ready && (
+                      {showCreditChip ? (
+                        <View
+                          className={`px-2 py-0.5 rounded-full border ${
+                            exhausted
+                              ? "bg-rose-50 border-rose-100"
+                              : "bg-blue-50 border-blue-100"
+                          }`}
+                        >
+                          <Text
+                            className={`text-[10.5px] font-extrabold ${
+                              exhausted ? "text-rose-700" : "text-blue-700"
+                            }`}
+                          >
+                            {aiRemainingToday} left today
+                          </Text>
+                        </View>
+                      ) : tappable ? (
                         <Ionicons
                           name="chevron-forward"
                           size={16}
                           color="#2563EB"
                         />
-                      )}
+                      ) : null}
                     </Pressable>
                   );
                 })()}

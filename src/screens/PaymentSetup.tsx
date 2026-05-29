@@ -6,6 +6,7 @@ import {
   StatusBar,
   Platform,
   ActivityIndicator,
+  TextInput,
 } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,12 +17,15 @@ import * as Haptics from "expo-haptics";
 
 import { RootStackParamList } from "../navigation/types";
 import { useVendor } from "../../context/VendorContext";
-import { setTransactionChargeBearer } from "../api/vendor/vendor.api";
+import {
+  setTransactionChargeBearer,
+  setWhatsappCheckoutNumber,
+} from "../api/vendor/vendor.api";
 import { AppToast, AppToastTone } from "../components/AppToast";
 
 type Nav = NativeStackNavigationProp<RootStackParamList, "PaymentSetup">;
 
-type PaymentMode = "online" | "direct";
+type PaymentMode = "online" | "direct" | "whatsapp";
 type FeeBearer = "vendor" | "customer" | "included";
 
 const haptic = (
@@ -84,6 +88,21 @@ const MODES: ModeMeta[] = [
     caveat:
       "Every order needs you. If a payment lands at 11pm or while you're out, the customer is left waiting until you can check your bank app and confirm. Most vendors graduate to online payment within their first month.",
   },
+  {
+    key: "whatsapp",
+    title: "Checkout via WhatsApp",
+    subtitle: "Chat-first — customer messages you to confirm and pay",
+    icon: "logo-whatsapp",
+    tint: "#d1fae5",
+    iconColor: "#047857",
+    perks: [
+      "Customer fills name + phone + address, then taps a button that opens WhatsApp with their full order pre-typed for you.",
+      "Order lands in your dashboard as Pending — you confirm payment manually once they pay (transfer, cash on delivery, whatever you agree in chat).",
+      "Best for high-trust / high-touch sales where customers want to ask questions before buying.",
+    ],
+    caveat:
+      "Slower than online payment — the customer waits for you to reply. Skip this if you'd rather not field DMs all day.",
+  },
 ];
 
 interface FeeBearerMeta {
@@ -127,14 +146,22 @@ export default function PaymentSetup() {
   const navigation = useNavigation<Nav>();
   const { storeData, fetchVendorData } = useVendor();
 
-  // Resolve the current setting into our split state. The backend
-  // stores one of: "vendor" | "customer" | "included" | "direct".
-  // "direct" → mode=direct (the fee question doesn't apply).
-  // Anything else, including null/undefined for brand-new vendors,
-  // → mode=online (default, with that fee-bearer when present).
-  const initialMode: PaymentMode = storeData?.feeBearer === ("direct" as any)
-    ? "direct"
-    : "online";
+  // Resolve the current setting into our split state. Three mutually-
+  // exclusive modes on the backend:
+  //   - whatsappCheckoutEnabled wins (it's mutually exclusive with
+  //     both transferDirectlyToVendor and the online fee-bearers
+  //     server-side, so the boolean dominates the feeBearer string).
+  //   - feeBearer === "direct" → mode=direct (the fee question
+  //     doesn't apply because there's no platform fee on direct).
+  //   - anything else, including null/undefined for brand-new vendors,
+  //     → mode=online (default, with that fee-bearer when present).
+  const storedWhatsappEnabled = storeData?.whatsappCheckoutEnabled === true;
+  const storedWhatsappNumber = storeData?.whatsappCheckoutNumber ?? "";
+  const initialMode: PaymentMode = storedWhatsappEnabled
+    ? "whatsapp"
+    : storeData?.feeBearer === ("direct" as any)
+      ? "direct"
+      : "online";
   const initialFee: FeeBearer = (
     storeData?.feeBearer === ("direct" as any)
       ? "customer"
@@ -143,6 +170,8 @@ export default function PaymentSetup() {
 
   const [mode, setMode] = useState<PaymentMode>(initialMode);
   const [feeBearer, setFeeBearer] = useState<FeeBearer>(initialFee);
+  const [whatsappNumber, setWhatsappNumber] =
+    useState<string>(storedWhatsappNumber);
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast] = useState<{
     title: string;
@@ -155,20 +184,60 @@ export default function PaymentSetup() {
   useEffect(() => {
     setMode(initialMode);
     setFeeBearer(initialFee);
+    setWhatsappNumber(storedWhatsappNumber);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storeData?.feeBearer]);
+  }, [
+    storeData?.feeBearer,
+    storeData?.whatsappCheckoutEnabled,
+    storeData?.whatsappCheckoutNumber,
+  ]);
+
+  // Digits-only normalisation mirrors the server-side rule so the
+  // "valid?" check + Save-button enabled-state stay honest.
+  const whatsappDigits = useMemo(
+    () => (whatsappNumber || "").replace(/\D/g, ""),
+    [whatsappNumber]
+  );
+  const whatsappValid =
+    mode !== "whatsapp" ||
+    (whatsappDigits.length >= 10 && whatsappDigits.length <= 15);
 
   const isDirty = useMemo(() => {
-    if (mode === "direct") return storeData?.feeBearer !== ("direct" as any);
-    return storeData?.feeBearer !== feeBearer;
-  }, [mode, feeBearer, storeData?.feeBearer]);
+    if (mode === "whatsapp") {
+      return !storedWhatsappEnabled || storedWhatsappNumber !== whatsappDigits;
+    }
+    if (mode === "direct") {
+      // Dirty if we were on WhatsApp before OR feeBearer wasn't already direct.
+      return storedWhatsappEnabled || storeData?.feeBearer !== ("direct" as any);
+    }
+    return storedWhatsappEnabled || storeData?.feeBearer !== feeBearer;
+  }, [
+    mode,
+    feeBearer,
+    whatsappDigits,
+    storedWhatsappEnabled,
+    storedWhatsappNumber,
+    storeData?.feeBearer,
+  ]);
 
   const handleSave = async () => {
-    if (submitting || !isDirty) return;
+    if (submitting || !isDirty || !whatsappValid) return;
     haptic("medium");
     setSubmitting(true);
     try {
-      const wireValue = mode === "direct" ? "direct" : feeBearer;
+      // For WhatsApp mode, save the number FIRST (separate endpoint)
+      // then flip the mode. Order matters: flipping the mode without
+      // a number on file would leave the storefront with no contact
+      // to hand customers off to.
+      if (mode === "whatsapp") {
+        await setWhatsappCheckoutNumber(whatsappDigits);
+      }
+      const wireValue: FeeBearer | "direct" | "whatsapp" =
+        mode === "direct"
+          ? "direct"
+          : mode === "whatsapp"
+            ? "whatsapp"
+            : feeBearer;
       await setTransactionChargeBearer(wireValue);
       await fetchVendorData();
       haptic("success");
@@ -177,7 +246,9 @@ export default function PaymentSetup() {
         subtitle:
           mode === "direct"
             ? "You'll confirm each payment yourself from now on."
-            : "Online payments are on — your store can now sell on autopilot.",
+            : mode === "whatsapp"
+              ? "Customers will check out via WhatsApp from now on."
+              : "Online payments are on — your store can now sell on autopilot.",
         tone: "success",
       });
     } catch (e: any) {
@@ -373,8 +444,97 @@ export default function PaymentSetup() {
           })}
         </View>
 
-        {/* Fee-bearer — only relevant when Online is selected. Direct mode
-            sidesteps platform fees entirely so the question is moot. */}
+        {/* WhatsApp number input — only shown when WhatsApp mode is
+            picked. Saved through a separate endpoint before the mode
+            flip on the Save button. */}
+        {mode === "whatsapp" && (
+          <>
+            <View className="flex-row items-center gap-2 mx-5 mt-7 mb-3">
+              <View
+                style={{
+                  width: 3,
+                  height: 12,
+                  borderRadius: 2,
+                  backgroundColor: "#059669",
+                }}
+              />
+              <Text className="text-[10.5px] font-extrabold text-gray-500 uppercase tracking-[1.4px]">
+                Your WhatsApp number
+              </Text>
+            </View>
+
+            <View className="px-4">
+              <View
+                className={`rounded-2xl border-2 bg-white p-4 ${
+                  whatsappValid ? "border-emerald-200" : "border-rose-300"
+                }`}
+                style={{
+                  shadowColor: "#059669",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.06,
+                  shadowRadius: 8,
+                  elevation: 1,
+                }}
+              >
+                <Text
+                  className="text-[12.5px] text-gray-900 mb-2"
+                  style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                >
+                  The number customers will message you on
+                </Text>
+                <View
+                  className={`flex-row items-center gap-2 rounded-xl border bg-gray-50 px-3 ${
+                    whatsappValid
+                      ? "border-gray-200"
+                      : "border-rose-300"
+                  }`}
+                >
+                  <Ionicons
+                    name="logo-whatsapp"
+                    size={18}
+                    color="#059669"
+                  />
+                  <TextInput
+                    value={whatsappNumber}
+                    onChangeText={setWhatsappNumber}
+                    placeholder="e.g. +234 801 234 5678"
+                    placeholderTextColor="#9ca3af"
+                    keyboardType="phone-pad"
+                    autoComplete="tel"
+                    className="flex-1 h-11 text-[14px] text-gray-900"
+                    style={{ fontFamily: "PlusJakartaSans_600SemiBold" }}
+                  />
+                </View>
+                <Text className="text-[11.5px] text-gray-500 mt-2 leading-[16px]">
+                  Spaces, dashes and the “+” are fine — we store just the
+                  digits. Use the same number you have WhatsApp installed on,
+                  so messages land in your actual chat thread.
+                </Text>
+                {!whatsappValid && whatsappNumber.trim().length > 0 && (
+                  <View className="mt-2 flex-row items-start gap-1.5">
+                    <Ionicons
+                      name="alert-circle"
+                      size={13}
+                      color="#dc2626"
+                      style={{ marginTop: 1 }}
+                    />
+                    <Text
+                      className="text-[11.5px] text-rose-600 flex-1"
+                      style={{ fontFamily: "PlusJakartaSans_600SemiBold" }}
+                    >
+                      That doesn’t look like a valid phone number — 10–15
+                      digits including country code.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* Fee-bearer — only relevant when Online is selected. Direct
+            mode sidesteps the platform fee entirely; WhatsApp mode
+            doesn't transact through Paystack at all. */}
         {mode === "online" && (
           <>
             <View className="flex-row items-center gap-2 mx-5 mt-7 mb-3">
@@ -469,18 +629,19 @@ export default function PaymentSetup() {
       >
         <Pressable
           onPress={handleSave}
-          disabled={!isDirty || submitting}
+          disabled={!isDirty || !whatsappValid || submitting}
           className={`h-12 rounded-2xl items-center justify-center flex-row gap-2 ${
-            !isDirty || submitting
+            !isDirty || !whatsappValid || submitting
               ? "bg-gray-200"
               : "bg-blue-600 active:bg-blue-700"
           }`}
           style={{
             shadowColor: "#2563eb",
             shadowOffset: { width: 0, height: 4 },
-            shadowOpacity: !isDirty || submitting ? 0 : 0.25,
+            shadowOpacity:
+              !isDirty || !whatsappValid || submitting ? 0 : 0.25,
             shadowRadius: 10,
-            elevation: !isDirty || submitting ? 0 : 4,
+            elevation: !isDirty || !whatsappValid || submitting ? 0 : 4,
           }}
         >
           {submitting ? (
@@ -496,11 +657,15 @@ export default function PaymentSetup() {
           ) : (
             <Text
               className={`text-[14.5px] ${
-                !isDirty ? "text-gray-500" : "text-white"
+                !isDirty || !whatsappValid ? "text-gray-500" : "text-white"
               }`}
               style={{ fontFamily: "PlusJakartaSans_700Bold" }}
             >
-              {isDirty ? "Save changes" : "Saved"}
+              {!whatsappValid
+                ? "Add your WhatsApp number"
+                : isDirty
+                  ? "Save changes"
+                  : "Saved"}
             </Text>
           )}
         </Pressable>

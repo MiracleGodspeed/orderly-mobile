@@ -221,7 +221,7 @@ export function TrialBanner({ onPress }: Props = {}) {
           to action for purchases not made through IAP. Android keeps
           the action-oriented "Upgrade" since the purchase happens
           in-app via Paystack. */}
-      <Pressable
+      {/* <Pressable
         onPress={handleCtaPress}
         hitSlop={6}
         className="self-center mr-3 ml-1 flex-row items-center gap-1 rounded-full px-3 h-8 active:opacity-80"
@@ -241,7 +241,7 @@ export function TrialBanner({ onPress }: Props = {}) {
           {IS_IOS ? "Manage" : "Upgrade"}
         </Text>
         <Ionicons name="arrow-forward" size={12} color={tone.ctaText} />
-      </Pressable>
+      </Pressable> */}
     </View>
   );
 }

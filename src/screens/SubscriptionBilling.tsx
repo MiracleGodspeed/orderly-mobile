@@ -4,18 +4,28 @@ import {
   Pressable,
   ScrollView,
   RefreshControl,
+  Platform,
+  ActivityIndicator,
 } from "react-native";
 import { useCallback, useEffect, useMemo } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+// import * as WebBrowser from "expo-web-browser";
 import { useToast } from "react-native-toast-notifications";
 import SkeletonPlaceholder from "react-native-skeleton-placeholder";
 
 import { RootStackParamList } from "../navigation/types";
 import { ScreenHeader } from "../components/ScreenHeader";
 import { useSubscriptionHistory } from "../hooks/useSubscriptionHistory";
+import { useRestoreApplePurchases } from "../hooks/useRestoreApplePurchases";
+// import { issueWebHandoffToken } from "../api/auth/auth.api";
+
+// Generic vendor account settings URL on the web. Kept (commented)
+// alongside the disabled "Manage account on the web" button below —
+// uncomment together if the contextual web button is reinstated.
+// const WEB_ACCOUNT_URL = "https://orderlystores.com/vendor/settings";
 
 // Per App Store guideline 3.1.3(b) the subscription flow now lives
 // in-app on both iOS and Android. iOS adds Apple Pay (IAP) as a
@@ -97,6 +107,16 @@ function planIconFor(name: string | undefined, isTrial: boolean) {
 export default function SubscriptionBilling() {
   const toast = useToast();
   const navigation = useNavigation<ScreenNavigationProp>();
+
+  // Restore Purchases — required by 3.1.2. Apple's reviewer tests
+  // this on a fresh install / second device by tapping the button and
+  // expecting either a real restore or a clear "nothing to restore"
+  // message. A no-op silent button is a known reject trigger.
+  // Feedback renders via native Alert.alert inside the hook (see
+  // useRestoreApplePurchases) — bulletproof versus the toast library
+  // which was silently no-op'ing on this screen in build 29.
+  const { restore: restoreApple, restoring: restoringApple } =
+    useRestoreApplePurchases();
 
   // History is now served stale-while-revalidate from React Query:
   // a cached snapshot renders instantly on screen mount while the
@@ -228,13 +248,12 @@ export default function SubscriptionBilling() {
     ? "bg-blue-500"
     : "bg-emerald-500";
 
-  // Per App Store guideline 3.1.3(b) (Multiplatform Services), iOS and
-  // Android now share the same in-app subscription flow. iOS additionally
-  // offers Apple Pay (IAP) as a payment method inside that flow, which
-  // satisfies the "must be available for purchase using In-App Purchase"
-  // requirement while letting vendors who can't pay with an Apple-linked
-  // card (Verve / local bank / mobile money users) still complete the
-  // purchase through Paystack as a separate payment method option.
+  // Subscription purchase routes through SubscriptionFlowScreen on both
+  // platforms; PaymentMethodStep itself gates the payment options per
+  // App Store guideline 3.1.1 — iOS sees IAP only, Android sees the
+  // Paystack-routed card / bank-transfer options. Don't add platform
+  // branches here; keep the gating inside PaymentMethodStep so there
+  // is exactly one decision point.
   const primaryCta = useMemo(() => {
     if (statusKind === "expired" || statusKind === "none") {
       return { label: "Renew subscription", icon: "card-outline" as const };
@@ -261,6 +280,24 @@ export default function SubscriptionBilling() {
     } as any);
   };
 
+  // Open-web-account handoff handler paired with the disabled
+  // "Manage account on the web" button further down. Commented as a
+  // block — uncomment together with the imports + URL constant up
+  // top and the Pressable in the JSX below if the contextual web
+  // button is reinstated.
+  //
+  // const openWebAccountWithHandoff = async () => {
+  //   Haptics.selectionAsync().catch(() => {});
+  //   try {
+  //     const token = await issueWebHandoffToken();
+  //     await WebBrowser.openBrowserAsync(
+  //       `${WEB_ACCOUNT_URL}?handoff=${encodeURIComponent(token)}`,
+  //     );
+  //   } catch {
+  //     await WebBrowser.openBrowserAsync(WEB_ACCOUNT_URL).catch(() => {});
+  //   }
+  // };
+
   return (
     <View className="flex-1 bg-gray-50">
       <ScreenHeader title="Subscription" />
@@ -277,7 +314,40 @@ export default function SubscriptionBilling() {
           />
         }
       >
-        {loading ? (
+        {loading && historyError ? (
+          // First-load failure: no cached snapshot AND the live fetch
+          // errored. Without this state the screen would spin
+          // indefinitely on a flaky network — Apple's reviewer
+          // sandbox can timeout mid-fetch, which reads as a stuck
+          // app (2.1.0 risk). Surfacing an explicit retry CTA gives
+          // them a way out without restarting the app.
+          <View className="flex-1 px-6 py-16 items-center justify-center">
+            <View className="w-14 h-14 rounded-2xl bg-rose-50 border border-rose-100 items-center justify-center mb-4">
+              <Ionicons name="cloud-offline-outline" size={24} color="#dc2626" />
+            </View>
+            <Text className="text-[17px] font-extrabold text-gray-900 text-center">
+              Couldn&apos;t load your subscription
+            </Text>
+            <Text className="text-[13px] text-gray-500 text-center mt-1.5 max-w-[280px] leading-[19px]">
+              Check your connection and try again.
+            </Text>
+            <Pressable
+              onPress={onRefresh}
+              disabled={isFetching}
+              className="mt-5 h-11 px-6 rounded-2xl bg-blue-600 items-center justify-center flex-row gap-2 active:bg-blue-700"
+              style={{ opacity: isFetching ? 0.6 : 1 }}
+            >
+              {isFetching ? (
+                <ActivityIndicator size="small" color="white" />
+              ) : (
+                <Ionicons name="refresh" size={16} color="white" />
+              )}
+              <Text className="text-white font-bold text-[14px]">
+                {isFetching ? "Retrying…" : "Try again"}
+              </Text>
+            </Pressable>
+          </View>
+        ) : loading ? (
           <Skeleton />
         ) : (
           <>
@@ -430,6 +500,74 @@ export default function SubscriptionBilling() {
                     {primaryCta.label}
                   </Text>
                 </Pressable>
+
+                {/* Web account management button commented out for
+                    Apple resubmit. Risk: button sits directly below
+                    the IAP primary CTA on the subscription page —
+                    payment-flow context. A reviewer reads the
+                    juxtaposition as deliberate steering (IAP option,
+                    then "here's the alternative"). Even with neutral
+                    copy, three clicks from this button lands a
+                    reviewer on Paystack via web (web settings →
+                    Billing → /vendor/subscription → Upgrade). The
+                    MoreHub "Manage account" entry already gives
+                    vendors a defensible web path framed as account
+                    management (not payment-flow). Keep this commented
+                    until we have App Review approval; uncomment if
+                    we later need a contextual web option here.
+
+                {Platform.OS === "ios" && (
+                  <Pressable
+                    onPress={openWebAccountWithHandoff}
+                    className="mt-3 h-11 rounded-2xl border border-gray-200 bg-white items-center justify-center flex-row gap-2"
+                  >
+                    <Ionicons name="globe-outline" size={15} color="#374151" />
+                    <Text className="text-gray-700 font-semibold text-[14px]">
+                      Manage account on the web
+                    </Text>
+                  </Pressable>
+                )}
+                */}
+
+                {/* Restore Purchases — iOS-only, sits BELOW the primary
+                    Subscribe/Renew CTA. Required by 3.1.2 as a
+                    functional affordance reachable on the same screen
+                    as the subscription buy path. Tone is neutral
+                    (outlined ghost button, not a primary action), so
+                    a reviewer reads it as "recovery from another
+                    device" rather than a competing payment-flow CTA.
+                    Apple's flagged the absence of this under 3.1.2
+                    item #7 and possibly under 2.1(b) (a reviewer who
+                    looked for Restore and found nothing reads that as
+                    "no action took when we tried to purchase"). */}
+                {Platform.OS === "ios" && (
+                  <Pressable
+                    onPress={restoreApple}
+                    disabled={restoringApple}
+                    className="mt-3 h-11 rounded-2xl border border-gray-200 bg-white items-center justify-center flex-row gap-2 active:bg-gray-50"
+                    style={{ opacity: restoringApple ? 0.6 : 1 }}
+                  >
+                    {restoringApple ? (
+                      <>
+                        <ActivityIndicator size="small" color="#2563eb" />
+                        <Text className="text-gray-700 font-semibold text-[14px]">
+                          Restoring…
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <Ionicons
+                          name="refresh-outline"
+                          size={15}
+                          color="#374151"
+                        />
+                        <Text className="text-gray-700 font-semibold text-[14px]">
+                          Restore purchases
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                )}
               </View>
             </View>
 

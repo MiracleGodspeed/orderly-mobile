@@ -14,6 +14,26 @@ interface JwtPayload {
   'http://schemas.microsoft.com/ws/2008/06/identity/claims/role'?: string;
 }
 
+// Mirror of the backend's UserRole enum (1=Admin, 2=Vendor, 3=Customer,
+// 4=Marketer, 5=Multi, 6=Staff). Used to normalise the numeric `role`
+// off the login response into the lowercase string the rest of this
+// hook compares against.
+const ROLE_NUMBER_TO_NAME: Record<number, string> = {
+  1: 'admin',
+  2: 'vendor',
+  3: 'customer',
+  4: 'marketer',
+  5: 'multi',
+  6: 'staff',
+};
+
+function normaliseRole(raw: number | string | null | undefined): string {
+  if (raw == null) return '';
+  if (typeof raw === 'number') return ROLE_NUMBER_TO_NAME[raw] ?? '';
+  if (typeof raw === 'string') return raw.toLowerCase();
+  return '';
+}
+
 interface StaffPermissionsApi {
   /** True when the active session belongs to a Staff role user. */
   isStaff: boolean;
@@ -33,28 +53,54 @@ interface StaffPermissionsApi {
 }
 
 /**
- * Reads the live JWT off the AuthContext, decodes it once per token
- * change, and exposes a tiny gate API for the UI. Hidden behind a hook
- * so screens stay decoupled from JWT parsing details.
+ * Reads the active session's role + permissions off AuthContext.
  *
- * Memoised on the raw token string — re-decoding is cheap but doing it
- * per render across dozens of screens is wasteful.
+ * Role resolution: PREFER `user.role` (set synchronously at login
+ * from the API response) over the JWT decode. Reason: the JWT decode
+ * path used to race against React's render flush — Login.tsx would
+ * navigate.replace("Home") immediately after `await login()`, and
+ * Home would mount + call this hook before the token context update
+ * propagated. The hook would then decode a null token, return
+ * `role=''`, and `has()` would return false for everything — which
+ * looked like a staff role to the UI (Owner-only cards / tabs
+ * disappeared). Logout-and-back-in fixed it because the second cycle
+ * gave the context time to settle. Reading `user.role` instead
+ * eliminates the race because user state is set in the same batch
+ * as the token.
+ *
+ * JWT decode is still used for the granular `STAFF_PERMISSIONS`
+ * claim (staff-only feature gates) because those don't live on the
+ * User object.
+ *
+ * Memoised on (token, user) — re-runs only when the session changes.
  */
 export function useStaffPermissions(): StaffPermissionsApi {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
 
   return useMemo<StaffPermissionsApi>(() => {
-    const payload = decodeJwt<JwtPayload>(token);
-    const rawRole =
-      payload?.role ??
-      payload?.['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ??
-      '';
-    const role = rawRole.toLowerCase();
+    // PRIMARY source of truth: the role on the User object, set
+    // synchronously by AuthContext.login at sign-in time. No async
+    // JWT decode, no render-flush race.
+    let role = normaliseRole(user?.role);
+
+    // Fallback to JWT decode for backwards compatibility with
+    // sessions restored from older builds that didn't persist
+    // `role` on User. Drop this branch once enough vendors have
+    // logged in fresh under the new build.
+    if (!role && token) {
+      const payload = decodeJwt<JwtPayload>(token);
+      const rawRole =
+        payload?.role ??
+        payload?.['http://schemas.microsoft.com/ws/2008/06/identity/claims/role'] ??
+        '';
+      role = rawRole.toLowerCase();
+    }
 
     const isStaff = role === 'staff';
     const isVendorOrAdmin = role === 'vendor' || role === 'admin';
 
     let permissions = new Set<StaffPermission>();
+    const payload = token ? decodeJwt<JwtPayload>(token) : null;
     const rawPerms = payload?.STAFF_PERMISSIONS;
     if (rawPerms && typeof rawPerms === 'string') {
       try {
@@ -74,5 +120,5 @@ export function useStaffPermissions(): StaffPermissionsApi {
     };
 
     return { isStaff, isVendorOrAdmin, role, permissions, has };
-  }, [token]);
+  }, [token, user]);
 }

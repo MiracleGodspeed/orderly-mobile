@@ -288,7 +288,7 @@ const styles = StyleSheet.create({
   },
   body: {
     flex: 1,
-    color: "#1e2128",
+    color: "#1e2128d2",
     fontSize: 12.4,
     lineHeight: 17,
     letterSpacing: -0.2,

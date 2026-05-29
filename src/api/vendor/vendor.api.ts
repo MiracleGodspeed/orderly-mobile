@@ -186,10 +186,98 @@ export const deleteCatalogCategory = async (
   return response.data;
 };
 
+/**
+ * Result of a successful generation — pairs the generated copy with
+ * the rate-limit headers so the caller can render the remaining-today
+ * counter alongside the description without a second round-trip.
+ */
+export interface GenerateProductDescriptionResult {
+  description: string;
+  /** Credits left on this UTC day AFTER this generation, or `null`
+   *  if the server didn't send the header (older backend version). */
+  remainingToday: number | null;
+  /** Plan's total daily allowance, echoed back for UI labels. */
+  dailyLimit: number | null;
+  /** UTC instant the quota resets (unix seconds in the header). */
+  resetAtUtc: Date | null;
+}
+
+/**
+ * Thrown when the backend rejects the generation with a 429 (rate
+ * limit exhausted for today) or 403 (plan doesn't include the
+ * feature). Carries the same rate-limit metadata as the success path
+ * so the UI can show "X used / Y total, resets at HH:MM" copy.
+ */
+export class AiDescriptionLimitError extends Error {
+  constructor(
+    message: string,
+    public readonly kind: "rate_limited" | "feature_locked",
+    public readonly remainingToday: number | null,
+    public readonly dailyLimit: number | null,
+    public readonly resetAtUtc: Date | null,
+  ) {
+    super(message);
+    this.name = "AiDescriptionLimitError";
+  }
+}
+
+function parseRateLimitHeaders(headers: Record<string, unknown> | undefined): {
+  remainingToday: number | null;
+  dailyLimit: number | null;
+  resetAtUtc: Date | null;
+} {
+  const headerVal = (key: string) => {
+    const raw = headers?.[key] ?? headers?.[key.toLowerCase()];
+    if (typeof raw === "string") return raw;
+    if (Array.isArray(raw) && typeof raw[0] === "string") return raw[0];
+    return null;
+  };
+  const remainingRaw = headerVal("x-ratelimit-remaining");
+  const limitRaw = headerVal("x-ratelimit-limit");
+  const resetRaw = headerVal("x-ratelimit-reset");
+  const remaining = remainingRaw != null ? Number(remainingRaw) : null;
+  const dailyLimit = limitRaw != null ? Number(limitRaw) : null;
+  const resetUnix = resetRaw != null ? Number(resetRaw) : null;
+  return {
+    remainingToday: Number.isFinite(remaining) ? (remaining as number) : null,
+    dailyLimit: Number.isFinite(dailyLimit) ? (dailyLimit as number) : null,
+    resetAtUtc: Number.isFinite(resetUnix)
+      ? new Date((resetUnix as number) * 1000)
+      : null,
+  };
+}
+
+/**
+ * Read-only credits snapshot for Orderly AI. Hit on AddProductModal
+ * open so vendors see "X left today" before they tap Generate.
+ * Returns null on any failure — UI falls back to "no chip" instead
+ * of crashing.
+ */
+export interface AiDescriptionCreditsSnapshot {
+  remainingToday: number;
+  dailyLimit: number;
+  resetAtUtc: string;
+  hasFeature: boolean;
+}
+
+export const getAiDescriptionCredits = async (): Promise<AiDescriptionCreditsSnapshot | null> => {
+  try {
+    const response = await apiClient.get<{
+      code: string;
+      message: string;
+      data: AiDescriptionCreditsSnapshot | null;
+    }>("/catalog/ai/credits", { validateStatus: () => true });
+    if (response.data?.code !== "200" || !response.data?.data) return null;
+    return response.data.data;
+  } catch {
+    return null;
+  }
+};
+
 export const generateProductDescription = async (
   productName: string,
   category?: string
-): Promise<string> => {
+): Promise<GenerateProductDescriptionResult> => {
   const response = await apiClient.post<{
     code: string;
     message: string;
@@ -203,12 +291,43 @@ export const generateProductDescription = async (
     { validateStatus: () => true }
   );
 
+  const meta = parseRateLimitHeaders(response.headers as Record<string, unknown>);
+
+  // Backend returns 403 when the active plan doesn't include the AI
+  // feature, and 429 when today's quota is exhausted. Both come back
+  // through the same standard-response envelope; we use the HTTP
+  // status to choose the error kind so the UI can render the right
+  // paywall vs "try again tomorrow" copy.
+  if (response.status === 403) {
+    throw new AiDescriptionLimitError(
+      response.data?.message || "Orderly AI isn't included on your current plan.",
+      "feature_locked",
+      meta.remainingToday,
+      meta.dailyLimit,
+      meta.resetAtUtc,
+    );
+  }
+  if (response.status === 429) {
+    throw new AiDescriptionLimitError(
+      response.data?.message || "You've used today's Orderly AI generations.",
+      "rate_limited",
+      meta.remainingToday,
+      meta.dailyLimit,
+      meta.resetAtUtc,
+    );
+  }
+
   if (response.data.code !== "200" || !response.data.data) {
     throw new Error(
       response.data.message || "Couldn't generate a description right now"
     );
   }
-  return response.data.data;
+  return {
+    description: response.data.data,
+    remainingToday: meta.remainingToday,
+    dailyLimit: meta.dailyLimit,
+    resetAtUtc: meta.resetAtUtc,
+  };
 };
 
 /**
@@ -239,13 +358,17 @@ export const applyGlobalDiscount = async (
  *   - `vendor`   — fee deducted from settlement
  *   - `included` — already baked into the listed price
  *
- * One value flips the entire payment mode:
+ * Two values flip the entire payment mode:
  *   - `direct`   — customer transfers straight to the vendor's bank
  *                  account; backend sets `transferDirectlyToVendor=true`
  *                  and disables Paystack auto-collection.
+ *   - `whatsapp` — storefront hands the customer off to the vendor's
+ *                  WhatsApp with a pre-typed invoice; backend sets
+ *                  `whatsappCheckoutEnabled=true` and clears the
+ *                  other two modes.
  */
 export const setTransactionChargeBearer = async (
-  bearer: "vendor" | "customer" | "included" | "direct"
+  bearer: "vendor" | "customer" | "included" | "direct" | "whatsapp"
 ): Promise<{ message: string; code: string }> => {
   const response = await apiClient.post<{ message: string; code: string }>(
     `/storefront/set-transaction-charge-bearer?chargeBearer=${encodeURIComponent(
@@ -256,6 +379,32 @@ export const setTransactionChargeBearer = async (
   );
   if (response.data.code !== "200") {
     throw new Error(response.data.message || "Failed to update fee setting");
+  }
+  return response.data;
+};
+
+/**
+ * Persist the vendor's WhatsApp checkout number. Separate from the
+ * fee-bearer endpoint so the number can be edited without flipping
+ * the mode (and so the UI can save the number BEFORE flipping the
+ * mode, avoiding a brief window where WhatsApp mode is on but no
+ * number is on file).
+ *
+ * The .NET service strips non-digits and enforces a 10-15 digit
+ * length. Pass `null` to clear.
+ */
+export const setWhatsappCheckoutNumber = async (
+  number: string | null
+): Promise<{ message: string; code: string }> => {
+  const response = await apiClient.put<{ message: string; code: string }>(
+    `/storefront/whatsapp-checkout-number`,
+    { number },
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(
+      response.data.message || "Failed to update WhatsApp number"
+    );
   }
   return response.data;
 };
@@ -684,7 +833,7 @@ export const verifyAppleReceipt = async (payload: {
 
   if (response.data?.code !== "200") {
     throw new Error(
-      response.data?.message ?? "Couldn't verify your Apple Pay purchase."
+      response.data?.message ?? "Couldn't verify your subscription purchase."
     );
   }
 
@@ -909,6 +1058,13 @@ export interface MyFeaturesData {
    *  a positive integer is the seat cap. Trial vendors get a
    *  sentinel-large value so the row unlocks during trial. */
   staffLimit: number | null;
+  /** Daily quota for Orderly AI product-description generations.
+   *  Same wire convention as `staffLimit`: 0 or null = locked,
+   *  positive integer = daily cap, `Number.MAX_SAFE_INTEGER`-ish
+   *  sentinel from trials = unlimited. The remaining-for-today count
+   *  is NOT here — it's surfaced separately on each generation
+   *  attempt via the `X-RateLimit-Remaining` response header. */
+  aiDescriptionCreditsPerDay: number | null;
 }
 
 export const getMyFeatures = async (): Promise<MyFeaturesData> => {

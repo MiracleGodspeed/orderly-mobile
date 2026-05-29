@@ -23,6 +23,8 @@ import {
   statusCodes,
 } from "@react-native-google-signin/google-signin";
 import * as AppleAuthentication from "expo-apple-authentication";
+import * as WebBrowser from "expo-web-browser";
+import { TRIAL_DURATION_DAYS } from "../lib/trialConfig";
 
 import { RootStackParamList } from "../navigation/types";
 import { SignupRequest, Country } from "../api/auth/auth.types";
@@ -310,7 +312,9 @@ export default function EmailSignUp() {
               </Text>
               <Text className="text-gray-500 text-[15px] mt-2 leading-[22px]">
                 Start your{" "}
-                <Text className="text-gray-900 font-bold">14-day free trial</Text>
+                <Text className="text-gray-900 font-bold">
+                  {TRIAL_DURATION_DAYS}-day free trial
+                </Text>
                 . No card needed.
               </Text>
             </View>
@@ -661,11 +665,33 @@ export default function EmailSignUp() {
               </Text>
             </View>
 
-            {/* Terms */}
+            {/* Terms & Privacy — required by guideline 3.1.2(c) to be
+                tappable functional links on the sign-up screen. Each
+                opens in an in-app SFSafariViewController via expo-web-
+                browser (no app-switch); errors are swallowed silently
+                because the absence of a follow-up screen tells the
+                user the link couldn't open. */}
             <Text className="text-[11.5px] text-center text-gray-500 mt-5 px-3 leading-[16px]">
               By creating an account, you agree to Orderly's{" "}
-              <Text className="text-blue-600 font-semibold">Terms</Text> and{" "}
-              <Text className="text-blue-600 font-semibold">
+              <Text
+                className="text-blue-600 font-semibold underline"
+                onPress={() => {
+                  WebBrowser.openBrowserAsync(
+                    "https://orderlystores.com/terms",
+                  ).catch(() => {});
+                }}
+              >
+                Terms
+              </Text>{" "}
+              and{" "}
+              <Text
+                className="text-blue-600 font-semibold underline"
+                onPress={() => {
+                  WebBrowser.openBrowserAsync(
+                    "https://orderlystores.com/privacy",
+                  ).catch(() => {});
+                }}
+              >
                 Privacy Policy
               </Text>
               .

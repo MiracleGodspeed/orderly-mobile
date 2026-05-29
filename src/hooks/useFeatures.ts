@@ -94,6 +94,13 @@ export function useFeatures() {
     // cap (server-enforced). Surface raw so callers decide how to
     // present (e.g. lock the menu row, show seats remaining, etc.).
     staffLimit: effective?.staffLimit ?? null,
+    // Daily quota for Orderly AI product-description generations.
+    // Same wire convention as `staffLimit`: 0/null = locked, positive
+    // int = daily cap, sentinel-large value for trial = unlimited.
+    // The remaining-for-today count is NOT here — it's surfaced per-
+    // generation via the response headers parsed in
+    // `generateProductDescription`.
+    aiDescriptionCreditsPerDay: effective?.aiDescriptionCreditsPerDay ?? null,
     // `isLoading` only stays true until either the cache hydrates or the
     // network responds — gives screens a way to suppress paywall sheets
     // during the first render so they don't open against a stale state.

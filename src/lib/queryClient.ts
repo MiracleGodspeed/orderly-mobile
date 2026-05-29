@@ -10,6 +10,11 @@ export const queryKeys = {
     categoryId?: number;
     lowStockThreshold?: number;
   }) => ["products", params] as const,
+  // Subscription plan catalogue (all available plans, no params). Pre-
+  // warmed in AuthContext's post-login useEffect so Choose-Your-Plan
+  // and the payment flow open instantly with no spinner. Plans
+  // rarely change, so the default 60s stale window is plenty.
+  plans: () => ["subscription-plans"] as const,
 };
 
 export const queryClient = new QueryClient({

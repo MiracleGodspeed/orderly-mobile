@@ -15,6 +15,7 @@ import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { useVendor } from "../../context/VendorContext";
 import { RootStackParamList } from "../navigation/types";
+import { TRIAL_DURATION_DAYS } from "../lib/trialConfig";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
 
@@ -32,26 +33,33 @@ const haptic = () => {
   }
 };
 
+// Copy is intentionally generic — naming specific features
+// (variants, custom domain, analytics, etc.) makes vendors anchor
+// on those as "everything you get", which understates the product.
+// Each bullet now covers a category of value (no caps / full
+// toolset / customisation / insight) rather than naming a single
+// feature, so the modal reads as "all of it, unlocked" without
+// locking the vendor's mental model into four items.
 const PERKS: { icon: React.ComponentProps<typeof Ionicons>["name"]; title: string; body: string }[] = [
   {
     icon: "infinite",
-    title: "Unlimited products",
-    body: "No catalog cap during your trial — list as many items as you like.",
+    title: "No limits",
+    body: "Explore every part of Orderly without caps or paywalls.",
   },
   {
     icon: "layers",
-    title: "Variants & categories",
-    body: "Sizes, colors, and per-variant pricing are all switched on.",
+    title: "Everything unlocked",
+    body: "Premium tools, integrations, and customisations are all switched on.",
   },
   {
     icon: "globe",
-    title: "Custom domain & branding",
-    body: "Try the premium storefront extras that paid plans gate.",
+    title: "Make it yours",
+    body: "Branding, domain, layout — set your store up the way you want.",
   },
   {
     icon: "stats-chart",
-    title: "Full analytics & insights",
-    body: "Visit tracking, revenue trends, and customer reports — yours to use.",
+    title: "Track what matters",
+    body: "Insights into your store, customers, and revenue from day one.",
   },
 ];
 
@@ -204,9 +212,9 @@ export const TrialWelcomeModal = forwardRef<TrialWelcomeModalHandle>(
               Everything's unlocked while you explore.
             </Text>
             <Text className="text-blue-100/90 text-[13.5px] mt-2 leading-[19px]">
-              You're on a 14-day trial with full access to every feature.
-              When it ends, you'll pick a plan — some perks here may not be on
-              the lower plans, so try them all now.
+              You&apos;re on a {TRIAL_DURATION_DAYS}-day trial with full access
+              to every feature. When it ends, you&apos;ll pick a plan — some
+              perks here may not be on the lower plans, so try them all now.
             </Text>
           </View>
 
@@ -238,7 +246,7 @@ export const TrialWelcomeModal = forwardRef<TrialWelcomeModalHandle>(
 
           {/* CTAs */}
           <View className="px-5 pt-4 pb-5 bg-white">
-            <Pressable
+            {/* <Pressable
               onPress={seePlans}
               className="h-12 rounded-2xl bg-blue-600 items-center justify-center flex-row gap-2 active:bg-blue-700"
               style={{
@@ -251,15 +259,12 @@ export const TrialWelcomeModal = forwardRef<TrialWelcomeModalHandle>(
             >
               <Ionicons name="rocket" size={15} color="white" />
               <Text className="text-white font-extrabold text-[14.5px]">
-                {/* "See plans & pricing" on Android; iOS uses neutral
-                    "Manage subscription" because Apple 3.1.3 treats
-                    pricing CTAs for non-IAP purchases as in-app
-                    purchase nudges. */}
+                
                 {Platform.OS === "ios"
                   ? "Manage subscription"
                   : "See plans & pricing"}
               </Text>
-            </Pressable>
+            </Pressable> */}
 
             <Pressable
               onPress={dismiss}

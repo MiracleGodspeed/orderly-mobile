@@ -17,11 +17,15 @@ import {
   getPaidOrders,
   getProducts,
   getStorePerformanceReport,
+  getAvailablePlans,
 } from "../src/api/vendor/vendor.api";
 import { queryKeys } from "../src/lib/queryClient";
 import { ORDERS_PAGE_SIZE } from "../src/hooks/useOrders";
 import { PRODUCTS_PAGE_SIZE } from "../src/hooks/useProducts";
 import { STORE_PERFORMANCE_KEY } from "../src/hooks/useStorePerformance";
+import { Platform } from "react-native";
+import { fetchAppleSubscriptions } from "../src/lib/appleIap";
+import { collectAppleSkusFromPlans } from "../src/lib/appleIapConfig";
 import {
   saveAuthToStorage,
   clearAuthFromStorage,
@@ -37,6 +41,13 @@ interface User {
   name?: string;
   storeId: string;
   userStatus?: number;
+  /** Wire role from the login response — either an integer
+   *  (1=Admin, 2=Vendor, 6=Staff) or the enum name string
+   *  ("Vendor", "Staff", etc.) depending on backend version.
+   *  Persisted on User so `useStaffPermissions` can read it
+   *  synchronously from context, avoiding the JWT-decode timing
+   *  race that hides Owner UI until the user logs out & back in. */
+  role?: number | string;
 }
 
 interface AuthContextType {
@@ -137,6 +148,46 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         ],
         queryFn: () => getStorePerformanceReport(30),
       });
+
+      // Subscription pre-warm. Two-stage:
+      //
+      //   1. Pull the plans catalogue into the React-Query cache
+      //      under the same key `usePlans()` reads from, so the
+      //      Choose-Your-Plan screen renders synchronously when
+      //      the vendor eventually opens it — no spinner gap.
+      //
+      //   2. AFTER plans land, on iOS only, fire a StoreKit
+      //      `fetchAppleSubscriptions(allSkus)` to pre-warm Apple's
+      //      product list. expo-iap caches that internally, so the
+      //      pre-flight on PaymentMethodStep ("Checking with the
+      //      App Store…") resolves from cache instead of round-
+      //      tripping to Apple on every screen open. Wrapped in
+      //      catch — failures here are non-fatal; the payment-step
+      //      pre-flight has its own retry path with an inline error
+      //      banner if Apple is genuinely unreachable.
+      //
+      // We use `fetchQuery` (not `prefetchQuery`) for stage 1 so we
+      // can await the plans before chaining stage 2. Wrapped in an
+      // IIFE so the useEffect itself stays sync.
+      (async () => {
+        try {
+          const plans = await queryClient.fetchQuery({
+            queryKey: queryKeys.plans(),
+            queryFn: getAvailablePlans,
+          });
+          if (Platform.OS === "ios") {
+            const skus = collectAppleSkusFromPlans(plans);
+            if (skus.length > 0) {
+              fetchAppleSubscriptions(skus).catch(() => {});
+            }
+          }
+        } catch {
+          // Plans prefetch failed (network blip on cold-start);
+          // RenewSubscriptionStep will refetch on its own when the
+          // vendor opens it. Non-fatal — don't disturb the rest of
+          // the login flow.
+        }
+      })();
     }
   }, [token, queryClient]);
 
@@ -155,17 +206,44 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       name: data.fullName ?? undefined,
       storeId: data.storeId,
       userStatus: data.userStatus,
+      // Role is persisted on User so useStaffPermissions reads it
+      // synchronously from context (no JWT-decode race). Wire it
+      // through from the login response so it's set in the same
+      // tick as the token + user id.
+      role: data.role,
     };
 
-    setToken(data.token);
-    setUser(user);
-
+    // Order matters here — fixes two distinct bugs:
+    //
+    //   1. **Storage first.** The token + refresh token must be in
+    //      AsyncStorage BEFORE the React-state token change triggers
+    //      the [token]-dep useEffect that fires the cache-warm
+    //      prefetch queries. Without this order, a prefetch could
+    //      race ahead, 401 (axios still on the old/null token), hit
+    //      `performRefresh` which finds no refresh token in storage,
+    //      return null, and call `forceSignOut` → `reset('Splash')`
+    //      — that's the "splash flash after login" the user reported.
+    //
+    //   2. **Axios sync update.** Calling `setAuthToken` here makes
+    //      the axios interceptor pick up the new token immediately,
+    //      not after React commits the render. Eliminates the window
+    //      where Login.tsx's `await fetchVendorData()` could fire
+    //      with the previous token.
+    //
+    //   3. **React state last.** The `setToken`/`setUser` calls
+    //      then propagate through context to Home / BottomNav, which
+    //      decide owner-vs-staff UI off `user.role`. By this point
+    //      everything else is in place, so the first paint of Home
+    //      already shows the correct surfaces.
     await saveAuthToStorage(
       data.token,
       user,
       data.refreshToken,
       data.refreshTokenExpiresAt
     );
+    setAuthToken(data.token);
+    setToken(data.token);
+    setUser(user);
 
     return data;
   } catch (err) {
@@ -175,28 +253,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 };
 
  const googleLogin = async (idToken: any): Promise<LoginResponse> => {
-  //  console.log(idToken, "idToken")
-
   try {
     const data = await googleLoginApi(idToken);
-    // console.log(data, "internalAuth")
     const user: User = {
       id: data.userId,
       email: data.email,
       name: data.fullName ?? undefined,
       storeId: data.storeId,
-      userStatus: data.userStatus
+      userStatus: data.userStatus,
+      role: data.role,
     };
 
-    setToken(data.token);
-    setUser(user);
-
+    // Storage-first → axios sync → React state. Same ordering as
+    // `login()` above; see the comment there for why.
     await saveAuthToStorage(
       data.token,
       user,
       data.refreshToken,
       data.refreshTokenExpiresAt
     );
+    setAuthToken(data.token);
+    setToken(data.token);
+    setUser(user);
 
     return data;
   } catch (err) {
@@ -216,17 +294,20 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       name: data.fullName ?? undefined,
       storeId: data.storeId,
       userStatus: data.userStatus,
+      role: data.role,
     };
 
-    setToken(data.token);
-    setUser(user);
-
+    // Storage-first → axios sync → React state. Same ordering as
+    // `login()` above; see the comment there for why.
     await saveAuthToStorage(
       data.token,
       user,
       data.refreshToken,
       data.refreshTokenExpiresAt
     );
+    setAuthToken(data.token);
+    setToken(data.token);
+    setUser(user);
 
     return data;
   } catch (err) {
@@ -263,9 +344,13 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   refreshToken?: string | null,
   refreshTokenExpiresAt?: string | null
 ) => {
+  // Same storage-first → axios sync → React state ordering as the
+  // login methods. Used by post-OTP / signup paths that hand back
+  // an auth payload outside the standard login() flow.
+  await saveAuthToStorage(newToken, newUser, refreshToken, refreshTokenExpiresAt);
+  setAuthToken(newToken);
   setToken(newToken);
   setUser(newUser);
-  await saveAuthToStorage(newToken, newUser, refreshToken, refreshTokenExpiresAt);
 };
 
  if (isLoading) return null;

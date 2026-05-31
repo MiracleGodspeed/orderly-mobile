@@ -21,6 +21,18 @@ interface Props {
   initialData?: HeroItem[];
 }
 
+/**
+ * Hard cap on hero slides a vendor can publish. Kept in sync with the
+ * web admin editor (MAX_HERO_SLIDES in StorefrontEditorDrawer.tsx) so
+ * vendors hit the same limit on either surface.
+ *
+ * Reasoning for 3: storefront templates render hero slides as an
+ * auto-advancing carousel — beyond ~3 slides the first one drops out
+ * of view before most visitors notice it, and load weight (each slide
+ * is a full-bleed image) starts costing storefront LCP.
+ */
+const MAX_HERO_SLIDES = 3;
+
 const blankSlide = (): HeroItem => ({
   title: "",
   subTitle: "",
@@ -97,6 +109,17 @@ export default function HeroSectionModal({
   };
 
   const addSlide = () => {
+    // Defensive guard: even though the Add button is hidden once the
+    // cap is reached, keep the limit enforced here too. Stops any
+    // accidental double-fire / fast-tap path from pushing a fourth.
+    if (slides.length >= MAX_HERO_SLIDES) {
+      if (Platform.OS === "ios") {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(
+          () => {},
+        );
+      }
+      return;
+    }
     if (Platform.OS === "ios") {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
@@ -255,15 +278,29 @@ export default function HeroSectionModal({
           </View>
         ))}
 
-        <Pressable
-          onPress={addSlide}
-          className="mt-5 h-14 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 flex-row items-center justify-center gap-2"
-        >
-          <Ionicons name="add-circle-outline" size={18} color="#2563eb" />
-          <Text className="text-[14px] font-bold text-blue-700">
-            Add another slide
-          </Text>
-        </Pressable>
+        {slides.length < MAX_HERO_SLIDES ? (
+          <Pressable
+            onPress={addSlide}
+            className="mt-5 h-14 rounded-2xl border-2 border-dashed border-blue-200 bg-blue-50/40 flex-row items-center justify-center gap-2"
+          >
+            <Ionicons name="add-circle-outline" size={18} color="#2563eb" />
+            <Text className="text-[14px] font-bold text-blue-700">
+              Add another slide
+            </Text>
+            <Text className="text-[12px] font-semibold text-blue-700/60">
+              {slides.length}/{MAX_HERO_SLIDES}
+            </Text>
+          </Pressable>
+        ) : (
+          <View className="mt-5 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3 items-center">
+            <Text className="text-[13px] font-bold text-gray-700">
+              Maximum {MAX_HERO_SLIDES} slides reached
+            </Text>
+            <Text className="mt-1 text-[11px] text-gray-500 text-center">
+              Remove a slide above to add a different one.
+            </Text>
+          </View>
+        )}
       </KeyboardScreen>
 
       <BottomSheetFooter

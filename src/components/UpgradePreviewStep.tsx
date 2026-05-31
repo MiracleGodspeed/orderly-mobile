@@ -13,6 +13,7 @@ import * as Haptics from "expo-haptics";
 
 import { getUpgradeQuote } from "../api/vendor/vendor.api";
 import type { SubscriptionUpgradeQuote } from "../api/vendor/vendor.types";
+import SubscriptionLegalDisclosure from "./SubscriptionLegalDisclosure";
 
 type BillingCycle = "Monthly" | "Quarterly" | "Yearly";
 
@@ -400,6 +401,9 @@ export default function UpgradePreviewStep({
               elevation: 6,
             }}
           >
+            {/* Apple 3.1.2(c) subscription disclosure — required to
+                render alongside the CTA that commits the user. */}
+            <SubscriptionLegalDisclosure />
             <Pressable
               onPress={handleContinue}
               className="h-12 rounded-2xl bg-blue-600 items-center justify-center flex-row gap-2"

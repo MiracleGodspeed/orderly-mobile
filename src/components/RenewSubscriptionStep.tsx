@@ -11,6 +11,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { ApiSubscriptionPlan } from "../api/vendor/vendor.types";
 import { usePlans } from "../hooks/usePlans";
+import SubscriptionLegalDisclosure from "./SubscriptionLegalDisclosure";
 
 type BillingCycle = "Monthly" | "Quarterly" | "Yearly";
 
@@ -405,6 +406,11 @@ export default function RenewSubscriptionStep({
           elevation: 6,
         }}
       >
+        {/* Apple 3.1.2(c) subscription disclosure — required to render
+            alongside the CTA that commits the user to an auto-renewing
+            purchase. Kept here in the sticky footer so it appears on
+            every variant of this screen regardless of plan selection. */}
+        <SubscriptionLegalDisclosure />
         <Pressable
           onPress={handleContinue}
           disabled={

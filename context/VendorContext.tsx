@@ -16,10 +16,20 @@ interface VendorContextType {
   setServiceType: (isService: boolean) => void;
   toggleCategory: (categoryId: number) => void;
   resetVendorData: () => void;
-  fetchVendorData: () => Promise<void>;
+  fetchVendorData: () => Promise<StoreData | null>;
   updateVendorSettings: (updates: Partial<StoreData>) => Promise<void>;
   checklistItems: ChecklistItem[];
   loading: boolean;
+  /** True for a short window right after a vendor completes onboarding,
+   *  while the free-trial subscription is still being provisioned
+   *  server-side. During this window `get-storefront-details` briefly
+   *  returns an unprovisioned subscription (isTrial:false / 0 days) that
+   *  is indistinguishable from a genuinely-expired one — so consumers
+   *  (the status banner) suppress the "expired" state until it settles. */
+  justOnboarded: boolean;
+  /** Call right after onboarding completes. Flips `justOnboarded` on and
+   *  kicks off a background poll that refetches until the trial appears. */
+  markOnboarded: () => void;
 }
 
 export interface ChecklistItem {
@@ -179,6 +189,14 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
   const [storeData, setStoreData] = useState<StoreData | null>(null);
   const [checklistItems, setChecklistItems] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [justOnboarded, setJustOnboarded] = useState(false);
+
+  // Read auth up-front: every server fetch in this provider hits an
+  // *authenticated* storefront endpoint, so it must never fire while
+  // logged out. A pre-login fetch 401s, and the axios interceptor
+  // turns that 401 into a forced sign-out → `reset('Splash')`, which
+  // is what bounced vendors back to the splash mid-onboarding / mid-OTP.
+  const { token } = useAuth();
 
   const processResponseData = (data: any): StoreData => {
     const processed = { ...data };
@@ -195,7 +213,7 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
   // Stable reference (empty deps): callers like Home's useFocusEffect can
   // depend on this safely without re-firing on every VendorProvider render.
   // It only reads stable setters and stable imports — no state from closure.
-  const fetchVendorData = useCallback(async () => {
+  const fetchVendorData = useCallback(async (): Promise<StoreData | null> => {
     setLoading(true);
     try {
       const response = await getStorefrontDetails();
@@ -246,13 +264,66 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
             }
           ]);
         }
+
+        // Return the freshly-fetched store so callers (e.g. the
+        // post-onboarding poll in SetupStep3) can inspect the
+        // subscription without waiting on the async `setStoreData`
+        // state commit.
+        return processedData;
       }
+      return null;
     } catch (error) {
       console.error("Error fetching vendor data:", error);
+      return null;
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Flag the post-onboarding settle window. SetupStep3 calls this the moment
+  // onboarding completes; the effect below then polls until the trial shows.
+  const markOnboarded = useCallback(() => {
+    setJustOnboarded(true);
+  }, []);
+
+  // Background settle poll. The free trial is provisioned a few seconds AFTER
+  // onboarding finishes server-side — until it lands, `get-storefront-details`
+  // returns a subscription that looks expired (isTrial:false / 0 days), which
+  // the Home banner would render as "Subscription expired" for a vendor who
+  // just signed up. Rather than block the setup modal racing that latency
+  // (the trial can take longer than any reasonable spinner), we navigate
+  // immediately and quietly refetch here every few seconds until the trial
+  // appears — then clear the flag so the normal banner logic resumes. Capped
+  // so it can never poll forever; if the trial genuinely never lands, the
+  // real (expired) banner shows after the window, which is the correct signal.
+  useEffect(() => {
+    if (!justOnboarded || !token) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 15; // ~45s at 3s spacing
+    const INTERVAL_MS = 3000;
+
+    const tick = async () => {
+      if (cancelled) return;
+      attempts += 1;
+      const data = await fetchVendorData();
+      if (cancelled) return;
+      const sub = data?.storeSubscription;
+      const settled = !!sub?.isTrial || (Number(sub?.daysRemaining) || 0) > 0;
+      if (settled || attempts >= MAX_ATTEMPTS) {
+        setJustOnboarded(false);
+        return;
+      }
+      timer = setTimeout(tick, INTERVAL_MS);
+    };
+
+    timer = setTimeout(tick, INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [justOnboarded, token, fetchVendorData]);
 
   const updateVendorSettings = async (updates: Partial<StoreData>) => {
     if (!storeData) return;
@@ -282,7 +353,14 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Hydrate from cache + server, but ONLY once authenticated. Keyed on
+  // `token` so it runs the moment a vendor logs in (token appears) and
+  // never while logged out — a logged-out `fetchVendorData()` 401s and
+  // forces a sign-out → `reset('Splash')`. The cache read is also gated:
+  // pre-login there's nothing valid to show, and a stale snapshot from a
+  // previous session is cleared on logout anyway.
   useEffect(() => {
+    if (!token) return;
     const loadCachedData = async () => {
       try {
         const cached = await AsyncStorage.getItem(STORE_DATA_CACHE);
@@ -299,7 +377,7 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
       fetchVendorData();
     };
     loadCachedData();
-  }, []);
+  }, [token, fetchVendorData]);
 
   // Refetch whenever the app returns to the foreground. The subscription
   // banner (and any other view that reads off `storeData`) reflects
@@ -310,12 +388,20 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
   // navigation transitions; this covers the "left the app, came back"
   // case it can't see.
   const appStateRef = useRef(AppState.currentState);
+  // Latest token in a ref so the AppState listener (registered once) always
+  // sees the current auth state without re-subscribing on every token change.
+  const tokenRef = useRef<string | null>(token);
+  tokenRef.current = token;
   useEffect(() => {
     const sub = AppState.addEventListener("change", (next) => {
       const wasBackground =
         appStateRef.current === "background" ||
         appStateRef.current === "inactive";
-      if (wasBackground && next === "active") {
+      // Only refetch when authenticated. Pre-login, returning to the
+      // foreground (e.g. the vendor flipped to their email app to grab
+      // the OTP) used to fire an authed fetch that 401'd → forced
+      // sign-out → `reset('Splash')`, throwing them back to square one.
+      if (wasBackground && next === "active" && tokenRef.current) {
         fetchVendorData().catch(() => {});
       }
       appStateRef.current = next;
@@ -325,7 +411,6 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
 
   // Wipe in-memory vendor state the moment the auth token clears, so a fresh
   // login on the same device never sees the previous user's store details.
-  const { token } = useAuth();
   const prevTokenRef = useRef<string | null>(token);
   useEffect(() => {
     if (prevTokenRef.current && !token) {
@@ -335,6 +420,7 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
       setSelectedCategories([]);
       setStoreData(null);
       setChecklistItems([]);
+      setJustOnboarded(false);
     }
     prevTokenRef.current = token;
   }, [token]);
@@ -380,7 +466,9 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
         fetchVendorData,
         updateVendorSettings,
         checklistItems,
-        loading
+        loading,
+        justOnboarded,
+        markOnboarded,
       }}
     >
       {children}

@@ -80,19 +80,56 @@ export const IsLoggedIn = async () : Promise<boolean> => {
   return false;
 };
 
+// Every prefix here namespaces *user-scoped* data — anything that belongs
+// to the vendor who's currently signed in and must NOT survive into a
+// different account on the same device. Logout sweeps every key matching
+// one of these, so adding a new per-user cache never reopens the "ghost
+// data from the previous account" bug as long as it uses one of these
+// prefixes (or you add its prefix here).
+//
+//   auth_                  → token / user / refresh-token set (auth.storage)
+//   store_data_cache       → storefront snapshot (VendorContext)
+//   store_setup_steps      → onboarding checklist progress (legacy)
+//   vendor_                → vendor_auto_renew + any vendor-scoped flag
+//   orderly:               → feature-gate + subscription-history caches
+//   orderly.pushToken      → device push token mapped to this user
+//   product_drafts         → in-progress product drafts (productDrafts)
+//   trial_welcome_seen_    → per-store "seen the trial modal" flag
+//
+// NOTE: this is intentionally broad. There is currently no device-level
+// preference that must persist across logout; if one is ever added, give
+// it a prefix OUTSIDE this list.
+const USER_SCOPED_KEY_PREFIXES = [
+  "auth_",
+  "store_data_cache",
+  "store_setup_steps",
+  "vendor_",
+  "orderly:",
+  "orderly.",
+  "product_drafts",
+  "trial_welcome_seen_",
+];
+
 export const clearAuthFromStorage = async () => {
-  await AsyncStorage.multiRemove([
-    AUTH_TOKEN_KEY,
-    AUTH_USER_KEY,
-    REFRESH_TOKEN_KEY,
-    REFRESH_TOKEN_EXP_KEY,
-    "store_data_cache",
-    "store_setup_steps",
-    "vendor_auto_renew",
-    // Persisted feature gate snapshot (see useFeatures). Drops out so a
-    // different vendor signing in on the same device doesn't see the
-    // previous user's plan permissions on first paint.
-    "orderly:features-cache:v1",
-  ]);
+  try {
+    const allKeys = await AsyncStorage.getAllKeys();
+    const toRemove = allKeys.filter((k) =>
+      USER_SCOPED_KEY_PREFIXES.some((prefix) => k.startsWith(prefix))
+    );
+    if (toRemove.length > 0) {
+      await AsyncStorage.multiRemove(toRemove);
+    }
+  } catch (e) {
+    // Never let a storage hiccup block the sign-out. Fall back to wiping
+    // the load-bearing auth keys explicitly so the session is gone even
+    // if the sweep above failed.
+    console.error("clearAuthFromStorage sweep failed", e);
+    await AsyncStorage.multiRemove([
+      AUTH_TOKEN_KEY,
+      AUTH_USER_KEY,
+      REFRESH_TOKEN_KEY,
+      REFRESH_TOKEN_EXP_KEY,
+    ]).catch(() => {});
+  }
   reset('Splash');
 };

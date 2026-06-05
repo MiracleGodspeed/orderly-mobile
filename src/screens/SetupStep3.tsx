@@ -49,6 +49,7 @@ export default function SetupStep3() {
     description,
     isServiceBased,
     fetchVendorData,
+    markOnboarded,
   } = useVendor();
 
   const [categories, setCategories] = useState<Category[]>([]);
@@ -120,6 +121,17 @@ export default function SetupStep3() {
       // Pull the freshly-onboarded store from the server so Home renders the
       // real store name, slug, etc. instead of the empty pre-onboarding state.
       await fetchVendorData();
+
+      // The free-trial subscription is provisioned a few seconds AFTER
+      // onboarding completes server-side — until it lands, the storefront
+      // record shows a subscription that looks expired (isTrial:false / 0
+      // days), which Home's banner would render as "Subscription expired"
+      // for a vendor who literally just signed up. Rather than block this
+      // modal racing that latency (it can take longer than any reasonable
+      // spinner), flag the settle window: the banner suppresses the false
+      // "expired" state and VendorContext quietly refetches in the
+      // background until the trial appears. Lets us navigate immediately.
+      markOnboarded();
 
       if (Platform.OS === "ios") {
         Haptics.notificationAsync(

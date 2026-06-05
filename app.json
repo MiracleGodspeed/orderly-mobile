@@ -3,6 +3,14 @@
     "name": "Orderly",
     "slug": "orderly",
     "version": "1.0.0",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/1cc515f9-d5b1-4404-81dd-94b3e7b4732e",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "orderly",
@@ -50,7 +58,6 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.orderlystores.vendor",
-      "useNextNotificationsApi": true,
       "permissions": [
         "android.permission.RECORD_AUDIO"
       ]

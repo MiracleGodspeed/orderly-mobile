@@ -43,6 +43,8 @@ export const FEATURES = {
   TEMPLATE_MG1: "template.mg1",
   TEMPLATE_GRACE: "template.grace",
   TEMPLATE_PRISM: "template.prism",
+  TEMPLATE_ONYX: "template.onyx",
+  TEMPLATE_LUME: "template.lume",
 } as const;
 
 /**
@@ -61,6 +63,8 @@ export const TEMPLATE_FEATURE_KEY_BY_ID: Record<string, FeatureKey> = {
   mg1: "template.mg1",
   grace: "template.grace",
   prism: "template.prism",
+  onyx: "template.onyx",
+  lume: "template.lume",
 };
 
 /** Fallback template id rendered when a non-trial vendor's chosen
@@ -194,6 +198,8 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
   [FEATURES.TEMPLATE_MG1]: templatePaywallMeta("Orderly Core"),
   [FEATURES.TEMPLATE_GRACE]: templatePaywallMeta("Grace"),
   [FEATURES.TEMPLATE_PRISM]: templatePaywallMeta("Prism"),
+  [FEATURES.TEMPLATE_ONYX]: templatePaywallMeta("Onyx"),
+  [FEATURES.TEMPLATE_LUME]: templatePaywallMeta("Lume"),
 };
 
 function templatePaywallMeta(name: string): FeatureMeta {

@@ -197,6 +197,13 @@ function StoreOverviewBackdrop() {
   );
 }
 
+// How long to suppress a *focus-triggered* storefront refetch after the last
+// one. Bounces between tabs (Home⇄Orders⇄Home) within this window reuse the
+// data already in context instead of re-firing the heavy aggregate. State-
+// changing actions refresh on their own, so the focus refetch is only a
+// safety net — 20s is short enough to feel live, long enough to kill churn.
+const FOCUS_REFETCH_THROTTLE_MS = 20_000;
+
 export default function Home() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<ScreenNavigationProp>();
@@ -248,15 +255,39 @@ export default function Home() {
   const [isPeriodChanging, setIsPeriodChanging] = useState(false);
 
   // Refetch the storefront record (and with it `vendorOnboardProgressResponse`,
-  // which drives the setup checklist) every time Home regains focus. Without
-  // this, completing a checklist step on another screen — adding a product,
-  // setting up bank details, customizing the storefront — leaves the home
-  // progress bar stale until the user fully restarts the app. Mirrors the
-  // implicit "reload the page" pattern the web relies on.
+  // which drives the setup checklist) when Home regains focus. Without this,
+  // completing a checklist step on another screen — adding a product, setting
+  // up bank details, customizing the storefront — could leave the home
+  // progress bar stale. Mirrors the implicit "reload the page" pattern the web
+  // relies on.
+  //
+  // THROTTLED: `get-storefront-details` is a heavy aggregate (storefront JSON,
+  // locations, subscription, onboarding progress, newest catalog items…), and
+  // a bare focus refetch fired it on *every* tab switch — Home⇄Orders⇄Home in
+  // a few seconds meant several identical heavy calls. We skip the focus
+  // refetch if one ran in the last FOCUS_REFETCH_THROTTLE_MS. This is safe
+  // because the state-changing actions (bank, payments, products, profile,
+  // subscribe) each call `fetchVendorData()` themselves on success, so the
+  // data is already fresh when you come back — the focus refetch is just a
+  // safety net for slower round-trips. Explicit refreshes are NOT throttled:
+  // pull-to-refresh below and the post-subscribe `refreshAfterPlanChange`
+  // always go through.
+  const lastFocusFetchRef = useRef(0);
+  const focusRefetchVendor = useCallback(
+    (force = false) => {
+      if (!force) {
+        const since = Date.now() - lastFocusFetchRef.current;
+        if (since < FOCUS_REFETCH_THROTTLE_MS) return;
+      }
+      lastFocusFetchRef.current = Date.now();
+      fetchVendorData().catch(() => {});
+    },
+    [fetchVendorData]
+  );
   useFocusEffect(
     useCallback(() => {
-      fetchVendorData().catch(() => {});
-    }, [fetchVendorData])
+      focusRefetchVendor();
+    }, [focusRefetchVendor])
   );
 
   // Cached, dedup'd data via TanStack Query — no per-focus re-fetch flicker.
@@ -528,6 +559,10 @@ export default function Home() {
 
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
+    // A manual pull is an explicit "give me fresh data" — always fetch, and
+    // stamp the throttle clock so the focus refetch doesn't immediately
+    // re-fire the same heavy call a beat later.
+    lastFocusFetchRef.current = Date.now();
     try {
       await Promise.all([
         refetchOrders(),

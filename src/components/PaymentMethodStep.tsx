@@ -373,12 +373,30 @@ export default function PaymentMethodStep({
         transactionId,
       });
 
-      await finishAppleTransaction(purchase);
-
+      // Fire-and-forget the local StoreKit finish AND the heavy
+      // post-purchase refresh in the BACKGROUND. The receipt is
+      // already verified server-side at this point — every cache the
+      // refresh touches is best-effort UI freshness, not correctness.
+      // Awaiting them serially (as we used to) tacked 2–6s of
+      // perceived spinner onto every successful subscribe, which is
+      // why "subscription successful" felt slow vs other apps. Now
+      // the user sees the success screen the instant Apple's
+      // verifyReceipt round-trip completes, and the refresh races
+      // them on their way back to the dashboard.
       Haptics.notificationAsync(
         Haptics.NotificationFeedbackType.Success
       ).catch(() => {});
-      await refreshAfterPlanChange();
+      finishAppleTransaction(purchase).catch((e) => {
+        // finishTransaction failure isn't user-visible — StoreKit
+        // will replay the transaction on next app launch if it
+        // didn't clear. Log so we can spot a pattern in telemetry.
+        console.warn("finishAppleTransaction failed (will retry on next launch)", e);
+      });
+      refreshAfterPlanChange().catch(() => {
+        // Refresh errors are swallowed inside refreshAfterPlanChange
+        // already, but defensive .catch on the floating promise
+        // suppresses any unhandled-rejection warning.
+      });
       onPaymentVerified(verify.reference);
     } catch (err: any) {
       console.error("Subscription flow error:", err);
@@ -388,10 +406,18 @@ export default function PaymentMethodStep({
       // an Apple-linked payment method otherwise have no recourse
       // from this screen.
       setShowWebFallback(true);
+      // A `deferred` outcome means StoreKit accepted the request but
+      // nothing was billed yet (bad/expired card, Ask-to-Buy, SCA).
+      // It is NOT an outright failure — and crucially it is NOT a
+      // success — so surface it as a neutral "payment not confirmed"
+      // notice rather than a red error. We never advance to the
+      // success step here, which is the whole point: no charge, no
+      // "You're all set".
+      const isDeferred = err?.kind === "deferred";
       toast.show(
         err?.message ??
           "Couldn't complete your subscription purchase. Please try again.",
-        { type: "danger" }
+        { type: isDeferred ? "warning" : "danger" }
       );
     } finally {
       setPhase((p) => (p === "verifying" || p === "paying" ? "idle" : p));
@@ -434,7 +460,8 @@ export default function PaymentMethodStep({
         if (res.reference) {
           await verifyPayment(res.reference);
         }
-        await refreshAfterPlanChange();
+        // Background refresh — see Apple-Pay path for the rationale.
+        refreshAfterPlanChange().catch(() => {});
         toast.show("Payment confirmed", { type: "success" });
         onPaymentVerified(res.reference ?? "");
         setPhase("idle");
@@ -497,7 +524,10 @@ export default function PaymentMethodStep({
             Haptics.NotificationFeedbackType.Success
           ).catch(() => {});
         }
-        await refreshAfterPlanChange();
+        // Background refresh — let the success screen render the
+        // instant verify confirms instead of stalling on a multi-
+        // endpoint vendor-data refetch.
+        refreshAfterPlanChange().catch(() => {});
         console.log("[subscription] advancing to success step with ref:", reference);
         onPaymentVerified(reference);
       } else {

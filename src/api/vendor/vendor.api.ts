@@ -828,7 +828,19 @@ export const verifyAppleReceipt = async (payload: {
   }>(
     "/vendor-subscription/verify-apple-receipt",
     payload,
-    { validateStatus: () => true }
+    {
+      validateStatus: () => true,
+      // The global axios config is timeout:60s + axiosRetry(3) with
+      // shouldResetTimeout — which on a hung verify means up to 4×60s
+      // ≈ 4 minutes of "Confirming your payment…" before the user sees
+      // anything. The backend now fails fast (bounded Apple call), so
+      // cap this leg tightly and allow at most one retry: worst case
+      // ~80s instead of ~240s, and the transaction is still unfinished
+      // (we only finishTransaction after this succeeds) so a retry is
+      // safe and Apple won't double-charge.
+      timeout: 40000,
+      "axios-retry": { retries: 1 },
+    }
   );
 
   if (response.data?.code !== "200") {

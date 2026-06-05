@@ -99,13 +99,20 @@ const formatGraceTitle = (graceDays: number) => {
  */
 export function SubscriptionStatusBanner() {
   const navigation = useNavigation<Nav>();
-  const { storeData } = useVendor();
+  const { storeData, justOnboarded } = useVendor();
   const sub = storeData?.storeSubscription;
 
   if (!sub) return null;
   // Trial banner handles its own phase — this banner is for paid /
   // post-trial lifecycle only.
   if (sub.isTrial) return null;
+  // A vendor who *just* finished onboarding is in their free trial, but the
+  // subscription can take a few seconds to provision server-side. During that
+  // window it looks identical to a genuinely-expired one (isTrial:false / 0
+  // days / 0 grace), so suppress the alarming "Subscription expired" banner
+  // until VendorContext's settle poll flips `isTrial` true. Without this the
+  // brand-new vendor lands on the dashboard staring at "expired."
+  if (justOnboarded) return null;
 
   const days = Math.max(0, Number(sub.daysRemaining) || 0);
   const grace = Math.max(0, Number(sub.gracePeriodInDays) || 0);

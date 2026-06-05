@@ -44,6 +44,66 @@ export interface ApplePurchase {
   raw: Purchase;
 }
 
+/**
+ * Why a purchase attempt didn't end in a billable, completed
+ * transaction. Lets the UI tell the truth instead of either claiming
+ * success or showing a generic "failed":
+ *
+ *  - `deferred`  → StoreKit accepted the request but the transaction
+ *                  is pending (billing problem / bad card, Ask-to-Buy,
+ *                  or SCA). Nothing was charged; we must NOT show
+ *                  success. Apple may complete it later out-of-band.
+ *  - `no-receipt`→ purchase completed but Apple never handed us a
+ *                  receipt blob to verify.
+ *  - `timeout`   → we never heard back from StoreKit / Apple in time
+ *                  (watchdog or receipt-fetch timeout fired).
+ *  - `failed`    → StoreKit reported an outright purchase error.
+ */
+export type ApplePurchaseErrorKind =
+  | "deferred"
+  | "no-receipt"
+  | "timeout"
+  | "failed";
+
+export class ApplePurchaseError extends Error {
+  kind: ApplePurchaseErrorKind;
+  constructor(kind: ApplePurchaseErrorKind, message: string) {
+    super(message);
+    this.name = "ApplePurchaseError";
+    this.kind = kind;
+  }
+}
+
+/**
+ * Race a promise against a timeout so a StoreKit call that never
+ * settles can't leave the Pay button spinning forever. The 90s
+ * watchdog in `purchaseAppleSubscription` only covers `requestPurchase`
+ * — the receipt-fetch leg (`getReceiptIOS` / `requestReceiptRefreshIOS`,
+ * which calls `AppStore.sync()` and is known to stall) needs its own
+ * bound or the spinner hangs after the purchase has already resolved.
+ */
+function withTimeout<T>(
+  promise: Promise<T>,
+  ms: number,
+  label: string,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const id = setTimeout(() => {
+      reject(new ApplePurchaseError("timeout", `Timed out: ${label}`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(id);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(id);
+        reject(err);
+      },
+    );
+  });
+}
+
 let connectionReady = false;
 let listenersAttached = false;
 let pendingResolver:
@@ -80,9 +140,11 @@ function attachListenersOnce(): void {
   listenersAttached = true;
 
   purchaseUpdatedListener((purchase) => {
+    const state = (purchase as { purchaseState?: string }).purchaseState;
     console.log("[IAP] purchaseUpdated event:", {
       productId: purchase.productId,
       id: purchase.id,
+      state: state ?? "(none)",
       pendingFor: pendingResolver?.productId ?? null,
     });
     if (!pendingResolver) {
@@ -107,6 +169,38 @@ function attachListenersOnce(): void {
       );
       return;
     }
+    // Gate on the StoreKit transaction state. expo-iap delivers this
+    // listener for NON-completed transactions too — a `pending`
+    // (deferred) transaction is what a bad/expired card, Ask-to-Buy,
+    // or SCA produces: Apple may show "You're all set" optimistically
+    // but nothing has actually been billed. Treating that as success
+    // is exactly the bug where a vendor with no working card is told
+    // the purchase went through. Only `purchased` is a real, billable
+    // completion. (`purchaseState` is undefined on older native shapes
+    // — fall through to the legacy resolve-as-success path then so we
+    // never regress devices that don't report a state.)
+    if (state === "pending") {
+      settlePendingResolver({
+        ok: false,
+        error: new ApplePurchaseError(
+          "deferred",
+          "Apple hasn't confirmed payment for this subscription. If your " +
+            "card was declined, update your payment method in Settings → " +
+            "Apple ID → Payment & Shipping, then try again.",
+        ),
+      });
+      return;
+    }
+    if (state && state !== "purchased") {
+      // 'unknown' or any future non-final state — don't claim success.
+      // Keep the resolver waiting; the 90s watchdog is the backstop so
+      // the user still can't get stuck.
+      console.log(
+        "[IAP] purchase in non-final state — keeping resolver pending",
+        { state },
+      );
+      return;
+    }
     settlePendingResolver({ ok: true, value: purchase });
   });
 
@@ -122,9 +216,34 @@ function attachListenersOnce(): void {
       settlePendingResolver({ ok: true, value: null });
       return;
     }
+    // Deferred / pending payment — StoreKit took the request but the
+    // charge hasn't (and may never) clear: bad card, Ask-to-Buy, or
+    // SCA. Surface it as a distinct "deferred" outcome so the UI tells
+    // the truth instead of either claiming success or showing a
+    // generic failure. (openiap reports this as `deferred-payment` /
+    // `pending`; older bridges use `E_DEFERRED_PAYMENT`.)
+    if (
+      code === "deferred-payment" ||
+      code === "E_DEFERRED_PAYMENT" ||
+      code === "pending"
+    ) {
+      settlePendingResolver({
+        ok: false,
+        error: new ApplePurchaseError(
+          "deferred",
+          "Apple hasn't confirmed payment for this subscription. If your " +
+            "card was declined, update your payment method in Settings → " +
+            "Apple ID → Payment & Shipping, then try again.",
+        ),
+      });
+      return;
+    }
     settlePendingResolver({
       ok: false,
-      error: new Error(err?.message || "Subscription purchase failed"),
+      error: new ApplePurchaseError(
+        "failed",
+        err?.message || "Subscription purchase failed",
+      ),
     });
   });
 }
@@ -248,7 +367,18 @@ export async function purchaseAppleSubscription(
   // hasn't been flushed to disk yet — `getReceiptIOS()` returns "".
   // Fall back to `requestReceiptRefreshIOS()` which forces an
   // `AppStore.sync()` before reading, guaranteeing a populated blob.
-  let receipt = await getReceiptIOS();
+  // Both reads are time-boxed: the purchase promise has already
+  // resolved by here, so the watchdog above is gone — without these
+  // bounds a stalled `AppStore.sync()` would leave the Pay button
+  // spinning indefinitely (one of the "loads for eternity" paths).
+  let receipt = await withTimeout(
+    getReceiptIOS(),
+    15_000,
+    "getReceiptIOS",
+  ).catch((e) => {
+    console.log("[IAP] getReceiptIOS failed/timed out:", e);
+    return "" as string;
+  });
   console.log(
     "[IAP] receipt from getReceiptIOS, length:",
     receipt?.length ?? 0,
@@ -260,17 +390,22 @@ export async function purchaseAppleSubscription(
   if (!receipt) {
     console.log("[IAP] receipt empty — calling requestReceiptRefreshIOS");
     try {
-      receipt = await requestReceiptRefreshIOS();
+      receipt = await withTimeout(
+        requestReceiptRefreshIOS(),
+        20_000,
+        "requestReceiptRefreshIOS",
+      );
       console.log(
         "[IAP] receipt from requestReceiptRefreshIOS, length:",
         receipt?.length ?? 0,
       );
     } catch (e) {
-      console.log("[IAP] requestReceiptRefreshIOS failed:", e);
+      console.log("[IAP] requestReceiptRefreshIOS failed/timed out:", e);
     }
   }
   if (!receipt) {
-    throw new Error(
+    throw new ApplePurchaseError(
+      "no-receipt",
       "Apple didn't return a receipt — please try again or contact support.",
     );
   }

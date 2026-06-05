@@ -80,6 +80,16 @@ const shouldSkipRefresh = (config: any): boolean => {
 };
 
 const forceSignOut = () => {
+  // No active session → nothing to tear down, and crucially nothing to
+  // navigate away from. A 401 while logged out comes from a pre-auth
+  // endpoint (a wrong password on /login, a bad/expired code on
+  // /validate-otp) or from a stray authed request that shouldn't have
+  // fired pre-login. In every one of those cases `clearAuthFromStorage`
+  // would call `reset('Splash')` and yank the user — mid-onboarding,
+  // mid-OTP — back to the splash screen. Skip it: let the caller surface
+  // the error inline instead.
+  if (!authToken) return;
+
   try {
     onForcedSignOut?.();
   } catch {

@@ -65,7 +65,11 @@ export default function MoreHub() {
   const { storeData } = useVendor();
   const { user } = useAuth();
   const perms = useStaffPermissions();
-  const { staffLimit } = useFeatures();
+  const { staffLimit, has } = useFeatures();
+
+  // Newsletter is a binary feature gate (plan grants newsletters.basic
+  // or it doesn't). Locked rows open the paywall instead of navigating.
+  const canUseNewsletter = has(FEATURES.NEWSLETTERS);
 
   // Plan-derived gate for the Staff & permissions row. Lock when the
   // backend reports `StaffLimit` as 0 or null (no plan or plan without
@@ -138,6 +142,21 @@ export default function MoreHub() {
                     ? "Direct to your bank"
                     : "Online payment (Paystack)",
                 screen: "PaymentSetup" as keyof RootStackParamList,
+              },
+              {
+                id: "newsletter",
+                icon: "mail-outline" as IoniconName,
+                tint: canUseNewsletter ? "#fce7f3" : "#f3f4f6",
+                iconColor: canUseNewsletter ? "#db2777" : "#9ca3af",
+                title: "Newsletter",
+                subtitle: canUseNewsletter
+                  ? "Storefront signup prompt & subscribers"
+                  : "Upgrade your plan to unlock",
+                screen: canUseNewsletter
+                  ? ("Newsletter" as keyof RootStackParamList)
+                  : undefined,
+                locked: !canUseNewsletter,
+                paywallFeature: FEATURES.NEWSLETTERS,
               },
             ],
           },

@@ -5,8 +5,10 @@ import {
   TextInput,
   Platform,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import KeyboardScreen from "./KeyboardScreen";
+import { uploadImage } from "../../src/api/vendor/vendor.api";
 import { useEffect, useState } from "react";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
@@ -47,6 +49,7 @@ export default function HeroSectionModal({
   const { updateVendorSettings, storeData, loading } = useVendor();
   const [slides, setSlides] = useState<HeroItem[]>([]);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
 
   useEffect(() => {
     if (visible) {
@@ -80,25 +83,41 @@ export default function HeroSectionModal({
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       quality: 0.7,
-      base64: true,
     });
 
     if (!result.canceled && result.assets.length > 0) {
       const asset = result.assets[0];
 
-      if (asset.fileSize && asset.fileSize > 2097152) {
+      if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
         Alert.alert(
           "Image too large",
-          "Please choose an image smaller than 2MB."
+          "Please choose an image smaller than 5MB."
         );
         return;
       }
 
-      const imageSource = asset.base64
-        ? `data:image/jpeg;base64,${asset.base64}`
-        : asset.uri;
-
-      updateSlide(index, { slideImage: imageSource });
+      // Upload to Cloudinary and store the returned URL — never embed base64.
+      // A base64 data URI here lands in StoreSettings.StoreFrontContent and
+      // bloats the row to several MB, which chokes the API on every read.
+      setUploadingIndex(index);
+      try {
+        const url = await uploadImage(asset.uri);
+        if (!url) {
+          Alert.alert(
+            "Upload failed",
+            "Could not upload that image. Please try again."
+          );
+          return;
+        }
+        updateSlide(index, { slideImage: url });
+      } catch (e) {
+        Alert.alert(
+          "Upload failed",
+          "Could not upload that image. Please try again."
+        );
+      } finally {
+        setUploadingIndex(null);
+      }
     }
   };
 
@@ -200,7 +219,14 @@ export default function HeroSectionModal({
                 className="rounded-2xl overflow-hidden bg-gray-50 border border-dashed border-gray-200 mb-4"
                 style={{ aspectRatio: 16 / 9 }}
               >
-                {slide.slideImage ? (
+                {uploadingIndex === index ? (
+                  <View className="flex-1 items-center justify-center">
+                    <ActivityIndicator color="#2563eb" />
+                    <Text className="text-[12px] text-gray-500 mt-2">
+                      Uploading…
+                    </Text>
+                  </View>
+                ) : slide.slideImage ? (
                   <View className="w-full h-full">
                     <AppImage
                       uri={slide.slideImage}

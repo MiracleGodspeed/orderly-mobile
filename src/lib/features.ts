@@ -26,6 +26,11 @@ export const FEATURES = {
    *  `Features.AI_DESCRIPTIONS`. */
   AI_DESCRIPTIONS: "ai.descriptions",
 
+  /** Storefront newsletter capture. Boolean gate — vendors on plans
+   *  with this key can turn on a storefront signup prompt and view the
+   *  subscriber list. Mirrors backend `Features.NEWSLETTERS`. */
+  NEWSLETTERS: "newsletters.basic",
+
   // Storefront templates — one key per template. Plans declare the
   // templates they support by listing these keys in their FeatureKeys
   // JSON column. Trial vendors resolve as Unlimited so every template
@@ -181,6 +186,18 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
       "Sounds natural, not robotic — written for shoppers, not search engines",
       "Edit before saving, or save as-is when you're in a hurry",
       "Daily credits refresh every morning so it's there when you need it",
+    ],
+  },
+
+  [FEATURES.NEWSLETTERS]: {
+    label: "Storefront newsletter",
+    description:
+      "Turn casual visitors into a mailing list you own. Add a classy signup prompt to your storefront and keep every interested customer's email in one place.",
+    bullets: [
+      "A clean signup prompt on your storefront — styled in your brand colour",
+      "Collect customer emails you can reach anytime",
+      "See and search everyone who subscribed from your dashboard",
+      "Turn it on or off whenever you like",
     ],
   },
 

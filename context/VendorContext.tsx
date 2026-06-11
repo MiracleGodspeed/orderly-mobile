@@ -12,6 +12,10 @@ interface VendorContextType {
   isServiceBased: boolean | null;
   selectedCategories: number[];
   storeData: StoreData | null;
+  /** Store-URL variant the vendor picked on step 1 (e.g. "bolu-couture").
+   *  Null until chosen; forwarded to the onboarding submit. */
+  selectedSlug: string | null;
+  setSelectedSlug: (slug: string | null) => void;
   setBusinessInfo: (name: string, description: string) => void;
   setServiceType: (isService: boolean) => void;
   toggleCategory: (categoryId: number) => void;
@@ -184,6 +188,7 @@ const VendorContext = createContext<VendorContextType | undefined>(undefined);
 export const VendorProvider = ({ children }: { children: ReactNode }) => {
   const [businessName, setBusinessName] = useState("");
   const [description, setDescription] = useState("");
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
   const [isServiceBased, setIsServiceBased] = useState<boolean | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<number[]>([]);
   const [storeData, setStoreData] = useState<StoreData | null>(null);
@@ -445,6 +450,7 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
   const resetVendorData = () => {
     setBusinessName("");
     setDescription("");
+    setSelectedSlug(null);
     setIsServiceBased(null);
     setSelectedCategories([]);
     setStoreData(null);
@@ -458,6 +464,8 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
         description,
         isServiceBased,
         selectedCategories,
+        selectedSlug,
+        setSelectedSlug,
         setBusinessInfo,
         setServiceType,
         toggleCategory,

@@ -2,9 +2,9 @@
   "expo": {
     "name": "Orderly",
     "slug": "orderly",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "runtimeVersion": {
-      "policy": "appVersion"
+      "policy": "fingerprint"
     },
     "updates": {
       "url": "https://u.expo.dev/1cc515f9-d5b1-4404-81dd-94b3e7b4732e",

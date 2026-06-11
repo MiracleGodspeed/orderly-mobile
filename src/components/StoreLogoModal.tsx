@@ -1,4 +1,11 @@
-import { View, Text, Pressable, Platform, Alert } from "react-native";
+import {
+  View,
+  Text,
+  Pressable,
+  Platform,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { useState, useEffect } from "react";
 import * as ImagePicker from "expo-image-picker";
 import * as Haptics from "expo-haptics";
@@ -6,6 +13,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { useVendor } from "../../context/VendorContext";
 import { BottomSheet, BottomSheetFooter } from "./BottomSheet";
 import { AppImage } from "./AppImage";
+import { uploadImage } from "../../src/api/vendor/vendor.api";
 
 interface Props {
   visible: boolean;
@@ -21,6 +29,7 @@ export default function StoreLogoModal({
   const { updateVendorSettings, storeData, loading } = useVendor();
   const [logo, setLogo] = useState<string | null>(null);
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   useEffect(() => {
     if (visible) {
@@ -55,24 +64,40 @@ export default function StoreLogoModal({
       quality: 0.7,
       allowsEditing: true,
       aspect: [1, 1],
-      base64: true,
     });
 
     if (!result.canceled && result.assets.length > 0) {
       const asset = result.assets[0];
 
-      if (asset.fileSize && asset.fileSize > 2097152) {
+      if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
         Alert.alert(
           "Image too large",
-          "Please choose an image smaller than 2MB."
+          "Please choose an image smaller than 5MB."
         );
         return;
       }
 
-      const imageSource = asset.base64
-        ? `data:image/jpeg;base64,${asset.base64}`
-        : asset.uri;
-      setLogo(imageSource);
+      // Upload to Cloudinary and store the URL — never embed base64 (it bloats
+      // StoreSettings and chokes the API on every storefront read).
+      setUploadingLogo(true);
+      try {
+        const url = await uploadImage(asset.uri, "logos");
+        if (!url) {
+          Alert.alert(
+            "Upload failed",
+            "Could not upload that logo. Please try again."
+          );
+          return;
+        }
+        setLogo(url);
+      } catch (e) {
+        Alert.alert(
+          "Upload failed",
+          "Could not upload that logo. Please try again."
+        );
+      } finally {
+        setUploadingLogo(false);
+      }
     }
   };
 
@@ -107,7 +132,12 @@ export default function StoreLogoModal({
           className="rounded-3xl border border-dashed border-gray-200 bg-gray-50/70 items-center justify-center overflow-hidden"
           style={{ height: 220 }}
         >
-          {logo ? (
+          {uploadingLogo ? (
+            <View className="items-center justify-center">
+              <ActivityIndicator color="#2563eb" />
+              <Text className="text-[12px] text-gray-500 mt-2">Uploading…</Text>
+            </View>
+          ) : logo ? (
             <View className="w-full h-full">
               <AppImage
                 uri={logo}

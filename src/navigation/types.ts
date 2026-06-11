@@ -51,6 +51,9 @@ export type RootStackParamList = {
   LocationManagement: undefined;
   CustomDomain: undefined;
   Customers: undefined;
+  /** Vendor-facing newsletter management — toggle the storefront prompt
+   *  on/off and browse the subscriber list. */
+  Newsletter: undefined;
   DeleteAccount: undefined;
   LogOrder: undefined;
   /** Surface for vendors to reject a manual bank-transfer payment.

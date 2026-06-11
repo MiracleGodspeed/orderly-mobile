@@ -6,6 +6,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useEffect, useState, useCallback } from 'react';
 import * as SplashScreen from 'expo-splash-screen';
 import RootNavigator from './src/navigation/RootNavigator';
+import UpdateGate from './src/components/UpdateGate';
 import { ToastProvider } from 'react-native-toast-notifications';
 import { usePushNotifications } from './src/hooks/usePushNotifications';
 import { preloadAppAssets } from './src/lib/preloadAssets';
@@ -79,6 +80,7 @@ export default function App() {
       <View style={styles.root} onLayout={onLayoutRootView}>
         <StatusBar style="light" backgroundColor="#0a3d8f" />
         <RootNavigator />
+        <UpdateGate />
       </View>
        </ToastProvider>
       

@@ -47,6 +47,7 @@ import LocationManagement from '../screens/LocationManagement';
 import SubscriptionFlowScreen from '../screens/SubscriptionFlowScreen';
 import CustomDomain from '../screens/CustomDomain';
 import Customers from '../screens/Customers';
+import Newsletter from '../screens/Newsletter';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -151,6 +152,7 @@ export default function RootNavigator() {
         <Stack.Screen name="LocationManagement" component={LocationManagement} />
         <Stack.Screen name="CustomDomain" component={CustomDomain} />
         <Stack.Screen name="Customers" component={Customers} />
+        <Stack.Screen name="Newsletter" component={Newsletter} />
         <Stack.Screen 
   name="SubscriptionFlow" 
   component={SubscriptionFlowScreen} 

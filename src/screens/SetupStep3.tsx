@@ -14,6 +14,7 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import { useToast } from "react-native-toast-notifications";
 
 import { RootStackParamList } from "../navigation/types";
 import { SetupHeader } from "../components/SetupHeader";
@@ -42,12 +43,14 @@ export default function SetupStep3() {
   const navigation = useNavigation<NavProp>();
   const { setProgress } = useProgress();
   const { user } = useAuth();
+  const toast = useToast();
   const {
     selectedCategories,
     toggleCategory,
     businessName,
     description,
     isServiceBased,
+    selectedSlug,
     fetchVendorData,
     markOnboarded,
   } = useVendor();
@@ -114,6 +117,7 @@ export default function SetupStep3() {
         description,
         isServiceBased: isServiceBased ?? false,
         applicableCategories: selectedCategories,
+        selectedSlug: selectedSlug ?? undefined,
       });
 
       console.log(response, "response")
@@ -148,8 +152,20 @@ export default function SetupStep3() {
         });
       }, 800);
     } catch (err) {
+      // Don't leave the vendor staring at a modal that just vanished with no
+      // explanation — surface the server's message (or a fallback) as a toast.
       console.log("VENDOR ONBOARDING ERROR:", err);
       setModalVisible(false);
+      if (Platform.OS === "ios") {
+        Haptics.notificationAsync(
+          Haptics.NotificationFeedbackType.Error
+        ).catch(() => {});
+      }
+      const message =
+        err instanceof Error && err.message
+          ? err.message
+          : "Something went wrong setting up your store. Please try again.";
+      toast.show(message, { type: "danger" });
     } finally {
       setIsSettingUp(false);
     }

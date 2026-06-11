@@ -11,6 +11,53 @@ export interface VendorOnboardingRequest {
   description: string;
   applicableCategories: number[];
   isServiceBased: boolean;
+  /** The store-URL variant the vendor picked (e.g. "bolu-couture"). The
+   *  backend honours it only if it's a variant it would generate for this
+   *  name, else falls back to the dashed default. Omit to let it decide. */
+  selectedSlug?: string;
+}
+
+/** One store-URL candidate (+ availability) from
+ *  GET /storefront/store-url-suggestions. */
+export interface StoreUrlSuggestion {
+  slug: string;
+  available: boolean;
+}
+
+export interface StoreUrlSuggestionsResponse {
+  message: string;
+  code: string;
+  data: StoreUrlSuggestion[] | null;
+}
+
+/** Newsletter dashboard header state. */
+export interface NewsletterOverview {
+  enabled: boolean;
+  hasFeature: boolean;
+  totalSubscribers: number;
+}
+
+export interface NewsletterOverviewResponse {
+  message: string;
+  code: string;
+  data: NewsletterOverview | null;
+}
+
+/** One storefront newsletter subscriber. */
+export interface NewsletterSubscriber {
+  id: string;
+  email: string;
+  subscribedAt: string;
+}
+
+export interface GetNewsletterSubscribersResponse {
+  message: string;
+  code: string;
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+  data: NewsletterSubscriber[] | null;
 }
 
 export interface VendorOnboardingResponse {

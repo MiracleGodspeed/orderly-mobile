@@ -3,6 +3,12 @@ import {
   GetCategoriesResponse,
   VendorOnboardingRequest,
   VendorOnboardingResponse,
+  StoreUrlSuggestion,
+  StoreUrlSuggestionsResponse,
+  NewsletterOverview,
+  NewsletterOverviewResponse,
+  NewsletterSubscriber,
+  GetNewsletterSubscribersResponse,
   GetStorefrontDetailsResponse,
   UpdateStorefrontSettingsResponse,
   GetProductsResponse,
@@ -57,6 +63,93 @@ export const submitVendorOnboarding = async (
   }
 
   return response.data;
+};
+
+/**
+ * Live store-URL suggestions (+ availability) for the onboarding
+ * business-name field. Called debounced as the vendor types. Returns []
+ * on a blank name or any error so the caller can fail soft — the submit
+ * endpoint re-derives + re-checks the slug authoritatively.
+ */
+export const getStoreUrlSuggestions = async (
+  businessName: string
+): Promise<StoreUrlSuggestion[]> => {
+  const response = await apiClient.get<StoreUrlSuggestionsResponse>(
+    "/storefront/store-url-suggestions",
+    {
+      params: { businessName },
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Failed to check store link");
+  }
+
+  return response.data.data ?? [];
+};
+
+// ── Newsletter ──────────────────────────────────────────────────────
+
+/** Dashboard header: prompt on/off, plan eligibility, subscriber count. */
+export const getNewsletterOverview = async (): Promise<NewsletterOverview> => {
+  const response = await apiClient.get<NewsletterOverviewResponse>(
+    "/newsletter/overview",
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200" || !response.data.data) {
+    throw new Error(response.data.message || "Couldn't load newsletter settings");
+  }
+  return response.data.data;
+};
+
+/** Enable/disable the storefront newsletter prompt. Enabling is gated
+ *  server-side on the plan granting newsletters.basic — a 403 surfaces
+ *  the upgrade message via the thrown error. */
+export const toggleNewsletter = async (enabled: boolean): Promise<void> => {
+  const response = await apiClient.post<{ code: string; message: string }>(
+    "/newsletter/toggle",
+    { enabled },
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(response.data.message || "Couldn't update the newsletter setting");
+  }
+};
+
+/** Paginated subscriber list for the dashboard. */
+export const getNewsletterSubscribers = async (params?: {
+  pageIndex?: number;
+  pageSize?: number;
+  search?: string;
+}): Promise<{
+  data: NewsletterSubscriber[];
+  pageIndex: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
+}> => {
+  const response = await apiClient.get<GetNewsletterSubscribersResponse>(
+    "/newsletter/subscribers",
+    {
+      params: {
+        pageIndex: params?.pageIndex ?? 1,
+        pageSize: params?.pageSize ?? 20,
+        search: params?.search?.trim() || undefined,
+      },
+      validateStatus: () => true,
+    }
+  );
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't load subscribers");
+  }
+  return {
+    data: response.data.data ?? [],
+    pageIndex: response.data.pageIndex ?? 1,
+    pageSize: response.data.pageSize ?? 20,
+    totalCount: response.data.totalCount ?? 0,
+    totalPages: response.data.totalPages ?? 0,
+  };
 };
 
 export const getStorefrontDetails = async () => {
@@ -461,6 +554,43 @@ function appendVariantPrices(
     }
   });
 }
+
+/**
+ * Uploads a local image (a file URI from expo-image-picker) to Cloudinary
+ * via the backend and returns the hosted URL.
+ *
+ * Storefront hero / logo images MUST go through this — never embed a
+ * `data:image;base64,…` string into `storeFrontJson` / `logoUrl`. Base64
+ * inflates the StoreSettings row to several MB, which the API then loads on
+ * every storefront read and chokes the server (GC thrash). Mirrors how
+ * product images are handled (multipart → backend → Cloudinary URL).
+ */
+export const uploadImage = async (
+  uri: string,
+  folder: string = "storefront"
+): Promise<string | null> => {
+  const formData = new FormData();
+  formData.append("file", {
+    uri,
+    name: "image.jpg",
+    type: "image/jpeg",
+  } as any);
+
+  const response = await apiClient.post(
+    `/Image/upload?folder=${encodeURIComponent(folder)}`,
+    formData,
+    {
+      headers: { "Content-Type": "multipart/form-data" },
+      validateStatus: () => true,
+    }
+  );
+
+  if (response.status >= 200 && response.status < 300) {
+    // Backend returns OperationResult<string> — Cloudinary URL is in `.data`.
+    return response.data?.data ?? null;
+  }
+  return null;
+};
 
 export const createProduct = async (
   payload: CreateProductPayload

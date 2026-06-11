@@ -8,8 +8,9 @@ import {
   ScrollView,
   KeyboardAvoidingView,
 } from "react-native";
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { ActivityIndicator } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
@@ -19,17 +20,27 @@ import { RootStackParamList } from "../navigation/types";
 import { useVendor } from "../../context/VendorContext";
 import { useProgress } from "../../context/ProgressContext";
 import { SetupHeader } from "../components/SetupHeader";
+import { getStoreUrlSuggestions } from "../api/vendor/vendor.api";
+import { StoreUrlSuggestion } from "../api/vendor/vendor.types";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const NAME_MAX = 60;
 const DESC_MAX = 200;
 
+// Storefronts live at `{slug}.orderlystores.com` — used only for the link
+// preview; the slug itself comes from the server so it can't drift.
+const STORE_DOMAIN = "orderlystores.com";
+
 export default function SetupStep1() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const { setProgress } = useProgress();
-  const { setBusinessInfo, businessName: existingName, description: existingDesc } =
-    useVendor();
+  const {
+    setBusinessInfo,
+    setSelectedSlug: persistSlug,
+    businessName: existingName,
+    description: existingDesc,
+  } = useVendor();
 
   const [businessName, setBusinessName] = useState(existingName || "");
   const [description, setDescription] = useState(existingDesc || "");
@@ -37,8 +48,75 @@ export default function SetupStep1() {
     null
   );
 
+  // Live store-URL suggestions. Debounced fetch as the vendor types; the
+  // first available variant is pre-selected so it's zero-friction.
+  const [slugSuggestions, setSlugSuggestions] = useState<StoreUrlSuggestion[]>(
+    []
+  );
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [slugLoading, setSlugLoading] = useState(false);
+  const slugCacheRef = useRef<Map<string, StoreUrlSuggestion[]>>(new Map());
+  const slugReqIdRef = useRef(0);
+
+  const applySuggestions = useCallback((list: StoreUrlSuggestion[]) => {
+    setSlugSuggestions(list);
+    setSlugLoading(false);
+    setSelectedSlug((prev) => {
+      if (prev && list.some((s) => s.slug === prev && s.available)) return prev;
+      return list.find((s) => s.available)?.slug ?? null;
+    });
+  }, []);
+
+  useEffect(() => {
+    const name = businessName.trim();
+    if (!name) {
+      setSlugSuggestions([]);
+      setSelectedSlug(null);
+      setSlugLoading(false);
+      return;
+    }
+
+    const cached = slugCacheRef.current.get(name.toLowerCase());
+    if (cached) {
+      applySuggestions(cached);
+      return;
+    }
+
+    const reqId = ++slugReqIdRef.current;
+    setSlugLoading(true);
+    const timer = setTimeout(async () => {
+      try {
+        const list = await getStoreUrlSuggestions(name);
+        slugCacheRef.current.set(name.toLowerCase(), list);
+        if (reqId !== slugReqIdRef.current) return; // superseded by newer keystroke
+        applySuggestions(list);
+      } catch {
+        // Fail soft — don't trap the vendor if the check is unreachable.
+        // Submit re-derives + re-checks the slug authoritatively.
+        if (reqId !== slugReqIdRef.current) return;
+        setSlugSuggestions([]);
+        setSelectedSlug(null);
+        setSlugLoading(false);
+      }
+    }, 350);
+
+    return () => clearTimeout(timer);
+  }, [businessName, applySuggestions]);
+
+  const selectedSlugAvailable =
+    selectedSlug != null &&
+    slugSuggestions.some((s) => s.slug === selectedSlug && s.available);
+  // Hold while checking; require an available pick once resolved; let them
+  // through if the check is unreachable (empty + not loading).
+  const slugStepOk =
+    !slugLoading &&
+    (slugSuggestions.length === 0 ? true : selectedSlugAvailable);
+  const multipleSlugs = slugSuggestions.length > 1;
+
   const isValid =
-    businessName.trim().length > 0 && description.trim().length > 0;
+    businessName.trim().length > 0 &&
+    description.trim().length > 0 &&
+    slugStepOk;
 
   const handleContinue = () => {
     if (!isValid) return;
@@ -46,6 +124,7 @@ export default function SetupStep1() {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     }
     setBusinessInfo(businessName.trim(), description.trim());
+    persistSlug(selectedSlug);
     setProgress(0.33);
     navigation.navigate("SetupStep2");
   };
@@ -115,6 +194,90 @@ export default function SetupStep1() {
                   onBlur={() => setFocusedField(null)}
                 />
               </View>
+
+              {/* Store-URL preview / picker — appears once a name is typed */}
+              {businessName.trim().length > 0 && (
+                <View className="-mt-2 mb-5">
+                  <View className="flex-row items-center gap-1.5 mb-1.5">
+                    <Ionicons name="globe-outline" size={13} color="#9ca3af" />
+                    <Text className="text-[11px] font-semibold text-gray-500">
+                      {multipleSlugs ? "Choose your store link" : "Your store link"}
+                    </Text>
+                  </View>
+
+                  {slugLoading ? (
+                    <View className="flex-row items-center gap-2 px-1 py-1.5">
+                      <ActivityIndicator size="small" color="#2563eb" />
+                      <Text className="text-[12px] text-gray-400">
+                        Checking availability…
+                      </Text>
+                    </View>
+                  ) : slugSuggestions.length === 0 ? (
+                    <Text className="text-[12px] text-gray-400 px-1">
+                      We'll set your store link automatically.
+                    </Text>
+                  ) : (
+                    <View style={{ gap: 6 }}>
+                      {slugSuggestions.map((s) => {
+                        const active = selectedSlug === s.slug;
+                        return (
+                          <Pressable
+                            key={s.slug}
+                            disabled={!s.available}
+                            onPress={() => {
+                              if (!s.available) return;
+                              if (Platform.OS === "ios") {
+                                Haptics.selectionAsync().catch(() => {});
+                              }
+                              setSelectedSlug(s.slug);
+                            }}
+                            className={`flex-row items-center rounded-2xl border px-3 py-2.5 ${
+                              !s.available
+                                ? "border-gray-100 bg-gray-50"
+                                : active
+                                ? "border-blue-500 bg-blue-50"
+                                : "border-gray-200 bg-white"
+                            }`}
+                          >
+                            {/* Radio dot */}
+                            <View
+                              className={`w-4 h-4 rounded-full border-2 items-center justify-center ${
+                                active && s.available
+                                  ? "border-blue-600"
+                                  : "border-gray-300"
+                              }`}
+                            >
+                              {active && s.available && (
+                                <View className="w-2 h-2 rounded-full bg-blue-600" />
+                              )}
+                            </View>
+
+                            <Text
+                              numberOfLines={1}
+                              className={`flex-1 ml-2.5 text-[13px] font-semibold ${
+                                !s.available
+                                  ? "text-gray-400 line-through"
+                                  : active
+                                  ? "text-blue-700"
+                                  : "text-gray-700"
+                              }`}
+                            >
+                              {s.slug}
+                              <Text className="text-gray-400">.{STORE_DOMAIN}</Text>
+                            </Text>
+
+                            {!s.available && (
+                              <Text className="ml-2 text-[10px] font-bold text-gray-500 uppercase tracking-wide bg-gray-100 px-2 py-0.5 rounded-full">
+                                Taken
+                              </Text>
+                            )}
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+                </View>
+              )}
 
               {/* Description */}
               <View className="flex-row items-end justify-between mb-2">

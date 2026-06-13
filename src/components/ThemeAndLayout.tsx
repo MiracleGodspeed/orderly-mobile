@@ -33,80 +33,92 @@ const THEMES = [
     id: "mg1",
     label: "Orderly Core",
     tagline: "Clean, balanced, and versatile.",
-    screenshot: require("../../assets/templates/t1.png"),
+    screenshot: require("../../assets/templates/web/mg1.png"),
     accent: "#6366F1",
   },
   {
     id: "speedpro",
     label: "Speed-Pro",
     tagline: "Bold, polished, and business-ready.",
-    screenshot: require("../../assets/templates/speed1.png"),
+    screenshot: require("../../assets/templates/web/speedpro.png"),
     accent: "#791A4D",
   },
   {
     id: "ranger",
     label: "Shop Ranger",
     tagline: "Strong, flexible, and sales-driven.",
-    screenshot: require("../../assets/templates/ranger.png"),
+    screenshot: require("../../assets/templates/web/ranger.png"),
     accent: "#791A4D",
   },
   {
     id: "jewl",
     label: "Jeweler-Esque",
     tagline: "Elegant, refined, and premium.",
-    screenshot: require("../../assets/templates/straight.png"),
+    screenshot: require("../../assets/templates/web/jewl.png"),
     accent: "#791A4D",
   },
   {
     id: "da1",
     label: "Fresh Cart",
     tagline: "Fresh, modern, and conversion-focused.",
-    screenshot: require("../../assets/templates/fresh.png"),
+    screenshot: require("../../assets/templates/web/da1.png"),
     accent: "#059669",
   },
   {
     id: "galactic",
     label: "Galactic",
     tagline: "Premium catalog with luxury leather aesthetics.",
-    screenshot: require("../../assets/templates/squint.png"),
+    screenshot: require("../../assets/templates/web/galactic.png"),
     accent: "#2f3237",
   },
   {
     id: "atelier",
     label: "Atelier",
     tagline: "Editorial, minimal, and quietly premium.",
-    screenshot: require("../../assets/templates/atlier.png"),
+    screenshot: require("../../assets/templates/web/atelier.png"),
     accent: "#0a0a0a",
   },
   {
     id: "brio",
     label: "Brio",
     tagline: "Crisp, product-first storefront with bright hero.",
-    screenshot: require("../../assets/templates/brio.png"),
+    screenshot: require("../../assets/templates/web/brio.png"),
     accent: "#0a0a0a",
   },
   {
     id: "carte",
     label: "Carte",
     tagline: "No hero — opens straight into the product grid.",
-    screenshot: require("../../assets/templates/carte.png"),
+    screenshot: require("../../assets/templates/web/carte.png"),
     accent: "#0a0a0a",
   },
   {
     id: "grace",
     label: "Grace",
     tagline: "Premium jewelry-inspired editorial collections.",
-    // Screenshot file isn't shipped yet — falls back to a placeholder
-    // image until a marketing asset lands at this path.
-    screenshot: require("../../assets/templates/carte.png"),
+    screenshot: require("../../assets/templates/web/grace.png"),
     accent: "#0a0a0a",
   },
   {
     id: "prism",
     label: "Prism",
     tagline: "Modern DTC polish — refined cinematic, brand-color accents.",
-    screenshot: require("../../assets/templates/carte.png"),
+    screenshot: require("../../assets/templates/web/prism.png"),
     accent: "#18181b",
+  },
+  {
+    id: "cobalt",
+    label: "Cobalt",
+    tagline: "Clean fashion-ecommerce — navy on white, pale-blue hero.",
+    screenshot: require("../../assets/templates/web/cobalt.png"),
+    accent: "#16233f",
+  },
+  {
+    id: "linen",
+    label: "Linen",
+    tagline: "Warm-neutral fashion app — filter pills, wishlist cards.",
+    screenshot: require("../../assets/templates/web/linen.png"),
+    accent: "#1c1917",
   },
 ] as const;
 
@@ -265,8 +277,12 @@ export default function ThemeLayoutModal({
                 onPress={() => handleSelect(theme.id, theme.label)}
                 className="w-[48%] mb-5"
               >
+                {/* Phone-framed preview — the screenshots are full-height
+                    phone captures, so we present them inside a device
+                    frame at the screen's own aspect ratio. The whole
+                    storefront top-to-bottom shows instead of a crop. */}
                 <View
-                  className={`rounded-3xl overflow-hidden bg-gray-50 border-2 ${
+                  className={`rounded-3xl border-2 bg-white p-2 ${
                     isSelected ? "border-blue-600" : "border-transparent"
                   }`}
                   style={{
@@ -277,70 +293,82 @@ export default function ThemeLayoutModal({
                     elevation: isSelected ? 4 : 2,
                   }}
                 >
-                  <View className="aspect-[9/16] bg-gray-100">
-                    <AppImage
-                      source={theme.screenshot}
-                      contentFit="cover"
-                      style={{
-                        width: "100%",
-                        height: "100%",
-                        opacity: locked ? 0.6 : 1,
-                      }}
-                    />
-                  </View>
-
-                  {isSelected && !locked && (
-                    <View
-                      className="absolute inset-0"
-                      pointerEvents="none"
-                      style={{ backgroundColor: "rgba(37,99,235,0.06)" }}
-                    />
-                  )}
-
-                  {/* Locked overlay — sits above the dimmed image */}
-                  {locked && (
-                    <View
-                      className="absolute inset-0 items-center justify-center"
-                      pointerEvents="none"
-                    >
-                      <View className="flex-row items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5">
-                        <Ionicons
-                          name="lock-closed"
-                          size={12}
-                          color="white"
-                        />
-                        <Text className="text-white text-[10px] font-extrabold uppercase tracking-wider">
-                          Upgrade
-                        </Text>
-                      </View>
-                    </View>
-                  )}
-
-                  {isSelected && !locked ? (
-                    <View className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-blue-600 items-center justify-center">
-                      <Ionicons name="checkmark" size={16} color="white" />
-                    </View>
-                  ) : !locked ? (
-                    <View className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-white/90 items-center justify-center">
-                      <Ionicons
-                        name="ellipse-outline"
-                        size={14}
-                        color="#94a3b8"
+                  <View className="rounded-[26px] bg-neutral-900 p-[4px]">
+                    <View className="relative rounded-[22px] overflow-hidden bg-gray-100 aspect-[9/19]">
+                      <AppImage
+                        source={theme.screenshot}
+                        contentFit="cover"
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          opacity: locked ? 0.6 : 1,
+                        }}
                       />
-                    </View>
-                  ) : null}
 
-                  {/* Currently-applied indicator — distinct from "selected
-                      in this picker" so the vendor can see what's live.
-                      Suppressed when locked so the Upgrade pill owns the
-                      visual space. */}
-                  {storeData?.templateId === theme.id && !locked && (
-                    <View className="absolute top-2.5 left-2.5 bg-gray-900/85 px-2 py-0.5 rounded-full">
-                      <Text className="text-white text-[9px] font-extrabold tracking-wider uppercase">
-                        Active
-                      </Text>
+                      {/* Notch */}
+                      <View
+                        pointerEvents="none"
+                        className="absolute top-1.5 left-1/2 h-1.5 w-12 rounded-full"
+                        style={{
+                          backgroundColor: "rgba(0,0,0,0.4)",
+                          transform: [{ translateX: -24 }],
+                        }}
+                      />
+
+                      {isSelected && !locked && (
+                        <View
+                          className="absolute inset-0"
+                          pointerEvents="none"
+                          style={{ backgroundColor: "rgba(37,99,235,0.06)" }}
+                        />
+                      )}
+
+                      {/* Locked overlay — sits above the dimmed image */}
+                      {locked && (
+                        <View
+                          className="absolute inset-0 items-center justify-center"
+                          pointerEvents="none"
+                        >
+                          <View className="flex-row items-center gap-1.5 rounded-full bg-amber-500 px-3 py-1.5">
+                            <Ionicons
+                              name="lock-closed"
+                              size={12}
+                              color="white"
+                            />
+                            <Text className="text-white text-[10px] font-extrabold uppercase tracking-wider">
+                              Upgrade
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+
+                      {isSelected && !locked ? (
+                        <View className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-blue-600 items-center justify-center">
+                          <Ionicons name="checkmark" size={16} color="white" />
+                        </View>
+                      ) : !locked ? (
+                        <View className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full bg-white/90 items-center justify-center">
+                          <Ionicons
+                            name="ellipse-outline"
+                            size={14}
+                            color="#94a3b8"
+                          />
+                        </View>
+                      ) : null}
+
+                      {/* Currently-applied indicator — distinct from
+                          "selected in this picker" so the vendor can see
+                          what's live. Suppressed when locked so the
+                          Upgrade pill owns the visual space. */}
+                      {storeData?.templateId === theme.id && !locked && (
+                        <View className="absolute top-2.5 left-2.5 bg-gray-900/85 px-2 py-0.5 rounded-full">
+                          <Text className="text-white text-[9px] font-extrabold tracking-wider uppercase">
+                            Active
+                          </Text>
+                        </View>
+                      )}
                     </View>
-                  )}
+                  </View>
                 </View>
 
                 <View className="mt-3 px-1">

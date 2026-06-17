@@ -256,12 +256,6 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
               route: "/vendor/catalogs2"
             },
             {
-              id: 'payment-mode',
-              title: 'Set up payments',
-              description: 'Choose how customers pay you — turn on online payment to let your store sell on its own',
-              completed: processedData.vendorOnboardProgressResponse.setupPaymentMode,
-            },
-            {
               id: 'setup-payment',
               title: 'Add your payout bank',
               description: 'Tell us which bank account your earnings should land in',

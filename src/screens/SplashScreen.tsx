@@ -9,8 +9,31 @@ import Animated, {
   withSequence,
   Easing,
 } from "react-native-reanimated";
-import { IsLoggedIn } from "../../context/auth.storage";
+import { getAuthFromStorage } from "../../context/auth.storage";
+import { isRole, isUserStatus } from "../lib/authStatus";
 import { AppImage } from "../components/AppImage";
+
+const ROLE_STAFF = 6;
+const STATUS_PENDING_ONBOARDING = 2;
+
+/**
+ * Decide where a returning user lands on cold boot. Mirrors the Login
+ * screen's routeAfterLogin + the web AdminShell gate: a vendor whose
+ * onboarding never finished (UserStatus still PendingOnboarding) must
+ * resume setup, NOT land on a placeholder dashboard. Staff never own a
+ * store, so they always go Home.
+ */
+async function resolveBootRoute(): Promise<
+  "Home" | "SetupStep1" | "Onboarding"
+> {
+  const { token, user } = await getAuthFromStorage();
+  if (!token || !user?.id) return "Onboarding";
+  if (isRole(user.role, ROLE_STAFF)) return "Home";
+  if (isUserStatus(user.userStatus, STATUS_PENDING_ONBOARDING)) {
+    return "SetupStep1";
+  }
+  return "Home";
+}
 
 const LOGO = require("../../assets/orderlySplash.png");
 
@@ -63,14 +86,13 @@ export default function SplashScreen({ navigation }: any) {
     // Wait for both: the minimum display time AND the auth check.
     // Whichever finishes last determines when we transition off.
     const minHold = new Promise<void>((r) => setTimeout(r, MIN_DISPLAY_MS));
-    const ready = IsLoggedIn();
-    Promise.all([minHold, ready]).then(([, isLoggedIn]) => {
+    const ready = resolveBootRoute();
+    Promise.all([minHold, ready]).then(([, route]) => {
       if (cancelled) return;
       fadeOutOpacity.value = withTiming(0, { duration: FADE_OUT_MS });
       setTimeout(() => {
         if (cancelled) return;
-        if (isLoggedIn) navigation.replace("Home");
-        else navigation.replace("Onboarding");
+        navigation.replace(route);
       }, FADE_OUT_MS);
     });
 

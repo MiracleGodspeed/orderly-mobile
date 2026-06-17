@@ -52,6 +52,16 @@ export const FEATURES = {
   TEMPLATE_LUME: "template.lume",
   TEMPLATE_COBALT: "template.cobalt",
   TEMPLATE_LINEN: "template.linen",
+  TEMPLATE_MAISON: "template.maison",
+  TEMPLATE_AURUM: "template.aurum",
+  TEMPLATE_COUTURE: "template.couture",
+  TEMPLATE_AVENUE: "template.avenue",
+  TEMPLATE_BAZAAR: "template.bazaar",
+  TEMPLATE_MERCATO: "template.mercato",
+  TEMPLATE_MARGAUX: "template.margaux",
+  TEMPLATE_COLETTE: "template.colette",
+  TEMPLATE_ARENA: "template.arena",
+  TEMPLATE_VIVID: "template.vivid",
 } as const;
 
 /**
@@ -74,6 +84,16 @@ export const TEMPLATE_FEATURE_KEY_BY_ID: Record<string, FeatureKey> = {
   lume: "template.lume",
   cobalt: "template.cobalt",
   linen: "template.linen",
+  maison: "template.maison",
+  aurum: "template.aurum",
+  couture: "template.couture",
+  avenue: "template.avenue",
+  bazaar: "template.bazaar",
+  mercato: "template.mercato",
+  margaux: "template.margaux",
+  colette: "template.colette",
+  arena: "template.arena",
+  vivid: "template.vivid",
 };
 
 /** Fallback template id rendered when a non-trial vendor's chosen
@@ -102,9 +122,13 @@ export interface FeatureMeta {
 
 export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
   [FEATURES.PRODUCTS_LOW_STOCK]: {
-    label: "Low-stock filter",
+    // The Growth Partner gate — one key controls the dashboard insights
+    // carousel, weekly/monthly reports (PDF + Excel), the stock / lapsed /
+    // encouragement notifications, and the low/out-of-stock catalog
+    // filters. Free during the 14-day trial, then needs this key.
+    label: "Growth insights & inventory",
     description:
-      "See every product running low on inventory across your whole catalog in one tap.",
+      "Unlocks the full Growth Partner experience — the dashboard insights carousel, weekly & monthly performance reports (download as PDF or Excel), smart low-stock / out-of-stock alerts, and the matching catalog filters.",
   },
   [FEATURES.PRODUCTS_SECONDARY_IMAGE]: {
     label: "Multiple product photos",
@@ -223,6 +247,16 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
   [FEATURES.TEMPLATE_LUME]: templatePaywallMeta("Lume"),
   [FEATURES.TEMPLATE_COBALT]: templatePaywallMeta("Cobalt"),
   [FEATURES.TEMPLATE_LINEN]: templatePaywallMeta("Linen"),
+  [FEATURES.TEMPLATE_MAISON]: templatePaywallMeta("Maison"),
+  [FEATURES.TEMPLATE_AURUM]: templatePaywallMeta("Aurum"),
+  [FEATURES.TEMPLATE_COUTURE]: templatePaywallMeta("Couture"),
+  [FEATURES.TEMPLATE_AVENUE]: templatePaywallMeta("Avenue"),
+  [FEATURES.TEMPLATE_BAZAAR]: templatePaywallMeta("Bazaar"),
+  [FEATURES.TEMPLATE_MERCATO]: templatePaywallMeta("Mercato"),
+  [FEATURES.TEMPLATE_MARGAUX]: templatePaywallMeta("Margaux"),
+  [FEATURES.TEMPLATE_COLETTE]: templatePaywallMeta("Colette"),
+  [FEATURES.TEMPLATE_ARENA]: templatePaywallMeta("Arena"),
+  [FEATURES.TEMPLATE_VIVID]: templatePaywallMeta("Vivid"),
 };
 
 function templatePaywallMeta(name: string): FeatureMeta {

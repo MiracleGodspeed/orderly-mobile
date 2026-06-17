@@ -25,18 +25,25 @@ export type RootStackParamList = {
   SetupStep2: undefined;
   SetupStep3: undefined;
   Home: undefined;
-  Orders: undefined;
+  // Optional `filter` lets Growth Partner insights deep-link to the
+  // orders list pre-scoped (e.g. filter=unfulfilled).
+  Orders: { filter?: string } | undefined;
   Store: undefined;
   Reports: undefined;
   Profile: undefined;
   ManageStore: undefined;
   ProductsDashboard: undefined;
-  ProductsList: undefined;
+  // Optional deep-link params: `filter` (low_stock | out_of_stock) or a
+  // specific `productId` to focus.
+  ProductsList: { filter?: string; productId?: string } | undefined;
   OrderDetails: {
     order: Order;
   };
 
   ReportsAnalytics: undefined;
+  // Dedicated report-download screen (branded PDF / Excel for any week or
+  // month) — reached from the dashboard insight card and from Analytics.
+  ReportDownload: undefined;
   StoreInformation: undefined;
   PersonalDetails: undefined;
   PayoutSettings: undefined;
@@ -50,7 +57,10 @@ export type RootStackParamList = {
   NotificationProfile: undefined;
   LocationManagement: undefined;
   CustomDomain: undefined;
-  Customers: undefined;
+  // Optional `segment` (best | vip | lapsed_60d | lapsed_90d | one_time)
+  // opens the Customers screen pre-filtered to a Growth Partner segment
+  // with the wa.me broadcast action.
+  Customers: { segment?: string } | undefined;
   /** Vendor-facing newsletter management — toggle the storefront prompt
    *  on/off and browse the subscriber list. */
   Newsletter: undefined;

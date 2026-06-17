@@ -88,6 +88,10 @@ export function useFeatures() {
   return {
     has,
     isUnlimited: set === null,
+    // True ONLY on the free trial. Distinct from `isUnlimited`: a paid
+    // top-tier plan is also unlimited but is not a trial, so trial-only
+    // messaging must gate on this flag, never on `isUnlimited`.
+    isTrial: effective?.isTrial ?? false,
     planName: effective?.planName ?? null,
     // Plan-level seat budget for the Staff & permissions feature.
     // Wire convention: 0 or null = locked, positive integer = seat

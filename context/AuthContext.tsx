@@ -63,6 +63,11 @@ interface AuthContextType {
     refreshToken?: string | null,
     refreshTokenExpiresAt?: string | null
   ) => Promise<void>;
+  /** Patch the persisted user's status to Active after onboarding
+   *  commits on the backend, so the next app boot routes to Home
+   *  instead of bouncing back into the setup wizard on a stale
+   *  PendingOnboarding. */
+  markOnboardingComplete: () => Promise<void>;
 
    isLoading: boolean;
 }
@@ -353,6 +358,17 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   setUser(newUser);
 };
 
+ const markOnboardingComplete = async () => {
+  // 0 = UserStatus.Active. Patch both the in-memory user and the
+  // persisted copy so SplashScreen's boot guard routes to Home next
+  // launch (a vendor who just finished setup must never be sent back
+  // into the wizard). Storage-first to mirror setAuthData's ordering.
+  if (!user) return;
+  const next: User = { ...user, userStatus: 0 };
+  await saveAuthToStorage(undefined, next);
+  setUser(next);
+};
+
  if (isLoading) return null;
 
   return (
@@ -365,6 +381,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         appleLogin,
         logout,
         setAuthData,
+        markOnboardingComplete,
         isLoading
       }}
     >

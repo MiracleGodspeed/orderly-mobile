@@ -53,59 +53,13 @@ const getAvatarColor = (seed: string): string => {
   return AVATAR_PALETTE[Math.abs(hash) % AVATAR_PALETTE.length];
 };
 
-function SubscriberRow({
-  subscriber,
-  onEmail,
-}: {
-  subscriber: NewsletterSubscriber;
-  onEmail: (email: string) => void;
-}) {
-  const avatarColor = getAvatarColor(subscriber.email);
-  const initial = (subscriber.email || "?").charAt(0).toUpperCase();
-
-  return (
-    <View
-      className="bg-white rounded-2xl border border-gray-100 mb-2"
-      style={{
-        shadowColor: "#0f172a",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.04,
-        shadowRadius: 6,
-        elevation: 1,
-      }}
-    >
-      <View className="flex-row items-center p-3.5">
-        <View
-          className="w-11 h-11 rounded-full items-center justify-center"
-          style={{ backgroundColor: avatarColor }}
-        >
-          <Text className="text-white font-extrabold text-[14px]">
-            {initial}
-          </Text>
-        </View>
-
-        <View className="flex-1 ml-3 min-w-0">
-          {/* Full email — wraps instead of truncating so the vendor can
-              read the whole address. */}
-          <Text className="text-[14px] font-extrabold text-gray-900 tracking-tight">
-            {subscriber.email}
-          </Text>
-          <Text className="text-[11px] text-gray-400 mt-0.5">
-            Joined {formatRelativeTime(subscriber.subscribedAt)}
-          </Text>
-        </View>
-
-        <Pressable
-          onPress={() => onEmail(subscriber.email)}
-          className="flex-row items-center gap-1.5 px-3 py-2 rounded-xl active:bg-blue-50/40"
-        >
-          <Ionicons name="mail" size={14} color="#0080ff" />
-          <Text className="text-[12px] font-extrabold text-[#0080ff]">Email</Text>
-        </Pressable>
-      </View>
-    </View>
-  );
-}
+const cardShadow = {
+  shadowColor: "#0f172a",
+  shadowOffset: { width: 0, height: 6 },
+  shadowOpacity: 0.05,
+  shadowRadius: 14,
+  elevation: 2,
+} as const;
 
 export default function Newsletter() {
   const toast = useToast();
@@ -244,53 +198,71 @@ export default function Newsletter() {
           />
         }
       >
-        {/* Branded hero */}
+        {/* Premium dark hero */}
         <View
-          className="mx-5 mt-4 mb-4 rounded-3xl overflow-hidden px-5 py-5"
-          style={{ backgroundColor: "#0080ff" }}
+          className="mx-5 mt-4 mb-6 rounded-[28px] overflow-hidden p-6"
+          style={{ backgroundColor: "#0B1220" }}
         >
           <View
             style={{
               position: "absolute",
-              top: -50,
-              right: -50,
-              width: 160,
-              height: 160,
-              borderRadius: 80,
-              backgroundColor: "rgba(255,255,255,0.06)",
+              top: -60,
+              right: -44,
+              width: 190,
+              height: 190,
+              borderRadius: 95,
+              backgroundColor: "rgba(0,128,255,0.22)",
             }}
           />
-          <View className="flex-row items-center gap-3">
-            <View className="w-12 h-12 rounded-2xl bg-white/15 border border-white/15 items-center justify-center">
-              <Ionicons name="mail" size={22} color="white" />
-            </View>
-            <View className="flex-1">
-              <Text className="text-white/75 text-[10.5px] font-extrabold uppercase tracking-[1.4px]">
-                Your subscribers
-              </Text>
-              <Text className="text-white text-[24px] font-extrabold tracking-tight mt-0.5">
-                {heroCount.toLocaleString()}{" "}
-                <Text className="text-white/70 text-[14px] font-bold">
-                  {heroCount === 1 ? "subscriber" : "subscribers"}
-                </Text>
-              </Text>
-            </View>
+          <View
+            style={{
+              position: "absolute",
+              bottom: -50,
+              left: -28,
+              width: 130,
+              height: 130,
+              borderRadius: 65,
+              backgroundColor: "rgba(255,255,255,0.03)",
+            }}
+          />
+          <View
+            className="w-12 h-12 rounded-2xl items-center justify-center mb-5"
+            style={{ backgroundColor: "rgba(255,255,255,0.08)" }}
+          >
+            <Ionicons name="mail-outline" size={24} color="#fff" />
           </View>
+          <Text
+            className="uppercase text-[10.5px] font-bold tracking-[2px]"
+            style={{ color: "rgba(191,219,254,0.7)" }}
+          >
+            Your subscribers
+          </Text>
+          <Text className="text-white text-[34px] font-extrabold tracking-tight mt-1">
+            {heroCount.toLocaleString()}
+          </Text>
+          <Text className="text-white/55 text-[13px] mt-1">
+            {heroCount === 1
+              ? "person on your mailing list"
+              : "people on your mailing list"}
+          </Text>
         </View>
 
         {/* Enable/disable toggle card */}
-        <View className="px-5 mb-4">
-          <View className="bg-white rounded-2xl border border-gray-100 p-4">
-            <View className="flex-row items-center justify-between">
-              <View className="flex-row items-start gap-3 flex-1 mr-3">
-                <View className="w-10 h-10 rounded-2xl bg-blue-50 items-center justify-center">
+        <View className="px-5 mb-6">
+          <View
+            className="bg-white rounded-3xl border border-gray-100 p-5"
+            style={cardShadow}
+          >
+            <View className="flex-row items-start justify-between">
+              <View className="flex-row items-start gap-3.5 flex-1 mr-3">
+                <View className="w-11 h-11 rounded-2xl bg-blue-50 items-center justify-center">
                   <Ionicons name="megaphone-outline" size={20} color="#0080ff" />
                 </View>
                 <View className="flex-1">
-                  <Text className="text-[14px] font-extrabold text-gray-900">
+                  <Text className="text-[15px] font-extrabold text-gray-900 tracking-tight">
                     Storefront signup prompt
                   </Text>
-                  <Text className="text-[12px] text-gray-500 mt-0.5 leading-[17px]">
+                  <Text className="text-[12px] text-gray-500 mt-1 leading-[17px]">
                     {hasFeature
                       ? "When on, visitors to your storefront see a classy popup inviting them to join your newsletter."
                       : "Collecting newsletter signups is part of a higher plan. Upgrade to turn this on."}
@@ -303,9 +275,9 @@ export default function Newsletter() {
                   value={enabled}
                   onValueChange={onToggle}
                   disabled={toggling}
-                  trackColor={{ false: "#d1d5db", true: "#0080ff" }}
+                  trackColor={{ false: "#e5e7eb", true: "#0080ff" }}
                   thumbColor="#fff"
-                  ios_backgroundColor="#d1d5db"
+                  ios_backgroundColor="#e5e7eb"
                 />
               ) : (
                 <View className="flex-row items-center gap-1 bg-gray-100 px-2.5 py-1 rounded-full">
@@ -316,21 +288,31 @@ export default function Newsletter() {
             </View>
 
             {hasFeature && (
-              <View className="mt-3 pt-3 border-t border-gray-100 flex-row items-center gap-1.5">
+              <View className="mt-4 pt-4 border-t border-gray-100">
                 <View
-                  className="w-1.5 h-1.5 rounded-full"
-                  style={{ backgroundColor: enabled ? "#10b981" : "#d1d5db" }}
-                />
-                <Text
-                  className="text-[12px] font-semibold"
-                  style={{ color: enabled ? "#059669" : "#9ca3af" }}
+                  className="self-start flex-row items-center gap-2 px-3 py-1.5 rounded-full"
+                  style={{ backgroundColor: enabled ? "#ecfdf5" : "#f3f4f6" }}
                 >
-                  {enabled ? "Live on your storefront" : "Not showing"}
-                </Text>
+                  <View
+                    className="w-1.5 h-1.5 rounded-full"
+                    style={{ backgroundColor: enabled ? "#10b981" : "#9ca3af" }}
+                  />
+                  <Text
+                    className="text-[12px] font-bold"
+                    style={{ color: enabled ? "#047857" : "#6b7280" }}
+                  >
+                    {enabled ? "Live on your storefront" : "Not showing"}
+                  </Text>
+                </View>
               </View>
             )}
           </View>
         </View>
+
+        {/* Section label */}
+        <Text className="px-5 mb-3 uppercase text-[11px] font-bold tracking-[2px] text-gray-400">
+          Subscribers
+        </Text>
 
         {/* Search */}
         <View className="px-5 mb-3">
@@ -364,9 +346,45 @@ export default function Newsletter() {
               </Text>
             </View>
           ) : (
-            data.map((s) => (
-              <SubscriberRow key={s.id} subscriber={s} onEmail={handleEmail} />
-            ))
+            <View
+              className="bg-white rounded-3xl border border-gray-100 overflow-hidden"
+              style={cardShadow}
+            >
+              {data.map((s, i) => (
+                <View
+                  key={s.id}
+                  className={`flex-row items-center px-4 py-3.5 ${
+                    i < data.length - 1 ? "border-b border-gray-50" : ""
+                  }`}
+                >
+                  <View
+                    className="w-10 h-10 rounded-full items-center justify-center"
+                    style={{ backgroundColor: getAvatarColor(s.email) }}
+                  >
+                    <Text className="text-white font-extrabold text-[14px]">
+                      {(s.email || "?").charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View className="flex-1 ml-3 min-w-0">
+                    <Text
+                      className="text-[14px] font-bold text-gray-900 tracking-tight"
+                      numberOfLines={1}
+                    >
+                      {s.email}
+                    </Text>
+                    <Text className="text-[11px] text-gray-400 mt-0.5">
+                      Joined {formatRelativeTime(s.subscribedAt)}
+                    </Text>
+                  </View>
+                  <Pressable
+                    onPress={() => handleEmail(s.email)}
+                    className="w-9 h-9 items-center justify-center rounded-full active:bg-blue-50"
+                  >
+                    <Ionicons name="mail-outline" size={18} color="#0080ff" />
+                  </Pressable>
+                </View>
+              ))}
+            </View>
           )}
         </View>
 

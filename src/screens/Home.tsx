@@ -50,6 +50,7 @@ import { useStorePerformance } from '../hooks/useStorePerformance';
 import { AppImage } from '../components/AppImage';
 import { TrendBadge } from '../components/TrendBadge';
 import PromoCardCarousel from '../components/PromoCardCarousel';
+import InsightsCarousel from '../components/InsightsCarousel';
 import { formatNaira, getGreeting, computeTrend, formatRelativeTime } from '../lib/format';
 import { FeaturePaywallSheet } from '../components/FeaturePaywallSheet';
 import { useFeatures } from '../hooks/useFeatures';
@@ -483,6 +484,10 @@ export default function Home() {
   // Single source of truth shared with StoreSetupModal — see lib/setupProgress.
   // Just signing up = 25% baseline; each of the 3 checklist steps adds 25%.
   const progressPercentage = setupProgressPct(checklistItems);
+  // Insights only surface once setup is fully complete — keeps a new
+  // vendor's home calm and focused on finishing setup first.
+  const setupComplete =
+    checklistItems.length > 0 && checklistItems.every((i) => i.completed);
 
   const openSetupModal = useCallback(() => setSetupModalOpen(true), []);
   const closeSetupModal = useCallback(() => setSetupModalOpen(false), []);
@@ -537,6 +542,10 @@ export default function Home() {
   // Visitor analytics is a paid feature — locked vendors see the tile
   // with a lock icon and tap-to-upgrade behavior, not the real number.
   const canUseVisits = hasFeature(FEATURES.ANALYTICS_VISITS);
+  // The Growth Partner insights carousel rides on the products.low_stock
+  // key (free during the 14-day trial). Gate the render so ineligible
+  // vendors don't fetch a feed the backend would return empty anyway.
+  const canUseInsights = hasFeature(FEATURES.PRODUCTS_LOW_STOCK);
   const [paywallFeature, setPaywallFeature] = useState<FeatureKey | null>(null);
   const handleOpenDomain = useCallback(() => {
     tap();
@@ -597,8 +606,6 @@ export default function Home() {
         navigation.navigate('LocationManagement');
       } else if (step === 'add-product') {
         navigation.navigate('ProductsList', { openAddProduct: true } as any);
-      } else if (step === 'payment-mode') {
-        navigation.navigate('PaymentSetup');
       } else if (step === 'setup-payment') {
         navigation.navigate('PayoutSettings');
       }
@@ -951,10 +958,18 @@ export default function Home() {
         {/* Admin-managed auto-swipe promo strip. Renders nothing
             when no active cards are scheduled — zero footprint on
             quiet dashboards. */}
-        <View className="">
+        {/* <View className="">
           <PromoCardCarousel />
-        </View>
+        </View> */}
 
+        {/* Growth Partner insights — calm, comforting advice strip. Each
+            slide resolves to exactly what the vendor needs (filtered
+            customers, an order list, a product, the reports screen).
+            Renders nothing until there's something worth saying. Gated on
+            analytics permission so staff without it don't see store
+            performance. */}
+        {canViewAnalytics && setupComplete && canUseInsights && <InsightsCarousel />}
+{/* here */}
         {/* <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl border border-gray-100 p-4 overflow-hidden"
           style={{
             shadowColor: '#0f172a',

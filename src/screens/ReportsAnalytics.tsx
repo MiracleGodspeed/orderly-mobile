@@ -444,6 +444,27 @@ export default function ReportsAnalytics({ navigation }: Props) {
             </>
           )}
         </View>
+
+        {/* Entry to the dedicated report-download screen. */}
+        <Pressable
+          onPress={() => navigation.navigate("ReportDownload")}
+          className="mx-5 my-4 flex-row items-center justify-between bg-white rounded-2xl border border-gray-100 p-4"
+        >
+          <View className="flex-row items-center gap-3">
+            <View className="w-10 h-10 rounded-xl bg-blue-50 items-center justify-center">
+              <Ionicons name="download-outline" size={20} color="#0080ff" />
+            </View>
+            <View>
+              <Text className="text-[14px] font-extrabold text-gray-900">
+                Download a report
+              </Text>
+              <Text className="text-[12px] text-gray-500">
+                Branded PDF or Excel — any week or month.
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
+        </Pressable>
       </ScrollView>
 
       {/* Custom-range picker — opens when the vendor taps the "Custom"

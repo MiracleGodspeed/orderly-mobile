@@ -12,8 +12,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { useToast } from "react-native-toast-notifications";
+import { useRoute, type RouteProp } from "@react-navigation/native";
 
 import { ScreenHeader } from "../components/ScreenHeader";
+import SegmentCustomersView from "../components/SegmentCustomersView";
+import type { RootStackParamList } from "../navigation/types";
 import { ListSearchBar } from "../components/ListSearchBar";
 import { Pagination } from "../components/Pagination";
 import { VendorCustomer } from "../api/vendor/vendor.types";
@@ -183,6 +186,19 @@ function CustomerRow({
 }
 
 export default function Customers() {
+  const route = useRoute<RouteProp<RootStackParamList, "Customers">>();
+  const segment = route.params?.segment;
+
+  // Growth Partner deep-link: render the segment-filtered view with the
+  // wa.me broadcast instead of the full customer list.
+  if (segment) {
+    return <SegmentCustomersView segment={segment} />;
+  }
+
+  return <CustomersList />;
+}
+
+function CustomersList() {
   const toast = useToast();
   const [page, setPage] = useState(1);
   const [debouncedSearch, setDebouncedSearch] = useState("");

@@ -28,7 +28,115 @@ interface Props {
  * lifted from `orderly-by-goodspeed/src/assets/images/Templates/` so the
  * mobile preview matches the web one byte-for-byte.
  */
+// Order mirrors the web picker (TEMPLATE_OPTIONS in StorefrontEditorDrawer.tsx):
+// most-stunning first, descending — kept identical across web + mobile so the
+// vendor sees the same sequence on every device.
 const THEMES = [
+  {
+    id: "mercato",
+    label: "Mercato",
+    tagline: "Modern fashion marketplace — geometric type, hero slider.",
+    screenshot: require("../../assets/templates/web/mercato.png"),
+    accent: "#111827",
+  },
+  {
+    id: "margaux",
+    label: "Margaux",
+    tagline: "Editorial luxe fashion — navy & gold Bodoni serif.",
+    screenshot: require("../../assets/templates/web/margaux.png"),
+    accent: "#1e2a44",
+  },
+  {
+    id: "cobalt",
+    label: "Cobalt",
+    tagline: "Clean fashion-ecommerce — navy on white, pale-blue hero.",
+    screenshot: require("../../assets/templates/web/cobalt.png"),
+    accent: "#16233f",
+  },
+  {
+    id: "arena",
+    label: "Arena",
+    tagline: "Monochrome streetwear — bold type, icon category grid.",
+    screenshot: require("../../assets/templates/web/arena.png"),
+    accent: "#1a1a1a",
+  },
+  {
+    id: "colette",
+    label: "Colette",
+    tagline: "Magazine-elegant fashion — serif headings, airy light.",
+    screenshot: require("../../assets/templates/web/colette.png"),
+    accent: "#1c1917",
+  },
+  {
+    id: "galactic",
+    label: "Galactic",
+    tagline: "Premium catalog with luxury leather aesthetics.",
+    screenshot: require("../../assets/templates/web/galactic.png"),
+    accent: "#2f3237",
+  },
+  {
+    id: "maison",
+    label: "Maison",
+    tagline: "Quiet-luxury fashion house — stark monochrome gallery.",
+    screenshot: require("../../assets/templates/web/maison.png"),
+    accent: "#0a0a0a",
+  },
+  {
+    id: "aurum",
+    label: "Aurum",
+    tagline: "The jeweller's boutique at night — near-black, warm gold.",
+    screenshot: require("../../assets/templates/web/aurum.png"),
+    accent: "#15110a",
+  },
+  {
+    id: "couture",
+    label: "Couture",
+    tagline: "Romantic atelier — warm ivory with soft rosé accents.",
+    screenshot: require("../../assets/templates/web/couture.png"),
+    accent: "#b76e79",
+  },
+  {
+    id: "avenue",
+    label: "Avenue",
+    tagline: "Contemporary fashion shop — bright, clean lifestyle hero.",
+    screenshot: require("../../assets/templates/web/avenue.png"),
+    accent: "#0a0a0a",
+  },
+  {
+    id: "bazaar",
+    label: "Bazaar",
+    tagline: "Feature-rich classic store — deals, carousels, ratings.",
+    screenshot: require("../../assets/templates/web/bazaar.png"),
+    accent: "#1f2937",
+  },
+  {
+    id: "atelier",
+    label: "Atelier",
+    tagline: "Editorial, minimal, and quietly premium.",
+    screenshot: require("../../assets/templates/web/atelier.png"),
+    accent: "#0a0a0a",
+  },
+  {
+    id: "brio",
+    label: "Brio",
+    tagline: "Crisp, product-first storefront with bright hero.",
+    screenshot: require("../../assets/templates/web/brio.png"),
+    accent: "#0a0a0a",
+  },
+  {
+    id: "vivid",
+    label: "Vivid",
+    tagline: "Bright marketplace — bold brand-colour header, pill buttons.",
+    screenshot: require("../../assets/templates/web/vivid.png"),
+    accent: "#2563eb",
+  },
+  {
+    id: "carte",
+    label: "Carte",
+    tagline: "No hero — opens straight into the product grid.",
+    screenshot: require("../../assets/templates/web/carte.png"),
+    accent: "#0a0a0a",
+  },
   {
     id: "mg1",
     label: "Orderly Core",
@@ -65,34 +173,6 @@ const THEMES = [
     accent: "#059669",
   },
   {
-    id: "galactic",
-    label: "Galactic",
-    tagline: "Premium catalog with luxury leather aesthetics.",
-    screenshot: require("../../assets/templates/web/galactic.png"),
-    accent: "#2f3237",
-  },
-  {
-    id: "atelier",
-    label: "Atelier",
-    tagline: "Editorial, minimal, and quietly premium.",
-    screenshot: require("../../assets/templates/web/atelier.png"),
-    accent: "#0a0a0a",
-  },
-  {
-    id: "brio",
-    label: "Brio",
-    tagline: "Crisp, product-first storefront with bright hero.",
-    screenshot: require("../../assets/templates/web/brio.png"),
-    accent: "#0a0a0a",
-  },
-  {
-    id: "carte",
-    label: "Carte",
-    tagline: "No hero — opens straight into the product grid.",
-    screenshot: require("../../assets/templates/web/carte.png"),
-    accent: "#0a0a0a",
-  },
-  {
     id: "grace",
     label: "Grace",
     tagline: "Premium jewelry-inspired editorial collections.",
@@ -107,11 +187,18 @@ const THEMES = [
     accent: "#18181b",
   },
   {
-    id: "cobalt",
-    label: "Cobalt",
-    tagline: "Clean fashion-ecommerce — navy on white, pale-blue hero.",
-    screenshot: require("../../assets/templates/web/cobalt.png"),
-    accent: "#16233f",
+    id: "lume",
+    label: "Lume",
+    tagline: "Warm organic DTC — cream surfaces, soft rounded shapes.",
+    screenshot: require("../../assets/templates/web/lume.png"),
+    accent: "#a8754f",
+  },
+  {
+    id: "onyx",
+    label: "Onyx",
+    tagline: "Dark luxury — sophisticated surfaces, champagne accents.",
+    screenshot: require("../../assets/templates/web/onyx.png"),
+    accent: "#18181b",
   },
   {
     id: "linen",
@@ -130,7 +217,7 @@ export default function ThemeLayoutModal({
   initialTemplateId,
 }: Props) {
   const { updateVendorSettings, storeData, loading } = useVendor();
-  const { has: hasFeature, isUnlimited } = useFeatures();
+  const { has: hasFeature, isUnlimited, isTrial } = useFeatures();
   // We seed with the first id but the effect below replaces it whenever the
   // sheet opens, so initial mount never shows the wrong selection.
   const [selectedTheme, setSelectedTheme] = useState<ThemeId>(THEMES[0].id);
@@ -189,9 +276,14 @@ export default function ThemeLayoutModal({
     return required;
   };
 
-  /** Whether the trial info sheet should appear for this candidate. */
+  /**
+   * Whether the trial info sheet should appear for this candidate.
+   * Gates on `isTrial`, NOT `isUnlimited`: a paid top-tier plan is also
+   * unlimited but is not on trial — showing them the "your trial" sheet
+   * was the bug. The selection still applies on confirm either way.
+   */
   const needsTrialInfo = (id: string): boolean => {
-    if (!isUnlimited) return false;
+    if (!isTrial) return false;
     if (id === currentTemplateId) return false;
     return TEMPLATE_FEATURE_KEY_BY_ID[id] != null;
   };

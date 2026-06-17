@@ -11,7 +11,6 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
 export type SetupStepId =
   | "add-delivery-locations"
   | "add-product"
-  | "payment-mode"
   | "setup-payment";
 
 interface Step {
@@ -23,10 +22,8 @@ interface Step {
   iconColor: string;
 }
 
-// Display order is intentional — "Set up payments" sits 3rd so it nudges
-// vendors to make the high-impact choice (online vs manual) before the
-// payout-bank step. The new step is technically the 4th item we track,
-// but surfaced at position 3 to keep it front of mind.
+// New vendors default to WhatsApp checkout, so there's no "Set up
+// payments" step — the payment mode is chosen for them.
 const STEPS: Step[] = [
   {
     id: "add-delivery-locations",
@@ -45,15 +42,6 @@ const STEPS: Step[] = [
     icon: "cube-outline",
     tint: "#ecfeff",
     iconColor: "#0891b2",
-  },
-  {
-    id: "payment-mode",
-    title: "Set up payments",
-    description:
-      "Choose how customers pay you — turn on online payment to let your store sell on its own.",
-    icon: "card-outline",
-    tint: "#eff6ff",
-    iconColor: "#2563eb",
   },
   {
     id: "setup-payment",

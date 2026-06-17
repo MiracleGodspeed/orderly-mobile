@@ -8,6 +8,7 @@ import {
   Platform,
   StatusBar,
   Modal,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
@@ -42,7 +43,7 @@ const haptic = () => {
 export default function SetupStep3() {
   const navigation = useNavigation<NavProp>();
   const { setProgress } = useProgress();
-  const { user } = useAuth();
+  const { user, logout, markOnboardingComplete } = useAuth();
   const toast = useToast();
   const {
     selectedCategories,
@@ -59,6 +60,29 @@ export default function SetupStep3() {
   const [loadingCats, setLoadingCats] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [isSettingUp, setIsSettingUp] = useState(false);
+  // Persisted (not just a toast) so a vendor whose final-stage submit
+  // failed sees exactly what went wrong and how to recover, instead of
+  // a modal that vanishes silently.
+  const [setupError, setSetupError] = useState<string | null>(null);
+
+  // Escape hatch — signs the vendor out and returns them to login so a
+  // stuck setup is never a dead end (they can sign back in and resume).
+  const handleBackToLogin = () => {
+    Alert.alert(
+      "Back to login?",
+      "You'll be signed out. You can sign back in anytime to finish setting up your store.",
+      [
+        { text: "Stay", style: "cancel" },
+        {
+          text: "Back to login",
+          style: "destructive",
+          onPress: () => {
+            logout().catch(() => {});
+          },
+        },
+      ]
+    );
+  };
 
   useEffect(() => {
     setProgress(0.66);
@@ -100,17 +124,10 @@ export default function SetupStep3() {
 
     setModalVisible(true);
     setIsSettingUp(true);
+    setSetupError(null);
     setProgress(1);
 
     try {
-      console.log({
-        storeId: user.storeId,
-        businessName,
-        description,
-        isServiceBased: isServiceBased ?? false,
-        applicableCategories: selectedCategories,
-      }, "payload")
-
       const response = await submitVendorOnboarding({
         storeId: user.storeId,
         businessName,
@@ -120,21 +137,43 @@ export default function SetupStep3() {
         selectedSlug: selectedSlug ?? undefined,
       });
 
-      console.log(response, "response")
+      // A 200 here means the backend committed onboarding ATOMICALLY
+      // (name, slug, Active status and trial all landed together — see
+      // AddVendorBusinessCategories). `submitVendorOnboarding` throws on
+      // any non-200, so reaching this line is the authoritative "your
+      // store was saved" signal.
+      if (response?.code !== "200") {
+        throw new Error(
+          response?.message || "We couldn't confirm your store was saved."
+        );
+      }
 
-      // Pull the freshly-onboarded store from the server so Home renders the
-      // real store name, slug, etc. instead of the empty pre-onboarding state.
-      await fetchVendorData();
+      // Persist Active locally so a future app boot routes to Home, not
+      // back into this wizard on a stale PendingOnboarding.
+      await markOnboardingComplete();
+
+      // Load the fresh store so Home opens with the real name/slug rather
+      // than "My Store"/"yourstore" placeholders. This read can lag the
+      // write by a moment (the trial row provisions just after), so retry
+      // a few times. A read failure here does NOT mean onboarding failed
+      // — the submit already confirmed it — so we still proceed and let
+      // VendorContext keep refetching in the background.
+      let fresh = null;
+      for (let attempt = 0; attempt < 3 && !fresh?.storeName; attempt++) {
+        if (attempt > 0) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        try {
+          fresh = await fetchVendorData();
+        } catch {
+          // keep retrying
+        }
+      }
 
       // The free-trial subscription is provisioned a few seconds AFTER
-      // onboarding completes server-side — until it lands, the storefront
-      // record shows a subscription that looks expired (isTrial:false / 0
-      // days), which Home's banner would render as "Subscription expired"
-      // for a vendor who literally just signed up. Rather than block this
-      // modal racing that latency (it can take longer than any reasonable
-      // spinner), flag the settle window: the banner suppresses the false
-      // "expired" state and VendorContext quietly refetches in the
-      // background until the trial appears. Lets us navigate immediately.
+      // onboarding completes server-side. Flag the settle window so
+      // Home's banner suppresses the false "Subscription expired" state
+      // while VendorContext refetches until the trial appears.
       markOnboarded();
 
       if (Platform.OS === "ios") {
@@ -152,8 +191,10 @@ export default function SetupStep3() {
         });
       }, 800);
     } catch (err) {
-      // Don't leave the vendor staring at a modal that just vanished with no
-      // explanation — surface the server's message (or a fallback) as a toast.
+      // The submit failed — onboarding did NOT commit. Tell the vendor
+      // exactly what happened (server message when we have it) in a
+      // persistent banner, not just a toast that vanishes, and keep them
+      // on this screen so they can retry or use "Back to login".
       console.log("VENDOR ONBOARDING ERROR:", err);
       setModalVisible(false);
       if (Platform.OS === "ios") {
@@ -165,6 +206,7 @@ export default function SetupStep3() {
         err instanceof Error && err.message
           ? err.message
           : "Something went wrong setting up your store. Please try again.";
+      setSetupError(message);
       toast.show(message, { type: "danger" });
     } finally {
       setIsSettingUp(false);
@@ -186,6 +228,7 @@ export default function SetupStep3() {
           title="Pick your categories"
           subtitle="Choose all that fits. This helps us understand your business and create a website that fits your brand."
           onBack={() => navigation.goBack()}
+          onExit={handleBackToLogin}
         />
 
         {/* Selected count */}
@@ -273,6 +316,32 @@ export default function SetupStep3() {
             </View>
           )}
         </View>
+
+        {/* Setup error — persistent, telling, with a recovery path */}
+        {setupError && (
+          <View className="px-6 mt-5">
+            <View className="bg-red-50 border border-red-200 rounded-2xl p-4 flex-row items-start gap-3">
+              <Ionicons
+                name="alert-circle"
+                size={18}
+                color="#dc2626"
+                style={{ marginTop: 1 }}
+              />
+              <View className="flex-1">
+                <Text className="text-[13.5px] font-bold text-red-800 mb-0.5">
+                  We couldn&apos;t finish setting up your store
+                </Text>
+                <Text className="text-[12.5px] text-red-700 leading-[18px]">
+                  {setupError}
+                </Text>
+                <Text className="text-[12px] text-red-600/90 leading-[17px] mt-1.5">
+                  Nothing was saved — tap “Finish setup” to try again, or use
+                  “Back to login” at the top to sign out and come back later.
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Continue */}
         <View className="px-6 mt-6">

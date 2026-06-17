@@ -7,6 +7,7 @@ import {
   Pressable,
   ScrollView,
   KeyboardAvoidingView,
+  Alert,
 } from "react-native";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -19,6 +20,7 @@ import * as Haptics from "expo-haptics";
 import { RootStackParamList } from "../navigation/types";
 import { useVendor } from "../../context/VendorContext";
 import { useProgress } from "../../context/ProgressContext";
+import { useAuth } from "../../context/AuthContext";
 import { SetupHeader } from "../components/SetupHeader";
 import { getStoreUrlSuggestions } from "../api/vendor/vendor.api";
 import { StoreUrlSuggestion } from "../api/vendor/vendor.types";
@@ -40,7 +42,37 @@ export default function SetupStep1() {
     setSelectedSlug: persistSlug,
     businessName: existingName,
     description: existingDesc,
+    storeData,
   } = useVendor();
+  const { logout } = useAuth();
+
+  // Self-heal guard: a vendor who actually finished onboarding must
+  // never be stranded in the wizard. If fresh store data shows a real
+  // store name (e.g. boot routed them here on a stale
+  // PendingOnboarding, or they completed setup on another device),
+  // bounce straight to Home. Mirrors the web /setup completeness redirect.
+  useEffect(() => {
+    if (storeData?.storeName && storeData.storeName.trim().length > 0) {
+      navigation.reset({ index: 0, routes: [{ name: "Home" }] });
+    }
+  }, [storeData?.storeName, navigation]);
+
+  const handleBackToLogin = () => {
+    Alert.alert(
+      "Back to login?",
+      "You'll be signed out. You can sign back in anytime to finish setting up your store.",
+      [
+        { text: "Stay", style: "cancel" },
+        {
+          text: "Back to login",
+          style: "destructive",
+          onPress: () => {
+            logout().catch(() => {});
+          },
+        },
+      ]
+    );
+  };
 
   const [businessName, setBusinessName] = useState(existingName || "");
   const [description, setDescription] = useState(existingDesc || "");
@@ -149,6 +181,7 @@ export default function SetupStep1() {
             title="Tell us about your business"
             subtitle="A clear name and short description helps customers find you and trust what you sell."
             onBack={() => navigation.goBack()}
+            onExit={handleBackToLogin}
           />
 
           {/* Form card */}

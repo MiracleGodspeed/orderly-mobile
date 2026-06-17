@@ -85,6 +85,15 @@ export default function Profile() {
           subtitle: "Password, sessions, 2FA",
           screen: "Security",
         },
+        {
+          id: "notifications",
+          icon: "notifications-outline",
+          tint: "#dbeafe",
+          iconColor: "#0080ff",
+          title: "Notifications",
+          subtitle: "Choose what Orderly tells you about",
+          screen: "NotificationProfile",
+        },
         // App Store guideline 5.1.1(v): in-app account deletion must
         // be reachable, not buried. Lives in the Account group so a
         // reviewer (or vendor) sees it the moment they open Profile.

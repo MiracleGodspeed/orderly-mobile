@@ -1,258 +1,211 @@
-import { 
-  View, 
-  Text, 
-  Pressable, 
-  ScrollView, 
+import {
+  View,
+  Text,
+  Pressable,
+  ScrollView,
   StatusBar,
   Switch,
-  ActivityIndicator
+  ActivityIndicator,
 } from "react-native";
 import { useState, useEffect } from "react";
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/types';
-import MaterialIcons from '@expo/vector-icons/MaterialIcons';
-import { useToast } from 'react-native-toast-notifications';
+import { SafeAreaView } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
+import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { RootStackParamList } from "../navigation/types";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useToast } from "react-native-toast-notifications";
 
+import {
+  getNotificationPreferences,
+  updateNotificationPreferences,
+  type NotificationPreferences,
+} from "../api/insights/preferences.api";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type Key = keyof NotificationPreferences;
+type IoniconName = keyof typeof Ionicons.glyphMap;
 
-interface NotificationSettings {
-  pushNotifications: {
-    newOrders: boolean;
-    lowStockAlerts: boolean;
-  };
-  emailNotifications: {
-    dailySummary: boolean;
-    marketingTips: boolean;
-  };
-}
+const ALL_ON: NotificationPreferences = {
+  lowStockAlerts: true,
+  reports: true,
+  engagementNudges: true,
+  encouragement: true,
+  milestones: true,
+};
+
+const ROWS: {
+  key: Key;
+  icon: IoniconName;
+  tint: string;
+  color: string;
+  title: string;
+  hint: string;
+}[] = [
+  {
+    key: "lowStockAlerts",
+    icon: "cube-outline",
+    tint: "#fffbeb",
+    color: "#d97706",
+    title: "Stock alerts",
+    hint: "When products run low or sell out",
+  },
+  {
+    key: "reports",
+    icon: "document-text-outline",
+    tint: "#eff6ff",
+    color: "#0080ff",
+    title: "Weekly & monthly reports",
+    hint: "Your business summary, in plain language",
+  },
+  {
+    key: "engagementNudges",
+    icon: "people-outline",
+    tint: "#f5f3ff",
+    color: "#7c3aed",
+    title: "Customer win-backs",
+    hint: "When customers go quiet and are worth a nudge",
+  },
+  {
+    key: "encouragement",
+    icon: "heart-outline",
+    tint: "#fff1f2",
+    color: "#e11d48",
+    title: "Encouragement & check-ins",
+    hint: "A genuine word from Orderly, now and then",
+  },
+  {
+    key: "milestones",
+    icon: "trophy-outline",
+    tint: "#ecfdf5",
+    color: "#059669",
+    title: "Milestones",
+    hint: "Celebrate your records and big moments",
+  },
+];
+
+const cardShadow = {
+  shadowColor: "#0f172a",
+  shadowOffset: { width: 0, height: 6 },
+  shadowOpacity: 0.05,
+  shadowRadius: 14,
+  elevation: 2,
+} as const;
 
 export default function NotificationProfile() {
-   const toast = useToast();
-
+  const toast = useToast();
   const navigation = useNavigation<ScreenNavigationProp>();
 
   const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState<NotificationSettings>({
-    pushNotifications: {
-      newOrders: true,
-      lowStockAlerts: true,
-    },
-    emailNotifications: {
-      dailySummary: true,
-      marketingTips: false,
-    }
-  });
-
-  const [toggling, setToggling] = useState<string | null>(null);
+  const [prefs, setPrefs] = useState<NotificationPreferences>(ALL_ON);
+  const [toggling, setToggling] = useState<Key | null>(null);
 
   useEffect(() => {
-    fetchNotificationSettings();
+    (async () => {
+      try {
+        setPrefs(await getNotificationPreferences());
+      } catch {
+        setPrefs(ALL_ON);
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  const fetchNotificationSettings = async () => {
+  const handleToggle = async (key: Key, value: boolean) => {
+    const next = { ...prefs, [key]: value };
+    setPrefs(next);
+    setToggling(key);
     try {
-      setLoading(true);
-
-      
-      const mockSettings: NotificationSettings = {
-        pushNotifications: {
-          newOrders: true,
-          lowStockAlerts: true,
-        },
-        emailNotifications: {
-          dailySummary: true,
-          marketingTips: false,
-        }
-      };
-
-      setSettings(mockSettings);
-    } catch (error) {
-      console.error('Error fetching notification settings:', error);
-     toast.show(error instanceof Error ? error.message : 'Failed to load notification settings', { type: 'danger' });
-
-      
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleToggle = async (
-    category: 'pushNotifications' | 'emailNotifications',
-    setting: string,
-    value: boolean
-  ) => {
-    const toggleKey = `${category}.${setting}`;
-    
-    try {
-      setToggling(toggleKey);
-
-      setSettings(prev => ({
-        ...prev,
-        [category]: {
-          ...prev[category],
-          [setting]: value
-        }
-      }));
-
-     
-    } catch (error) {
-      console.error('Error updating notification setting:', error);
-      
-      setSettings(prev => ({
-        ...prev,
-        [category]: {
-          ...prev[category],
-          [setting]: !value
-        }
-      }));
-      
-     toast.show(error instanceof Error ? error.message : 'Failed to update notification setting', { type: 'danger' });
-
-      
+      const ok = await updateNotificationPreferences(next);
+      if (!ok) throw new Error("save failed");
+    } catch {
+      setPrefs((p) => ({ ...p, [key]: !value }));
+      toast.show("Couldn't update that setting", { type: "danger" });
     } finally {
       setToggling(null);
     }
   };
 
-  if (loading) {
-    return (
-      <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-        <StatusBar barStyle="dark-content" backgroundColor="#fff" />
-        <View className="flex-1 justify-center items-center">
-          <ActivityIndicator size="large" color="#3b82f6" />
-        </View>
-      </SafeAreaView>
-    );
-  }
-
   return (
-    <SafeAreaView className="flex-1 bg-gray-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-white" edges={["top"]}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
 
-      <View className="bg-white flex-row items-center px-4 py-3 border-b border-gray-200">
-        <Pressable className="mr-3" onPress={() => navigation.goBack()}>
-          <MaterialIcons name="arrow-back" size={24} color="#000" />
+      {/* Minimal header */}
+      <View className="flex-row items-center px-3 py-2">
+        <Pressable
+          onPress={() => navigation.goBack()}
+          className="w-10 h-10 items-center justify-center rounded-full active:bg-gray-100"
+        >
+          <Ionicons name="chevron-back" size={24} color="#0f172a" />
         </Pressable>
-        <Text className="text-lg font-medium text-gray-900">Notifications</Text>
       </View>
 
-      <ScrollView className="flex-1">
-        <View className="mt-4 px-4">
-          <Text className="text-xs font-semibold text-gray-500 mb-3">
-            PUSH NOTIFICATIONS
-          </Text>
-
-          <View className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            <View className="px-4 py-4 border-b border-gray-100">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1 mr-4">
-                  <Text className="text-base font-medium text-gray-900 mb-1">
-                    New Orders
-                  </Text>
-                  <Text className="text-sm text-gray-500">
-                    Get alerts for incoming orders
-                  </Text>
-                </View>
-                
-                <Switch
-                  value={settings.pushNotifications.newOrders}
-                  onValueChange={(value) => 
-                    handleToggle('pushNotifications', 'newOrders', value)
-                  }
-                  disabled={toggling === 'pushNotifications.newOrders'}
-                  trackColor={{ false: "#d1d5db", true: "#10b981" }}
-                  thumbColor="#fff"
-                  ios_backgroundColor="#d1d5db"
-                />
-              </View>
-            </View>
-
-            <View className="px-4 py-4">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1 mr-4">
-                  <Text className="text-base font-medium text-gray-900 mb-1">
-                    Low Stock Alerts
-                  </Text>
-                  <Text className="text-sm text-gray-500">
-                    Notify when products run low
-                  </Text>
-                </View>
-                
-                <Switch
-                  value={settings.pushNotifications.lowStockAlerts}
-                  onValueChange={(value) => 
-                    handleToggle('pushNotifications', 'lowStockAlerts', value)
-                  }
-                  disabled={toggling === 'pushNotifications.lowStockAlerts'}
-                  trackColor={{ false: "#d1d5db", true: "#10b981" }}
-                  thumbColor="#fff"
-                  ios_backgroundColor="#d1d5db"
-                />
-              </View>
-            </View>
-          </View>
+      {loading ? (
+        <View className="flex-1 items-center justify-center">
+          <ActivityIndicator size="large" color="#0080ff" />
         </View>
-
-        <View className="mt-6 px-4 mb-6">
-          <Text className="text-xs font-semibold text-gray-500 mb-3">
-            EMAIL NOTIFICATIONS
-          </Text>
-
-          <View className="bg-white rounded-2xl shadow-sm overflow-hidden">
-            {/* Daily Summary */}
-            <View className="px-4 py-4 border-b border-gray-100">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1 mr-4">
-                  <Text className="text-base font-medium text-gray-900 mb-1">
-                    Daily Summary
-                  </Text>
-                  <Text className="text-sm text-gray-500">
-                    Morning report of yesterday's sales
-                  </Text>
-                </View>
-                
-                <Switch
-                  value={settings.emailNotifications.dailySummary}
-                  onValueChange={(value) => 
-                    handleToggle('emailNotifications', 'dailySummary', value)
-                  }
-                  disabled={toggling === 'emailNotifications.dailySummary'}
-                  trackColor={{ false: "#d1d5db", true: "#10b981" }}
-                  thumbColor="#fff"
-                  ios_backgroundColor="#d1d5db"
-                />
-              </View>
-            </View>
-
-            <View className="px-4 py-4">
-              <View className="flex-row items-center justify-between">
-                <View className="flex-1 mr-4">
-                  <Text className="text-base font-medium text-gray-900 mb-1">
-                    Marketing & Tips
-                  </Text>
-                  <Text className="text-sm text-gray-500">
-                    News and growth tips
-                  </Text>
-                </View>
-                
-                <Switch
-                  value={settings.emailNotifications.marketingTips}
-                  onValueChange={(value) => 
-                    handleToggle('emailNotifications', 'marketingTips', value)
-                  }
-                  disabled={toggling === 'emailNotifications.marketingTips'}
-                  trackColor={{ false: "#d1d5db", true: "#10b981" }}
-                  thumbColor="#fff"
-                  ios_backgroundColor="#d1d5db"
-                />
-              </View>
-            </View>
+      ) : (
+        <ScrollView
+          className="flex-1"
+          contentContainerStyle={{ paddingBottom: 48 }}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Title block */}
+          <View className="px-5 pt-1 pb-7">
+            <Text className="text-[26px] font-extrabold text-gray-900 tracking-tight">
+              Notifications
+            </Text>
+            <Text className="text-[13.5px] text-gray-500 mt-1.5 leading-5 max-w-[300px]">
+              All on by default. Turn off anything you'd rather not get — this
+              applies to both push and email.
+            </Text>
           </View>
-        </View>
-      </ScrollView>
+
+          {/* Toggle card */}
+          <View
+            className="mx-5 bg-white rounded-3xl border border-gray-100 overflow-hidden"
+            style={cardShadow}
+          >
+            {ROWS.map((row, i) => (
+              <View
+                key={row.key}
+                className={`flex-row items-center px-4 py-4 ${
+                  i < ROWS.length - 1 ? "border-b border-gray-50" : ""
+                }`}
+              >
+                <View
+                  className="w-10 h-10 rounded-2xl items-center justify-center"
+                  style={{ backgroundColor: row.tint }}
+                >
+                  <Ionicons name={row.icon} size={18} color={row.color} />
+                </View>
+                <View className="flex-1 ml-3.5 mr-3">
+                  <Text className="text-[14.5px] font-bold text-gray-900 tracking-tight">
+                    {row.title}
+                  </Text>
+                  <Text className="text-[12px] text-gray-500 mt-0.5 leading-4">
+                    {row.hint}
+                  </Text>
+                </View>
+                <Switch
+                  value={prefs[row.key]}
+                  onValueChange={(v) => handleToggle(row.key, v)}
+                  disabled={toggling === row.key}
+                  trackColor={{ false: "#e5e7eb", true: "#0080ff" }}
+                  thumbColor="#fff"
+                  ios_backgroundColor="#e5e7eb"
+                />
+              </View>
+            ))}
+          </View>
+
+          {/* Footnote */}
+          <Text className="mx-5 mt-4 text-[12px] text-gray-400 leading-5">
+            You can change these anytime. Important account and order alerts are
+            always delivered.
+          </Text>
+        </ScrollView>
+      )}
     </SafeAreaView>
   );
 }

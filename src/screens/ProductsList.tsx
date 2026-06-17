@@ -42,7 +42,12 @@ import { CategoryManagerSheet } from "../components/CategoryManagerSheet";
 import { CategoryPickerSheet } from "../components/CategoryPickerSheet";
 import { DraftsSheet } from "../components/DraftsSheet";
 import { loadDrafts, ProductDraft } from "../lib/productDrafts";
-import { useFocusEffect, useNavigation } from "@react-navigation/native";
+import {
+  useFocusEffect,
+  useNavigation,
+  useRoute,
+  type RouteProp,
+} from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../navigation/types";
 import { useFeatures } from "../hooks/useFeatures";
@@ -53,7 +58,7 @@ import {
 import { FEATURES, FeatureKey } from "../lib/features";
 import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
 
-type FilterType = "all" | "active" | "low_stock";
+type FilterType = "all" | "active" | "low_stock" | "out_of_stock";
 
 // CatalogItemStatus.Active was historically the integer 1 on the wire.
 // After JsonStringEnumConverter shipped, the API now serialises the
@@ -190,6 +195,10 @@ export default function ProductsList() {
   const toast = useToast();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  // Deep-link param from Growth Partner stock pushes — `filter` is
+  // "low_stock" / "out_of_stock" (or the hyphenated web spellings). Read
+  // below to pre-select the matching pill.
+  const route = useRoute<RouteProp<RootStackParamList, "ProductsList">>();
   const { storeData, fetchVendorData } = useVendor();
   const perms = useStaffPermissions();
   const canCreate = perms.has(STAFF_PERMISSIONS.CATALOG_CREATE);
@@ -281,8 +290,16 @@ export default function ProductsList() {
   // returns products with `stock < LOW_STOCK_THRESHOLD` only when this value
   // is sent (omitted otherwise so behaviour matches every other caller).
   const LOW_STOCK_THRESHOLD = 5;
+  // The server filters with `stock < threshold`, so "out of stock"
+  // (stock <= 0) is simply threshold = 1. Both filters share the
+  // products.low_stock gate.
+  const OUT_OF_STOCK_THRESHOLD = 1;
   const lowStockThreshold =
-    activeFilter === "low_stock" ? LOW_STOCK_THRESHOLD : undefined;
+    activeFilter === "low_stock"
+      ? LOW_STOCK_THRESHOLD
+      : activeFilter === "out_of_stock"
+      ? OUT_OF_STOCK_THRESHOLD
+      : undefined;
 
   // Page is reset to 1 whenever search, category, or the low-stock filter
   // changes — otherwise the vendor could land on an out-of-range page (e.g.
@@ -389,6 +406,18 @@ export default function ProductsList() {
     ? totalCount
     : lowStockCountQuery.data?.totalCount ?? 0;
 
+  // Same sentinel-count trick for the Out-of-stock pill (threshold = 1).
+  const outOfStockCountQuery = useProducts({
+    page: 1,
+    pageSize: 1,
+    lowStockThreshold: canUseLowStock ? OUT_OF_STOCK_THRESHOLD : undefined,
+  });
+  const outOfStockCount = !canUseLowStock
+    ? 0
+    : activeFilter === "out_of_stock"
+    ? totalCount
+    : outOfStockCountQuery.data?.totalCount ?? 0;
+
   const onPullRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
@@ -402,12 +431,26 @@ export default function ProductsList() {
     if (Platform.OS === "ios") {
       Haptics.selectionAsync().catch(() => {});
     }
-    if (next === "low_stock" && !canUseLowStock) {
+    if ((next === "low_stock" || next === "out_of_stock") && !canUseLowStock) {
       setPaywallFeature(FEATURES.PRODUCTS_LOW_STOCK);
       return;
     }
     setActiveFilter(next);
   };
+
+  // Pre-select a pill when the screen is opened from a Growth Partner stock
+  // push (route param `filter`). Accepts both the mobile underscore keys and
+  // the hyphenated web spellings. Re-runs if the feature unlocks late so the
+  // gated pill still resolves once `canUseLowStock` settles.
+  useEffect(() => {
+    const f = route.params?.filter;
+    if (!f || !canUseLowStock) return;
+    if (f === "out_of_stock" || f === "out-of-stock") {
+      setActiveFilter("out_of_stock");
+    } else if (f === "low_stock" || f === "low-stock") {
+      setActiveFilter("low_stock");
+    }
+  }, [route.params?.filter, canUseLowStock]);
 
   const [savingFee, setSavingFee] = useState(false);
   const handleSaveFeeConfiguration = useCallback(async () => {
@@ -645,10 +688,17 @@ export default function ProductsList() {
               { key: "all", label: "All", count: allProducts.length },
               { key: "active", label: "Active", count: activeCount },
               { key: "low_stock", label: "Low stock", count: lowStockCount },
+              {
+                key: "out_of_stock",
+                label: "Out of stock",
+                count: outOfStockCount,
+              },
             ] as const
           ).map((filter) => {
             const isActive = activeFilter === filter.key;
-            const isLocked = filter.key === "low_stock" && !canUseLowStock;
+            const isLocked =
+              (filter.key === "low_stock" || filter.key === "out_of_stock") &&
+              !canUseLowStock;
             return (
               <Pressable
                 key={filter.key}

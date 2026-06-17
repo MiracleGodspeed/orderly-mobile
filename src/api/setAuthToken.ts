@@ -12,6 +12,11 @@ export const setAuthToken = (token: string | null) => {
   authToken = token;
 };
 
+// Read the current access token — used to authenticate report downloads
+// that are opened in the device browser (which can't set an Authorization
+// header). The backend accepts `?access_token=` for /insights/report only.
+export const getAuthToken = (): string | null => authToken;
+
 // AuthContext registers a callback here so it can flush React state
 // (setUser(null) / setToken(null) / queryClient.clear()) when the
 // interceptor force-signs-out a refresh-failed session. Without this

@@ -160,11 +160,17 @@ export const getStorefrontDetails = async () => {
     }
   );
 
-  // if (response.data.code !== "200") {
-  //   console.log(response, "code")
-  //   throw new Error(
-  //   );
-  // }
+  // Throw on a non-success envelope instead of silently returning
+  // `undefined`. Swallowing the error here is what let the onboarding
+  // flow believe a failed/empty fetch "succeeded": the dashboard then
+  // rendered "My Store"/"yourstore" placeholders against null data with
+  // no signal that anything went wrong. Callers (VendorContext) catch
+  // this and can surface it / block navigation.
+  if (response.data.code !== "200") {
+    throw new Error(
+      response.data.message || "Failed to load your store details"
+    );
+  }
 
   return response.data.data;
 };
@@ -1194,6 +1200,10 @@ export const getMyDomains = async (): Promise<MyDomain[]> => {
  */
 export interface MyFeaturesData {
   keys: string[] | null;
+  /** True ONLY on the free trial. Distinct from "unlimited" (`keys ===
+   *  null`): a paid top-tier plan is also unlimited but NOT a trial, so
+   *  trial-only messaging must gate on this, never on `keys === null`. */
+  isTrial: boolean;
   planName: string | null;
   /** Staff seat budget on the active plan. Wire convention: 0 or null
    *  means the Staff & permissions feature is locked for this vendor;

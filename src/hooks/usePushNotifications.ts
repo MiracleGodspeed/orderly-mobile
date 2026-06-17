@@ -198,6 +198,24 @@ export async function unregisterDeviceFromPush(): Promise<void> {
   }
 }
 
+// Growth Partner pushes carry their destination in `route` (a screen
+// name) + `routeParams` (a JSON string, e.g. {"filter":"out_of_stock"}).
+// Parse defensively — a bad payload falls back to the notifications list
+// rather than crashing the tap handler.
+function parseRouteParams(raw: unknown): Record<string, any> | undefined {
+  if (!raw) return undefined;
+  if (typeof raw === "object") return raw as Record<string, any>;
+  if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
 function handleTap(data: Record<string, any> | undefined) {
   if (!data || typeof data !== "object") return;
 
@@ -223,6 +241,15 @@ function handleTap(data: Record<string, any> | undefined) {
     case "subscription_expiry":
       navigate("SubscriptionBilling" as any);
       break;
+    case "growth": {
+      // Growth Partner insight/report/stock pushes deep-link to the
+      // screen named in `route`, pre-scoped by `routeParams` (e.g. open
+      // the catalog already filtered to out-of-stock).
+      const route = typeof data.route === "string" ? data.route : "";
+      if (route) navigate(route as any, parseRouteParams(data.routeParams));
+      else navigate("Notifications" as any);
+      break;
+    }
     default:
       navigate("Notifications" as any);
       break;

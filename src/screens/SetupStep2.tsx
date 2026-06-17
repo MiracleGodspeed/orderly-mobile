@@ -5,6 +5,7 @@ import {
   Platform,
   Pressable,
   ScrollView,
+  Alert,
 } from "react-native";
 import React, { useEffect, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,6 +17,7 @@ import * as Haptics from "expo-haptics";
 import { RootStackParamList } from "../navigation/types";
 import { useVendor } from "../../context/VendorContext";
 import { useProgress } from "../../context/ProgressContext";
+import { useAuth } from "../../context/AuthContext";
 import { SetupHeader } from "../components/SetupHeader";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
@@ -58,6 +60,24 @@ export default function SetupStep2() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const { setProgress } = useProgress();
   const { setServiceType, isServiceBased } = useVendor();
+  const { logout } = useAuth();
+
+  const handleBackToLogin = () => {
+    Alert.alert(
+      "Back to login?",
+      "You'll be signed out. You can sign back in anytime to finish setting up your store.",
+      [
+        { text: "Stay", style: "cancel" },
+        {
+          text: "Back to login",
+          style: "destructive",
+          onPress: () => {
+            logout().catch(() => {});
+          },
+        },
+      ]
+    );
+  };
 
   const [selected, setSelected] = useState<Choice | null>(
     isServiceBased === null
@@ -103,6 +123,7 @@ export default function SetupStep2() {
           title="What do you sell?"
           subtitle="Pick the option that best describes your business — you can fine-tune this later."
           onBack={() => navigation.goBack()}
+          onExit={handleBackToLogin}
         />
 
         {/* Options */}

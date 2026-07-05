@@ -247,7 +247,7 @@ export default function LogOrder() {
           className="text-[16px] text-gray-900"
           style={{ fontFamily: "PlusJakartaSans_700Bold" }}
         >
-          Log offline order
+          Record offline sale
         </Text>
       </View>
 

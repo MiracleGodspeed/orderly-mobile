@@ -11,6 +11,7 @@ import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { RootStackParamList } from "../navigation/types";
 import { Order } from "../api/vendor/vendor.types";
@@ -26,6 +27,10 @@ import { formatRelativeTime } from "../lib/format";
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 type FilterType = "all" | "pending" | "paid";
+
+// One-time teaching banner for the "Offline sale" button. Versioned so
+// a future copy change can re-show it by bumping the suffix.
+const OFFLINE_SALE_HINT_KEY = "orders_offline_sale_hint_dismissed_v1";
 
 type UIStatus = "Pending" | "Paid" | "Shipped";
 
@@ -213,6 +218,21 @@ export default function Orders() {
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<FilterType>("all");
   const [refreshing, setRefreshing] = useState(false);
+
+  // Starts hidden and only appears once storage confirms it was never
+  // dismissed — avoids a flash for vendors who already closed it.
+  const [showOfflineSaleHint, setShowOfflineSaleHint] = useState(false);
+  useEffect(() => {
+    AsyncStorage.getItem(OFFLINE_SALE_HINT_KEY)
+      .then((dismissed) => {
+        if (!dismissed) setShowOfflineSaleHint(true);
+      })
+      .catch(() => {});
+  }, []);
+  const dismissOfflineSaleHint = useCallback(() => {
+    setShowOfflineSaleHint(false);
+    AsyncStorage.setItem(OFFLINE_SALE_HINT_KEY, "1").catch(() => {});
+  }, []);
 
   // Reset to page 1 whenever the search text changes — otherwise the vendor
   // can land on an out-of-range page (e.g. searching narrows 5 pages → 1).
@@ -444,7 +464,7 @@ export default function Orders() {
       <Text className="text-gray-500 text-center text-sm leading-5 max-w-xs">
         {debouncedSearch
           ? "Try a different name or order number."
-          : "Your incoming orders from customers will show up here in real-time."}
+          : "Your incoming orders from customers will show up here in real-time. Made a sale on WhatsApp or in person? Tap “Offline sale” above to record it."}
       </Text>
     </View>
   );
@@ -472,8 +492,8 @@ export default function Orders() {
             }}
           >
             <Ionicons name="add" size={14} color="#ffffff" />
-            <Text className="text-white text-[12px] font-extrabold">
-              Log order
+            <Text className="text-white text-[13px] font-extrabold">
+              Offline sale
             </Text>
           </Pressable>
         }
@@ -492,6 +512,34 @@ export default function Orders() {
           />
         }
       >
+        {/* One-time explainer for the "Offline sale" header button —
+            vendors with plenty of orders never see the empty-state copy,
+            so this is their only in-app introduction to the feature. */}
+        {showOfflineSaleHint && (
+          <View className="mx-5 mt-3 flex-row items-start gap-3 bg-blue-50 border border-blue-100 rounded-2xl p-4">
+            <View className="w-9 h-9 rounded-xl bg-blue-100 items-center justify-center">
+              <Ionicons name="storefront-outline" size={18} color="#2563eb" />
+            </View>
+            <View className="flex-1">
+              <Text className="text-[13px] font-extrabold text-gray-900">
+                Sell outside the app too?
+              </Text>
+              <Text className="text-[12px] text-gray-600 mt-0.5 leading-[17px]">
+                Tap “Offline sale” at the top to record sales you make on
+                WhatsApp or in person — they'll count in your totals and
+                reports.
+              </Text>
+            </View>
+            <Pressable
+              onPress={dismissOfflineSaleHint}
+              hitSlop={8}
+              accessibilityLabel="Dismiss offline sale tip"
+            >
+              <Ionicons name="close" size={16} color="#6b7280" />
+            </Pressable>
+          </View>
+        )}
+
         {HeroCard}
         {SearchAndFilter}
 

@@ -100,15 +100,17 @@ export default function ReportDownload() {
               backgroundColor: "rgba(255,255,255,0.03)",
             }}
           />
-          <View
-            className="w-12 h-12 rounded-2xl items-center justify-center mb-6"
-            style={{ backgroundColor: "rgba(255,255,255,0.08)" }}
-          >
-            <Ionicons name="document-text-outline" size={24} color="#fff" />
+          <View className="flex-row items-center gap-4">
+            <View
+              className="w-12 h-12 rounded-2xl items-center justify-center"
+              style={{ backgroundColor: "rgba(255,255,255,0.08)" }}
+            >
+              <Ionicons name="document-text-outline" size={24} color="#fff" />
+            </View>
+            <Text className="flex-1 text-white text-[20px] font-extrabold tracking-tight leading-[30px]">
+              Your performance, on paper.
+            </Text>
           </View>
-          <Text className="text-white text-[25px] font-extrabold tracking-tight leading-[30px]">
-            Your performance,{"\n"}on paper.
-          </Text>
           <Text className="text-white/55 text-[13px] mt-2.5 leading-5 max-w-[280px]">
             Perfect for your records, your accountant, or a quick review of how the business is doing.
           </Text>

@@ -173,10 +173,10 @@ export default function InsightsCarousel() {
 
   return (
     <View style={styles.wrapper}>
-      <View style={styles.eyebrowRow}>
+      {/* <View style={styles.eyebrowRow}>
         <Ionicons name="sparkles" size={12} color="#94a3b8" />
         <Text style={styles.eyebrow}>For you</Text>
-      </View>
+      </View> */}
 
       <PagerView
         ref={pagerRef}

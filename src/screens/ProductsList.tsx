@@ -60,6 +60,14 @@ import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
 
 type FilterType = "all" | "active" | "low_stock" | "out_of_stock";
 
+// Single definition of "low stock" for this screen. The per-card badge
+// and the server-side Low-stock filter MUST use the same number — if
+// they drift, a product can wear a "Low" badge yet not appear under the
+// Low stock filter. The server filters with `stock < threshold`, so
+// "out of stock" (stock <= 0) is simply threshold = 1.
+const LOW_STOCK_THRESHOLD = 5;
+const OUT_OF_STOCK_THRESHOLD = 1;
+
 // CatalogItemStatus.Active was historically the integer 1 on the wire.
 // After JsonStringEnumConverter shipped, the API now serialises the
 // enum NAME ("Active") instead, which silently broke every numeric
@@ -89,14 +97,14 @@ function ProductCard({
   const stockStyle =
     stock === 0
       ? { dot: "bg-rose-500", text: "text-rose-700", bg: "bg-rose-50" }
-      : stock < 10
+      : stock < LOW_STOCK_THRESHOLD
       ? { dot: "bg-amber-500", text: "text-amber-700", bg: "bg-amber-50" }
       : { dot: "bg-emerald-500", text: "text-emerald-700", bg: "bg-emerald-50" };
 
   const stockLabel =
     stock === 0
       ? "Out of stock"
-      : stock < 10
+      : stock < LOW_STOCK_THRESHOLD
       ? `Low · ${stock} left`
       : `${stock} in stock`;
 
@@ -286,14 +294,9 @@ export default function ProductsList() {
   const { data: usageData } = useSubscriptionUsage();
   const catalogLimit = usageData?.catalogItemLimit ?? null;
 
-  // Threshold the server uses when the Low-stock filter is active. Server
-  // returns products with `stock < LOW_STOCK_THRESHOLD` only when this value
-  // is sent (omitted otherwise so behaviour matches every other caller).
-  const LOW_STOCK_THRESHOLD = 5;
-  // The server filters with `stock < threshold`, so "out of stock"
-  // (stock <= 0) is simply threshold = 1. Both filters share the
-  // products.low_stock gate.
-  const OUT_OF_STOCK_THRESHOLD = 1;
+  // Threshold is only sent to the server while a stock filter is active
+  // (omitted otherwise so behaviour matches every other caller). Both
+  // filters share the products.low_stock gate.
   const lowStockThreshold =
     activeFilter === "low_stock"
       ? LOW_STOCK_THRESHOLD

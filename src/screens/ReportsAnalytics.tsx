@@ -10,7 +10,10 @@ import {
   TouchableOpacity,
 } from "react-native";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -103,6 +106,7 @@ const periodLabel = (
 // ---- Screen ----------------------------------------------------------------
 
 export default function ReportsAnalytics({ navigation }: Props) {
+  const insets = useSafeAreaInsets();
   const [activeView, setActiveView] = useState<AnalyticsView>("sales");
   const [period, setPeriod] = useState<Period>(7);
   const [data, setData] = useState<StorePerformanceReportData | null>(null);
@@ -445,27 +449,36 @@ export default function ReportsAnalytics({ navigation }: Props) {
           )}
         </View>
 
-        {/* Entry to the dedicated report-download screen. */}
-        <Pressable
-          onPress={() => navigation.navigate("ReportDownload")}
-          className="mx-5 my-4 flex-row items-center justify-between bg-white rounded-2xl border border-gray-100 p-4"
-        >
-          <View className="flex-row items-center gap-3">
-            <View className="w-10 h-10 rounded-xl bg-blue-50 items-center justify-center">
-              <Ionicons name="download-outline" size={20} color="#0080ff" />
-            </View>
-            <View>
-              <Text className="text-[14px] font-extrabold text-gray-900">
-                Download a report
-              </Text>
-              <Text className="text-[12px] text-gray-500">
-                Branded PDF or Excel — any week or month.
-              </Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color="#9ca3af" />
-        </Pressable>
       </ScrollView>
+
+      {/* Sticky download CTA — pinned below the scroll so it's on screen
+          the moment the page opens. Spelled out in plain words (not just
+          an icon) so every vendor knows exactly what it does. */}
+      <View
+        className="px-5 pt-3 bg-white border-t border-gray-100"
+        style={{ paddingBottom: Math.max(insets.bottom, 14) }}
+      >
+        <TouchableOpacity
+          onPress={() => {
+            haptic();
+            navigation.navigate("ReportDownload");
+          }}
+          activeOpacity={0.85}
+          className="flex-row items-center justify-center gap-2 bg-blue-600 rounded-2xl py-4"
+          accessibilityLabel="Download a report"
+        >
+          <Ionicons name="download-outline" size={18} color="white" />
+          <Text
+            className="text-white text-[15px]"
+            style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+          >
+            Download a report
+          </Text>
+        </TouchableOpacity>
+        <Text className="text-[11px] text-gray-400 text-center mt-1.5">
+          Branded PDF or Excel — any week or month
+        </Text>
+      </View>
 
       {/* Custom-range picker — opens when the vendor taps the "Custom"
           period pill (or taps it again to adjust). Re-uses the same

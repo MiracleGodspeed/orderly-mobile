@@ -70,6 +70,9 @@ export default function MoreHub() {
   // Newsletter is a binary feature gate (plan grants newsletters.basic
   // or it doesn't). Locked rows open the paywall instead of navigating.
   const canUseNewsletter = has(FEATURES.NEWSLETTERS);
+  // Invoices/receipts + expenses are binary feature gates too.
+  const canUseInvoices = has(FEATURES.INVOICES);
+  const canUseExpenses = has(FEATURES.EXPENSES);
 
   // Plan-derived gate for the Staff & permissions row. Lock when the
   // backend reports `StaffLimit` as 0 or null (no plan or plan without
@@ -146,20 +149,32 @@ export default function MoreHub() {
               {
                 id: "invoices",
                 icon: "document-text-outline" as IoniconName,
-                tint: "#dbeafe",
-                iconColor: "#0080ff",
+                tint: canUseInvoices ? "#dbeafe" : "#f3f4f6",
+                iconColor: canUseInvoices ? "#0080ff" : "#9ca3af",
                 title: "Invoices & receipts",
-                subtitle: "Create & download PDFs for customers",
-                screen: "Invoices" as keyof RootStackParamList,
+                subtitle: canUseInvoices
+                  ? "Create & download PDFs for customers"
+                  : "Upgrade your plan to unlock",
+                screen: canUseInvoices
+                  ? ("Invoices" as keyof RootStackParamList)
+                  : undefined,
+                locked: !canUseInvoices,
+                paywallFeature: FEATURES.INVOICES,
               },
               {
                 id: "expenses",
                 icon: "wallet-outline" as IoniconName,
-                tint: "#fef3c7",
-                iconColor: "#d97706",
+                tint: canUseExpenses ? "#fef3c7" : "#f3f4f6",
+                iconColor: canUseExpenses ? "#d97706" : "#9ca3af",
                 title: "Expenses",
-                subtitle: "Track money out, see real profit",
-                screen: "Expenses" as keyof RootStackParamList,
+                subtitle: canUseExpenses
+                  ? "Track money out, see real profit"
+                  : "Upgrade your plan to unlock",
+                screen: canUseExpenses
+                  ? ("Expenses" as keyof RootStackParamList)
+                  : undefined,
+                locked: !canUseExpenses,
+                paywallFeature: FEATURES.EXPENSES,
               },
               {
                 id: "newsletter",

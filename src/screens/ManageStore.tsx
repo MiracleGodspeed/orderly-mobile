@@ -189,6 +189,7 @@ export default function ManageStoreScreen() {
   const { storeData, updateVendorSettings, loading } = useVendor();
   const { has: hasFeature } = useFeatures();
   const canUseLogo = hasFeature(FEATURES.STORE_LOGO);
+  const canUseTypography = hasFeature(FEATURES.TYPOGRAPHY);
   // Gates the four "Advanced Content" rows (Reviews / Featured /
   // Categories / Promo & Social) as a single bundle — the feature
   // copy in FEATURE_META already lists all four together so vendors
@@ -625,10 +626,21 @@ export default function ManageStoreScreen() {
               <SectionRow
                 icon="text-outline"
                 title="Typography"
-                subtitle="The font your whole storefront uses"
+                subtitle={
+                  canUseTypography
+                    ? "The font your whole storefront uses"
+                    : "Available on a higher plan"
+                }
                 tone="cyan"
-                configured={typographyConfigured}
-                onPress={() => setShowTypographyModal(true)}
+                configured={canUseTypography && typographyConfigured}
+                locked={!canUseTypography}
+                onPress={() => {
+                  if (!canUseTypography) {
+                    setPaywallFeature(FEATURES.TYPOGRAPHY);
+                    return;
+                  }
+                  setShowTypographyModal(true);
+                }}
               />
 
               <SectionRow

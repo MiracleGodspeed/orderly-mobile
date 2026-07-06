@@ -16,6 +16,7 @@
 export type RangeKey =
   | "today"
   | "yesterday"
+  | "thisweek"
   | "thismonth"
   | "lastweek"
   | "lastmonth"
@@ -49,6 +50,19 @@ export function yesterdayRange(now: Date = new Date()): DateRange {
   const d = new Date(now);
   d.setDate(d.getDate() - 1);
   return { from: startOfDay(d), to: endOfDay(d) };
+}
+
+/**
+ * "This week" — Monday of the current ISO week → end of today. Uses
+ * Monday as the week start to match `lastWeekRange` and the GrowthTrend
+ * weekly tiles.
+ */
+export function thisWeekRange(now: Date = new Date()): DateRange {
+  const day = now.getDay(); // 0 = Sun, 1 = Mon, ...
+  const sinceMonday = (day + 6) % 7;
+  const monday = new Date(now);
+  monday.setDate(now.getDate() - sinceMonday);
+  return { from: startOfDay(monday), to: endOfDay(now) };
 }
 
 /**
@@ -108,6 +122,8 @@ export function rangeForKey(
       return todayRange(now);
     case "yesterday":
       return yesterdayRange(now);
+    case "thisweek":
+      return thisWeekRange(now);
     case "thismonth":
       return thisMonthRange(now);
     case "lastweek":
@@ -122,6 +138,7 @@ export function rangeForKey(
 export const RANGE_LABEL: Record<Exclude<RangeKey, "custom">, string> = {
   today: "Today",
   yesterday: "Yesterday",
+  thisweek: "This week",
   thismonth: "This month",
   lastweek: "Last week",
   lastmonth: "Last month",

@@ -20,6 +20,8 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { RootStackParamList } from "../navigation/types";
 import { getStorePerformanceReport } from "../api/vendor/vendor.api";
+import { getExpenseRangeSummary } from "../api/vendor/invoice.api";
+import { rangeForKey, type RangeKey } from "../lib/dateRanges";
 import {
   BestSellingProduct,
   TopCustomer,
@@ -37,25 +39,21 @@ interface Props {
 }
 
 type AnalyticsView = "sales" | "growth" | "customers";
-// Numeric values are rolling N-day windows (last 7 days, etc).
-// "alltime" sends an epoch-anchored window so the backend returns
-// every order ever placed against the store. "custom" defers the
-// {from, to} bounds to user-picked dates from the date-range modal.
-type Period = 7 | 30 | 90 | 365 | "alltime" | "custom";
+// Calendar-anchored periods, matching the web Reports screen and the
+// mobile Home duration picker. "custom" defers the {from, to} bounds to
+// user-picked dates from the date-range modal.
+type Period = RangeKey;
 
 const PERIODS: { label: string; value: Period }[] = [
-  { label: "7 days", value: 7 },
-  { label: "30 days", value: 30 },
-  { label: "90 days", value: 90 },
-  { label: "1 year", value: 365 },
-  { label: "All time", value: "alltime" },
+  { label: "Today", value: "today" },
+  { label: "Yesterday", value: "yesterday" },
+  { label: "This week", value: "thisweek" },
+  { label: "Last week", value: "lastweek" },
+  { label: "This month", value: "thismonth" },
+  { label: "Last month", value: "lastmonth" },
+  { label: "Last year", value: "lastyear" },
   { label: "Custom", value: "custom" },
 ];
-
-// Lower bound for the "all time" preset. Any reasonable date well
-// before the platform existed works — the backend filter is `>= from`,
-// so this captures every record without ever excluding an early order.
-const ALL_TIME_LOWER_BOUND = new Date(2000, 0, 1);
 
 // ---- Formatting helpers ----------------------------------------------------
 
@@ -90,17 +88,22 @@ const periodLabel = (
   customFrom?: Date | null,
   customTo?: Date | null
 ): string => {
-  if (p === "alltime") return "all time";
   if (p === "custom") {
     if (customFrom && customTo) {
       return `${fmtShortDate(customFrom)} – ${fmtShortDate(customTo)}`;
     }
     return "custom range";
   }
-  if (p === 7) return "last 7 days";
-  if (p === 30) return "last 30 days";
-  if (p === 90) return "last 90 days";
-  return "last year";
+  const labels: Record<Exclude<Period, "custom">, string> = {
+    today: "today",
+    yesterday: "yesterday",
+    thisweek: "this week",
+    thismonth: "this month",
+    lastweek: "last week",
+    lastmonth: "last month",
+    lastyear: "last year",
+  };
+  return labels[p];
 };
 
 // ---- Screen ----------------------------------------------------------------
@@ -108,8 +111,9 @@ const periodLabel = (
 export default function ReportsAnalytics({ navigation }: Props) {
   const insets = useSafeAreaInsets();
   const [activeView, setActiveView] = useState<AnalyticsView>("sales");
-  const [period, setPeriod] = useState<Period>(7);
+  const [period, setPeriod] = useState<Period>("thismonth");
   const [data, setData] = useState<StorePerformanceReportData | null>(null);
+  const [expensesTotal, setExpensesTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -129,21 +133,16 @@ export default function ReportsAnalytics({ navigation }: Props) {
   });
   const [customModalVisible, setCustomModalVisible] = useState(false);
 
-  // Resolves a period preset (number / "alltime" / "custom") into the
-  // precise `{from, to}` UTC window the backend expects. Centralising
-  // this keeps `fetchReport` and `onRefresh` in lockstep — there's no
-  // way for the two to drift on, say, end-of-day handling.
+  // Resolves a calendar preset ("today" / "thismonth" / … / "custom")
+  // into the precise `{from, to}` window the backend expects.
+  // Centralising this keeps `fetchReport` and `onRefresh` in lockstep —
+  // there's no way for the two to drift on, say, end-of-day handling.
   const resolveWindow = useCallback(
     (
       p: Period,
       cFrom: Date,
       cTo: Date
     ): { from: Date; to: Date } => {
-      if (p === "alltime") {
-        const to = new Date();
-        to.setHours(23, 59, 59, 999);
-        return { from: ALL_TIME_LOWER_BOUND, to };
-      }
       if (p === "custom") {
         // Re-normalise bounds so the picker's date-only selection
         // captures the entire start-day and end-day in local time.
@@ -153,14 +152,8 @@ export default function ReportsAnalytics({ navigation }: Props) {
         to.setHours(23, 59, 59, 999);
         return { from, to };
       }
-      // Numeric rolling window — start-of-day N days back through
-      // end-of-day today, so "last 7 days" includes the full 7th day.
-      const from = new Date();
-      from.setDate(from.getDate() - p);
-      from.setHours(0, 0, 0, 0);
-      const to = new Date();
-      to.setHours(23, 59, 59, 999);
-      return { from, to };
+      // Calendar preset — shared with Home and the web Reports screen.
+      return rangeForKey(p);
     },
     []
   );
@@ -170,11 +163,17 @@ export default function ReportsAnalytics({ navigation }: Props) {
       if (!isRefresh) setLoading(true);
       try {
         const { from, to } = resolveWindow(p, cFrom, cTo);
-        const result = await getStorePerformanceReport(
-          from.toISOString(),
-          to.toISOString()
-        );
+        // Revenue report + matching-window expenses in parallel, so the
+        // hero can show Revenue → Expenses → Net profit for the SAME
+        // period. Expenses failing must not blank out the whole screen.
+        const [result, expenseSummary] = await Promise.all([
+          getStorePerformanceReport(from.toISOString(), to.toISOString()),
+          getExpenseRangeSummary(from.toISOString(), to.toISOString()).catch(
+            () => ({ total: 0, byCategory: [] })
+          ),
+        ]);
         setData(result);
+        setExpensesTotal(expenseSummary?.total ?? 0);
       } catch (error) {
         console.error("Failed to fetch report:", error);
       } finally {
@@ -219,6 +218,7 @@ export default function ReportsAnalytics({ navigation }: Props) {
 
   const sales = data?.sales;
   const totalRevenue = sales?.totalRevenue ?? 0;
+  const netProfit = totalRevenue - expensesTotal;
   const totalOrders = sales?.totalOrders ?? 0;
   const totalCustomers = sales?.totalCustomers ?? 0;
   const avgOrderValue = totalOrders > 0 ? Math.round(totalRevenue / totalOrders) : 0;
@@ -330,6 +330,26 @@ export default function ReportsAnalytics({ navigation }: Props) {
                 {totalCustomers.toLocaleString()} customers
               </Text>
             </View>
+
+            {/* Revenue → Expenses → Profit for the selected period, so
+                the hero tells the whole money story, not just sales. */}
+            <View className="flex-row mt-4 pt-4 border-t border-white/10">
+              <HeroMoneyStat
+                label="Revenue"
+                value={loading ? "—" : formatCurrency(totalRevenue)}
+                valueColor="#ffffff"
+              />
+              <HeroMoneyStat
+                label="Expenses"
+                value={loading ? "—" : `-${formatCurrency(expensesTotal)}`}
+                valueColor="#fcd34d"
+              />
+              <HeroMoneyStat
+                label="Net profit"
+                value={loading ? "—" : formatCurrency(netProfit)}
+                valueColor={netProfit >= 0 ? "#6ee7b7" : "#fca5a5"}
+              />
+            </View>
           </View>
         </View>
 
@@ -421,6 +441,8 @@ export default function ReportsAnalytics({ navigation }: Props) {
               {activeView === "sales" && (
                 <SalesView
                   totalRevenue={totalRevenue}
+                  expensesTotal={expensesTotal}
+                  netProfit={netProfit}
                   totalOrders={totalOrders}
                   totalCustomers={totalCustomers}
                   avgOrderValue={avgOrderValue}
@@ -500,6 +522,8 @@ export default function ReportsAnalytics({ navigation }: Props) {
 
 function SalesView({
   totalRevenue,
+  expensesTotal,
+  netProfit,
   totalOrders,
   totalCustomers,
   avgOrderValue,
@@ -510,6 +534,8 @@ function SalesView({
   customToLabel,
 }: {
   totalRevenue: number;
+  expensesTotal: number;
+  netProfit: number;
   totalOrders: number;
   totalCustomers: number;
   avgOrderValue: number;
@@ -521,7 +547,7 @@ function SalesView({
 }) {
   return (
     <View>
-      {/* KPI grid (2×2) */}
+      {/* KPI grid */}
       <View className="flex-row gap-3 mb-3">
         <KpiTile
           icon="cash-outline"
@@ -531,9 +557,25 @@ function SalesView({
           value={compactCurrency(totalRevenue)}
         />
         <KpiTile
+          icon="wallet-outline"
+          tint="#fef3c7"
+          iconColor="#d97706"
+          label="Expenses"
+          value={compactCurrency(expensesTotal)}
+        />
+      </View>
+      <View className="flex-row gap-3 mb-3">
+        <KpiTile
+          icon="trending-up-outline"
+          tint={netProfit >= 0 ? "#d1fae5" : "#fee2e2"}
+          iconColor={netProfit >= 0 ? "#059669" : "#dc2626"}
+          label="Net profit"
+          value={compactCurrency(netProfit)}
+        />
+        <KpiTile
           icon="cart-outline"
-          tint="#d1fae5"
-          iconColor="#059669"
+          tint="#e0e7ff"
+          iconColor="#4f46e5"
           label="Orders"
           value={totalOrders.toLocaleString()}
         />
@@ -541,8 +583,8 @@ function SalesView({
       <View className="flex-row gap-3 mb-4">
         <KpiTile
           icon="people-outline"
-          tint="#fef3c7"
-          iconColor="#d97706"
+          tint="#f3e8ff"
+          iconColor="#9333ea"
           label="Customers"
           value={totalCustomers.toLocaleString()}
         />
@@ -1030,6 +1072,38 @@ function RankedCustomerRow({
 }
 
 // ---- Reusable bits ---------------------------------------------------------
+
+/** Small money figure in the dark hero (Revenue / Expenses / Profit). */
+function HeroMoneyStat({
+  label,
+  value,
+  valueColor,
+}: {
+  label: string;
+  value: string;
+  valueColor: string;
+}) {
+  return (
+    <View className="flex-1">
+      <Text className="text-[9px] font-extrabold text-blue-200/70 uppercase tracking-[1px]">
+        {label}
+      </Text>
+      <Text
+        className="mt-1"
+        style={{
+          fontFamily: "PlusJakartaSans_700Bold",
+          fontSize: 14.5,
+          letterSpacing: -0.3,
+          color: valueColor,
+        }}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
+        {value}
+      </Text>
+    </View>
+  );
+}
 
 function KpiTile({
   icon,

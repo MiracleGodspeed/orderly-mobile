@@ -20,6 +20,7 @@ import { RootStackParamList } from "../navigation/types";
 import { useProducts } from "../hooks/useProducts";
 import {
   createInvoiceDocument,
+  getInvoiceShareUrl,
   invoicePdfUrl,
   type DocumentKind,
 } from "../api/vendor/invoice.api";
@@ -155,9 +156,11 @@ export default function CreateInvoice() {
           {
             text: "Download PDF",
             onPress: () => {
-              WebBrowser.openBrowserAsync(invoicePdfUrl(res.document.id)).catch(
-                () => {}
-              );
+              // Clean public share link (falls back to the local view URL).
+              getInvoiceShareUrl(res.document.id)
+                .catch(() => invoicePdfUrl(res.document.id))
+                .then((url) => WebBrowser.openBrowserAsync(url))
+                .catch(() => {});
               navigation.goBack();
             },
           },

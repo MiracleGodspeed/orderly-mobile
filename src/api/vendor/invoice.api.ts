@@ -146,11 +146,30 @@ export const deleteInvoiceDocument = async (id: string): Promise<void> => {
  * can't set an Authorization header — the backend accepts
  * `?access_token=` for invoice/receipt PDF paths specifically (same
  * pattern as report downloads).
+ *
+ * NOTE: this carries the session JWT in the URL, so it must NEVER be the
+ * link a vendor shares. Use it only as a local fallback for viewing.
+ * For sharing, use `getInvoiceShareUrl` below.
  */
 export const invoicePdfUrl = (id: string): string => {
   const base = apiClient.defaults.baseURL ?? "";
   const token = getAuthToken() ?? "";
   return `${base}/invoices/${id}/pdf?access_token=${encodeURIComponent(token)}`;
+};
+
+/**
+ * Clean, shareable public link to a document's PDF. The backend mints a
+ * short HMAC-signed token (NOT the session JWT), so the vendor can drop
+ * this straight into WhatsApp and the customer opens the PDF directly —
+ * no long token string, nothing sensitive, nothing login-gated.
+ */
+export const getInvoiceShareUrl = async (id: string): Promise<string> => {
+  const response = await apiClient.get<{ data: { url: string; reference: string } }>(
+    `/invoices/${id}/share-link`
+  );
+  const url = response.data?.data?.url;
+  if (!url) throw new Error("No share URL");
+  return url;
 };
 
 // ── Expenses ────────────────────────────────────────────────────────
@@ -176,6 +195,26 @@ export const getExpenseSummary = async (): Promise<ExpenseSummary> => {
     "/expenses/summary"
   );
   return response.data.data;
+};
+
+export interface ExpenseRangeSummary {
+  total: number;
+  byCategory: { category: string; total: number }[];
+}
+
+/** Total + category breakdown for an arbitrary window, so the analytics
+ *  screen's expenses/profit figures follow the same period as revenue. */
+export const getExpenseRangeSummary = async (
+  fromIso: string,
+  toIso: string
+): Promise<ExpenseRangeSummary> => {
+  const response = await apiClient.get<{ data: ExpenseRangeSummary }>(
+    "/expenses/range-summary",
+    { params: { from: fromIso, to: toIso } }
+  );
+  return (
+    response.data?.data ?? { total: 0, byCategory: [] }
+  );
 };
 
 export const createExpense = async (payload: {

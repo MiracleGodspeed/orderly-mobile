@@ -25,6 +25,7 @@ import {
   deleteInvoiceDocument,
   generateReceipt,
   getInvoices,
+  getInvoiceShareUrl,
   invoicePdfUrl,
   recordReceiptIncome,
   type InvoiceListItem,
@@ -120,7 +121,17 @@ export default function Invoices() {
   const openPdf = async (row: InvoiceListItem) => {
     haptic();
     try {
-      await WebBrowser.openBrowserAsync(invoicePdfUrl(row.id));
+      // Open the CLEAN public share link so whatever the vendor forwards
+      // from the browser is a short, safe URL — never the session token.
+      // Falls back to the tokenised URL only if the share endpoint is
+      // unavailable (e.g. older API), so viewing never breaks.
+      let url: string;
+      try {
+        url = await getInvoiceShareUrl(row.id);
+      } catch {
+        url = invoicePdfUrl(row.id);
+      }
+      await WebBrowser.openBrowserAsync(url);
     } catch {
       setToast({ title: "Couldn't open the PDF", tone: "error" });
     }

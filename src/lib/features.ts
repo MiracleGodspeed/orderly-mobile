@@ -31,6 +31,15 @@ export const FEATURES = {
    *  subscriber list. Mirrors backend `Features.NEWSLETTERS`. */
   NEWSLETTERS: "newsletters.basic",
 
+  /** Invoices & receipts. Boolean gate. Mirrors backend `Features.INVOICES`. */
+  INVOICES: "invoices.receipts",
+
+  /** Expenses tracking. Boolean gate. Mirrors backend `Features.EXPENSES`. */
+  EXPENSES: "expenses.tracking",
+
+  /** Storefront typography. Boolean gate. Mirrors backend `Features.TYPOGRAPHY`. */
+  TYPOGRAPHY: "store.typography",
+
   // Storefront templates — one key per template. Plans declare the
   // templates they support by listing these keys in their FeatureKeys
   // JSON column. Trial vendors resolve as Unlimited so every template
@@ -226,6 +235,42 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
       "Collect customer emails you can reach anytime",
       "See and search everyone who subscribed from your dashboard",
       "Turn it on or off whenever you like",
+    ],
+  },
+
+  [FEATURES.INVOICES]: {
+    label: "Invoices & receipts",
+    description:
+      "Send customers polished, branded invoices and receipts in seconds — pick products straight from your catalog, download a premium PDF, and turn any receipt into recorded income.",
+    bullets: [
+      "Build an invoice by picking products from your catalog — no retyping",
+      "Download a clean, branded PDF that looks the part",
+      "Generate a receipt from any invoice in one tap",
+      "Optionally record a receipt straight to your income",
+    ],
+  },
+
+  [FEATURES.EXPENSES]: {
+    label: "Expenses & profit",
+    description:
+      "Know what you actually keep. Log your business expenses and Orderly shows them next to your revenue so your reports reveal true net profit, not just sales.",
+    bullets: [
+      "Log expenses in seconds and keep them all in one place",
+      "See expenses sitting right beside your revenue",
+      "Reports show real net profit — revenue minus expenses",
+      "Stop guessing where your money actually goes",
+    ],
+  },
+
+  [FEATURES.TYPOGRAPHY]: {
+    label: "Storefront typography",
+    description:
+      "Give your store its own voice. Choose from a curated set of premium fonts and it applies across your whole storefront, on every device your customers use.",
+    bullets: [
+      "Pick from a curated set of premium, fast-loading fonts",
+      "Applies store-wide — headings, product names, buttons",
+      "Looks consistent on phones, tablets, and desktops",
+      "Set it once from Manage Storefront and you're done",
     ],
   },
 

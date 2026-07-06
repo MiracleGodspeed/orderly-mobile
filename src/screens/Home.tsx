@@ -10,7 +10,9 @@ import {
   Share,
   Clipboard,
   Pressable,
+  StyleSheet,
 } from 'react-native';
+import LinearGradient from 'react-native-linear-gradient';
 import { AppToast } from '../components/AppToast';
 import {
   RangeKey,
@@ -718,111 +720,42 @@ export default function Home() {
         )}
 
         {/* Greeting + store identity */}
-        <View className="mx-4 mt-3 mb-3 rounded-2xl  p-4 overflow-hidden"
+        <View
+          className="mx-4 mt-3 mb-3"
           style={{
-            backgroundColor: '#1c59ca',
+            borderRadius: 20,
+            backgroundColor: '#143b8f',
             shadowColor: '#1c59ca',
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.22,
-            shadowRadius: 18,
-            elevation: 5,
+            shadowOffset: { width: 0, height: 10 },
+            shadowOpacity: 0.28,
+            shadowRadius: 20,
+            elevation: 6,
           }}
         >
-          {/* Top-edge inner highlight — a 1px translucent line at the top
-              of the card mimics light catching the upper rim. Subtle but
-              the card immediately reads as "lit from above" rather than
-              flat-painted. Classic premium-UI trick. */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 1,
-              backgroundColor: 'rgba(255, 255, 255, 0.20)',
-            }}
-          />
-          {/* Subtle diagonal sheen — a faint light stripe across the card
-              gives the surface a touch of motion, like a brushed gradient
-              instead of solid paint. */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: -20,
-              left: '12%',
-              width: 1.5,
-              height: '180%',
-              backgroundColor: 'rgba(255, 255, 255, 0.06)',
-              transform: [{ rotate: '18deg' }],
-            }}
-          />
-
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: -55,
-              right: -45,
-              width: 170,
-              height: 170,
-              borderRadius: 85,
-              backgroundColor: 'rgba(96, 165, 250, 0.22)',
-            }}
-          />
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: -25,
-              right: 20,
-              width: 80,
-              height: 80,
-              borderRadius: 40,
-              backgroundColor: 'rgba(147, 197, 253, 0.18)',
-            }}
-          />
-          {/* <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              bottom: -55,
-              left: -35,
-              width: 150,
-              height: 150,
-              borderRadius: 75,
-              backgroundColor: 'rgba(34, 211, 238, 0.14)',
-            }}
-          />
-          */}
-          {/* <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: 18,
-              right: 70,
-              width: 5,
-              height: 5,
-              borderRadius: 2.5,
-              backgroundColor: 'rgba(253, 224, 71, 0.7)',
-            }}
-          /> */}
-         
-          {/* <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              top: -10,
-              left: '20%',
-              width: 1.5,
-              height: '180%',
-              backgroundColor: 'rgba(255, 255, 255, 0.06)',
-              transform: [{ rotate: '20deg' }],
-            }}
-          /> */}
-
-         
+          {/* Real diagonal gradient as an absolute-fill background; the
+              padded content view below drives the height. Deep brand-blue
+              → indigo reads richer than a flat fill, and never clips. */}
+          <View style={{ borderRadius: 20, overflow: 'hidden' }}>
+            <LinearGradient
+              colors={['#2f6ae0', '#1f56c4', '#143b8f']}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={StyleSheet.absoluteFill}
+            />
+            {/* One legitimate premium detail: a hairline of light on the
+                top rim so the surface reads as lit from above. */}
+            <View
+              pointerEvents="none"
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+                height: 1,
+                backgroundColor: 'rgba(255, 255, 255, 0.18)',
+              }}
+            />
+            <View style={{ padding: 16 }}>
           <View className="flex-row items-baseline gap-1.5 mb-3">
             <Text
               className="text-[10px] font-extrabold uppercase tracking-[1.6px] text-blue-200/90"
@@ -952,6 +885,8 @@ export default function Home() {
             >
               <Ionicons name="share-social-outline" size={18} color="#ffffff" />
             </TouchableOpacity>
+          </View>
+            </View>
           </View>
         </View>
 
@@ -1333,12 +1268,12 @@ export default function Home() {
                 onPress: () => handleQuickAction('Orders'),
               },
               {
-                key: 'analytics',
-                label: 'Reports',
-                icon: 'bar-chart-outline',
+                key: 'expenses',
+                label: 'Expenses',
+                icon: 'wallet-outline',
                 tint: '#ede9fe',
                 iconColor: '#7c3aed',
-                onPress: () => handleQuickAction('ReportsAnalytics'),
+                onPress: () => handleQuickAction('Expenses'),
               },
               {
                 key: 'customers',

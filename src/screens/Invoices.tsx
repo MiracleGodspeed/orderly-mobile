@@ -7,12 +7,15 @@ import {
   FlatList,
   Modal,
   Platform,
+  TextStyle,
+  StyleSheet,
 } from "react-native";
 import { useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useNavigation } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import LinearGradient from "react-native-linear-gradient";
 import * as Haptics from "expo-haptics";
 import * as WebBrowser from "expo-web-browser";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -26,7 +29,6 @@ import {
   recordReceiptIncome,
   type InvoiceListItem,
 } from "../api/vendor/invoice.api";
-import { formatNaira } from "../lib/format";
 import { AppToast, AppToastTone } from "../components/AppToast";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
@@ -36,11 +38,51 @@ const haptic = () => {
   if (Platform.OS === "ios") Haptics.selectionAsync().catch(() => {});
 };
 
+const TABULAR: TextStyle = { fontVariant: ["tabular-nums"] };
+const DISPLAY = "PlusJakartaSans_800ExtraBold";
+const BOLD = "PlusJakartaSans_700Bold";
+
+const TABS: { key: Tab; label: string }[] = [
+  { key: "all", label: "All" },
+  { key: "invoice", label: "Invoices" },
+  { key: "receipt", label: "Receipts" },
+];
+
+function Money({
+  value,
+  size,
+  color = "#0f172a",
+  weight = BOLD,
+}: {
+  value: number | null | undefined;
+  size: number;
+  color?: string;
+  weight?: string;
+}) {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const [whole, frac] = n
+    .toLocaleString("en-US", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+    .split(".");
+  return (
+    <Text
+      style={[
+        TABULAR,
+        { fontFamily: weight, color, fontSize: size, letterSpacing: -size * 0.03 },
+      ]}
+    >
+      ₦{whole}
+      <Text style={{ fontSize: size * 0.64, opacity: 0.45 }}>.{frac}</Text>
+    </Text>
+  );
+}
+
 /**
- * Invoices & Receipts — the vendor's paperwork desk on mobile. List with
- * kind tabs + search, per-document actions (PDF, generate receipt with a
- * "record to income?" ask, add-to-income for receipts, delete), and the
- * big Create button that leads to the CreateInvoice flow.
+ * Invoices & Receipts — the vendor's paperwork desk on mobile. Gradient
+ * hero carrying the Create CTA, kind tabs + search, and refined document
+ * cards with PDF / generate-receipt / add-to-income / delete actions.
  */
 export default function Invoices() {
   const navigation = useNavigation<Nav>();
@@ -69,6 +111,7 @@ export default function Invoices() {
   });
 
   const rows = data?.data ?? [];
+  const totalCount = data?.totalCount ?? 0;
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ["invoices"] });
@@ -135,76 +178,106 @@ export default function Invoices() {
     }
   };
 
-  return (
-    <SafeAreaView className="flex-1 bg-[#f8fafc]" edges={["top"]}>
-      {/* Header */}
-      <View className="flex-row items-center justify-between px-5 pt-2 pb-3">
-        <View className="flex-row items-center gap-3">
-          <Pressable
-            onPress={() => navigation.goBack()}
-            className="h-10 w-10 items-center justify-center rounded-2xl bg-white border border-gray-100"
-          >
-            <Ionicons name="chevron-back" size={20} color="#0f172a" />
-          </Pressable>
-          <View>
-            <Text className="text-[20px] font-extrabold text-gray-900">
-              Invoices & Receipts
-            </Text>
-            <Text className="text-[12px] text-gray-500">
-              Create and download invoices & receipts
-            </Text>
+  const goCreate = () => {
+    haptic();
+    navigation.navigate("CreateInvoice");
+  };
+
+  const ListHeader = (
+    <View>
+      {/* ── Gradient hero with primary CTA ───────────────────────── */}
+      <View
+        className="mx-4 mt-2"
+        style={{
+          borderRadius: 26,
+          backgroundColor: "#0a1424",
+          shadowColor: "#0b1220",
+          shadowOpacity: 0.18,
+          shadowRadius: 24,
+          shadowOffset: { width: 0, height: 14 },
+          elevation: 10,
+        }}
+      >
+        {/* Gradient is an absolute-fill BACKGROUND; the padded content
+            View below drives the card height so nothing ever clips. */}
+        <View style={{ borderRadius: 26, overflow: "hidden" }}>
+          <LinearGradient
+            colors={["#0f2f5e", "#0b1f42", "#0a1424"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={{ padding: 22 }}>
+            <View className="flex-row items-center gap-3.5">
+              <View className="w-11 h-11 rounded-2xl items-center justify-center bg-white/10">
+                <Ionicons name="document-text-outline" size={21} color="#fff" />
+              </View>
+              <View className="flex-1 min-w-0">
+                <Text style={{ fontFamily: DISPLAY, fontSize: 17, color: "#fff" }}>
+                  Paperwork that wins trust
+                </Text>
+                <Text
+                  className="mt-0.5"
+                  style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, lineHeight: 17 }}
+                >
+                  Branded invoices & receipts, sent as a PDF in one tap.
+                </Text>
+              </View>
+            </View>
+            <Pressable
+              onPress={goCreate}
+              className="mt-4 flex-row items-center justify-center gap-1.5 rounded-2xl bg-white py-3.5 active:opacity-90"
+            >
+              <Ionicons name="add" size={16} color="#0a1424" />
+              <Text style={{ fontFamily: DISPLAY, fontSize: 13.5, color: "#0a1424" }}>
+                Create document
+              </Text>
+            </Pressable>
           </View>
         </View>
-        <Pressable
-          onPress={() => {
-            haptic();
-            navigation.navigate("CreateInvoice");
-          }}
-          className="h-11 w-11 items-center justify-center rounded-2xl bg-[#0080ff]"
-          style={{
-            shadowColor: "#0080ff",
-            shadowOpacity: 0.35,
-            shadowRadius: 8,
-            shadowOffset: { width: 0, height: 4 },
-            elevation: 5,
-          }}
-        >
-          <Ionicons name="add" size={24} color="#fff" />
-        </Pressable>
       </View>
 
-      {/* Tabs */}
-      <View className="mx-5 mb-3 flex-row rounded-2xl bg-white border border-gray-100 p-1">
-        {(
-          [
-            { key: "all", label: "All" },
-            { key: "invoice", label: "Invoices" },
-            { key: "receipt", label: "Receipts" },
-          ] as { key: Tab; label: string }[]
-        ).map((t) => (
-          <Pressable
-            key={t.key}
-            onPress={() => {
-              haptic();
-              setTab(t.key);
-            }}
-            className={`flex-1 items-center rounded-xl py-2 ${
-              tab === t.key ? "bg-slate-900" : ""
-            }`}
-          >
-            <Text
-              className={`text-[13px] font-bold ${
-                tab === t.key ? "text-white" : "text-gray-600"
-              }`}
+      {/* ── Tabs (segmented) ─────────────────────────────────────── */}
+      <View className="mx-4 mt-4 bg-[#eef1f5] rounded-2xl p-1 flex-row">
+        {TABS.map((t) => {
+          const isActive = tab === t.key;
+          return (
+            <Pressable
+              key={t.key}
+              onPress={() => {
+                haptic();
+                setTab(t.key);
+              }}
+              className="flex-1 items-center justify-center py-2.5 rounded-xl"
+              style={
+                isActive
+                  ? {
+                      backgroundColor: "#fff",
+                      shadowColor: "#0f172a",
+                      shadowOpacity: 0.06,
+                      shadowRadius: 6,
+                      shadowOffset: { width: 0, height: 2 },
+                      elevation: 2,
+                    }
+                  : undefined
+              }
             >
-              {t.label}
-            </Text>
-          </Pressable>
-        ))}
+              <Text
+                style={{
+                  fontFamily: BOLD,
+                  fontSize: 12.5,
+                  color: isActive ? "#0f172a" : "#64748b",
+                }}
+              >
+                {t.label}
+              </Text>
+            </Pressable>
+          );
+        })}
       </View>
 
-      {/* Search */}
-      <View className="mx-5 mb-3 flex-row items-center rounded-2xl bg-white border border-gray-100 px-3.5">
+      {/* ── Search ───────────────────────────────────────────────── */}
+      <View className="mx-4 mt-3 flex-row items-center rounded-2xl bg-white border border-[#eef1f5] px-3.5">
         <Ionicons name="search" size={16} color="#94a3b8" />
         <TextInput
           value={search}
@@ -214,63 +287,98 @@ export default function Invoices() {
           className="ml-2 flex-1 py-3 text-[14px] text-gray-900"
         />
         {search.length > 0 && (
-          <Pressable onPress={() => setSearch("")}>
+          <Pressable onPress={() => setSearch("")} hitSlop={6}>
             <Ionicons name="close-circle" size={16} color="#cbd5e1" />
           </Pressable>
         )}
       </View>
 
-      {/* List */}
-      {isPending ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color="#0080ff" />
-        </View>
-      ) : rows.length === 0 ? (
-        <View className="flex-1 items-center justify-center px-10">
-          <View className="h-16 w-16 items-center justify-center rounded-3xl bg-blue-50">
-            <Ionicons name="document-text-outline" size={26} color="#0080ff" />
-          </View>
-          <Text className="mt-4 text-[16px] font-extrabold text-gray-900">
-            {search || tab !== "all" ? "Nothing matches" : "No documents yet"}
-          </Text>
-          <Text className="mt-1 text-center text-[13px] leading-5 text-gray-500">
-            {search || tab !== "all"
-              ? "Try a different tab or clear the search."
-              : "Create an invoice or receipt from your products and send your customer the PDF."}
-          </Text>
-          {!search && tab === "all" && (
-            <Pressable
-              onPress={() => navigation.navigate("CreateInvoice")}
-              className="mt-5 rounded-2xl bg-[#0080ff] px-6 py-3"
-            >
-              <Text className="text-[13px] font-bold text-white">
-                Create your first document
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      ) : (
-        <FlatList
-          data={rows}
-          keyExtractor={(item) => item.id}
-          refreshing={isRefetching}
-          onRefresh={refetch}
-          contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 32 }}
-          renderItem={({ item }) => (
-            <DocumentCard
-              row={item}
-              busy={busyId === item.id}
-              onPdf={() => openPdf(item)}
-              onReceipt={() => {
-                setRecordToIncome(true);
-                setReceiptFor(item);
-              }}
-              onIncome={() => addToIncome(item)}
-              onDelete={() => remove(item)}
-            />
-          )}
-        />
+      {rows.length > 0 && (
+        <Text
+          className="mx-5 mt-4 mb-1"
+          style={{
+            fontFamily: DISPLAY,
+            fontSize: 10.5,
+            letterSpacing: 1.2,
+            color: "#94a3b8",
+          }}
+        >
+          {totalCount} DOCUMENT{totalCount === 1 ? "" : "S"}
+        </Text>
       )}
+    </View>
+  );
+
+  return (
+    <SafeAreaView className="flex-1 bg-[#f6f7f9]" edges={["top"]}>
+      {/* Top bar */}
+      <View className="px-5 pt-3 pb-1 flex-row items-center justify-between">
+        <Pressable
+          onPress={() => navigation.goBack()}
+          className="w-10 h-10 bg-white border border-[#eef1f5] rounded-full items-center justify-center active:bg-gray-100"
+        >
+          <Ionicons name="arrow-back" size={20} color="#0f172a" />
+        </Pressable>
+        <Text style={{ fontFamily: BOLD, fontSize: 16, color: "#0f172a" }}>
+          Invoices & Receipts
+        </Text>
+        <View className="w-10 h-10" />
+      </View>
+
+      <FlatList
+        data={rows}
+        keyExtractor={(item) => item.id}
+        refreshing={isRefetching}
+        onRefresh={refetch}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingBottom: 40 }}
+        ListHeaderComponent={ListHeader}
+        ListEmptyComponent={
+          isPending ? (
+            <View className="mx-4 mt-3 bg-white rounded-[22px] border border-[#eef1f5] p-12 items-center">
+              <ActivityIndicator size="small" color="#0080ff" />
+            </View>
+          ) : (
+            <View className="mx-4 mt-3 bg-white rounded-[22px] border border-[#eef1f5] px-6 py-12 items-center">
+              <View className="w-14 h-14 rounded-2xl bg-blue-50 items-center justify-center mb-3">
+                <Ionicons name="document-text-outline" size={24} color="#0080ff" />
+              </View>
+              <Text style={{ fontFamily: BOLD, fontSize: 15, color: "#0f172a" }}>
+                {search || tab !== "all" ? "Nothing matches" : "No documents yet"}
+              </Text>
+              <Text className="mt-1.5 text-center text-[12.5px] leading-[18px] text-slate-500 max-w-[260px]">
+                {search || tab !== "all"
+                  ? "Try a different tab or clear the search."
+                  : "Create an invoice or receipt from your products and send your customer the PDF."}
+              </Text>
+              {!search && tab === "all" && (
+                <Pressable
+                  onPress={goCreate}
+                  className="mt-5 flex-row items-center gap-1.5 rounded-full bg-[#0080ff] px-5 py-3 active:opacity-90"
+                >
+                  <Ionicons name="add" size={15} color="#fff" />
+                  <Text style={{ fontFamily: BOLD, fontSize: 13, color: "#fff" }}>
+                    Create your first document
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+          )
+        }
+        renderItem={({ item }) => (
+          <DocumentCard
+            row={item}
+            busy={busyId === item.id}
+            onPdf={() => openPdf(item)}
+            onReceipt={() => {
+              setRecordToIncome(true);
+              setReceiptFor(item);
+            }}
+            onIncome={() => addToIncome(item)}
+            onDelete={() => remove(item)}
+          />
+        )}
+      />
 
       {/* Generate-receipt modal */}
       <Modal
@@ -280,17 +388,24 @@ export default function Invoices() {
         onRequestClose={() => setReceiptFor(null)}
       >
         <View className="flex-1 items-center justify-center bg-slate-900/50 px-6">
-          <View className="w-full rounded-3xl bg-white p-6">
+          <View className="w-full rounded-[28px] bg-white p-6">
             <View className="h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50">
               <Ionicons name="receipt-outline" size={20} color="#059669" />
             </View>
-            <Text className="mt-3 text-[16px] font-extrabold text-gray-900">
+            <Text
+              className="mt-3.5"
+              style={{ fontFamily: DISPLAY, fontSize: 17, color: "#0f172a" }}
+            >
               Generate receipt for {receiptFor?.reference}
             </Text>
-            <Text className="mt-1 text-[13px] leading-5 text-gray-500">
+            <Text className="mt-1.5 text-[13px] leading-5 text-slate-500">
               This marks the invoice as paid and creates a receipt for{" "}
-              {receiptFor ? formatNaira(receiptFor.amount) : ""} from{" "}
-              {receiptFor?.customerName}.
+              {receiptFor ? (
+                <Text style={{ ...TABULAR, fontFamily: BOLD, color: "#0f172a" }}>
+                  ₦{receiptFor.amount.toLocaleString("en-US")}
+                </Text>
+              ) : null}{" "}
+              from {receiptFor?.customerName}.
             </Text>
 
             <Pressable
@@ -298,7 +413,7 @@ export default function Invoices() {
               className={`mt-4 flex-row items-start gap-3 rounded-2xl border p-4 ${
                 recordToIncome
                   ? "border-blue-300 bg-blue-50/70"
-                  : "border-gray-200 bg-white"
+                  : "border-[#e7ebf0] bg-white"
               }`}
             >
               <View
@@ -313,28 +428,30 @@ export default function Invoices() {
                 )}
               </View>
               <View className="flex-1">
-                <Text className="text-[13.5px] font-bold text-gray-900">
+                <Text style={{ fontFamily: BOLD, fontSize: 13.5, color: "#0f172a" }}>
                   Add to my income
                 </Text>
-                <Text className="mt-0.5 text-[12px] leading-4 text-gray-500">
+                <Text className="mt-0.5 text-[12px] leading-4 text-slate-500">
                   Records it as a paid order so it counts in your revenue,
                   reports and analytics.
                 </Text>
               </View>
             </Pressable>
 
-            <View className="mt-5 flex-row gap-2">
+            <View className="mt-5 flex-row gap-2.5">
               <Pressable
                 onPress={() => setReceiptFor(null)}
-                className="flex-1 items-center rounded-2xl border border-gray-200 py-3"
+                className="flex-1 items-center rounded-2xl border border-[#e7ebf0] py-3.5 active:bg-gray-50"
               >
-                <Text className="text-[13px] font-bold text-gray-700">Cancel</Text>
+                <Text style={{ fontFamily: BOLD, fontSize: 13, color: "#475569" }}>
+                  Cancel
+                </Text>
               </Pressable>
               <Pressable
                 onPress={confirmReceipt}
-                className="flex-1 items-center rounded-2xl bg-emerald-600 py-3"
+                className="flex-1 items-center rounded-2xl bg-emerald-600 py-3.5 active:opacity-90"
               >
-                <Text className="text-[13px] font-bold text-white">
+                <Text style={{ fontFamily: BOLD, fontSize: 13, color: "#fff" }}>
                   Generate receipt
                 </Text>
               </Pressable>
@@ -378,12 +495,14 @@ function DocumentCard({
 
   return (
     <View
-      className="mb-3 rounded-3xl border border-gray-100 bg-white p-4"
+      className="mx-4 mt-3 rounded-[22px] bg-white p-4"
       style={{
+        borderWidth: 1,
+        borderColor: "#eef1f5",
         shadowColor: "#0f172a",
-        shadowOpacity: 0.05,
-        shadowRadius: 10,
-        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 14,
+        shadowOffset: { width: 0, height: 4 },
         elevation: 2,
       }}
     >
@@ -399,16 +518,21 @@ function DocumentCard({
             color={isReceipt ? "#059669" : "#0080ff"}
           />
         </View>
-        <View className="flex-1">
+        <View className="flex-1 min-w-0">
           <View className="flex-row flex-wrap items-center gap-1.5">
-            <Text className="text-[14px] font-extrabold text-gray-900">
+            <Text style={{ fontFamily: DISPLAY, fontSize: 14, color: "#0f172a" }}>
               {row.reference}
             </Text>
             <View
-              className={`rounded-full px-2 py-0.5 ${
+              className={`flex-row items-center gap-1 rounded-full px-2 py-0.5 ${
                 paid ? "bg-emerald-50" : "bg-amber-50"
               }`}
             >
+              <View
+                className={`w-1.5 h-1.5 rounded-full ${
+                  paid ? "bg-emerald-500" : "bg-amber-500"
+                }`}
+              />
               <Text
                 className={`text-[9px] font-extrabold uppercase ${
                   paid ? "text-emerald-700" : "text-amber-700"
@@ -425,34 +549,37 @@ function DocumentCard({
               </View>
             )}
           </View>
-          <Text className="mt-0.5 text-[12px] text-gray-500" numberOfLines={1}>
+          <Text className="mt-0.5 text-[12px] text-slate-500" numberOfLines={1}>
             {row.customerName} · {row.itemCount} item{row.itemCount === 1 ? "" : "s"}
             {row.receiptReference ? ` · receipt ${row.receiptReference}` : ""}
           </Text>
         </View>
-        <Text className="text-[15px] font-extrabold text-gray-900">
-          {formatNaira(row.amount)}
-        </Text>
+        <Money value={row.amount} size={15} />
       </View>
 
-      {/* Actions */}
-      <View className="mt-3 flex-row items-center gap-2">
+      {/* Divider before actions — visually separates the meta from the
+          controls, the way a real document row would. */}
+      <View className="h-px bg-[#f1f5f9] my-3.5" />
+
+      <View className="flex-row items-center gap-2">
         <Pressable
           onPress={onPdf}
-          className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl bg-slate-900 py-2.5"
+          className="h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl bg-[#0f172a] active:opacity-90"
         >
           <Ionicons name="download-outline" size={13} color="#fff" />
-          <Text className="text-[12px] font-bold text-white">PDF</Text>
+          <Text style={{ fontFamily: BOLD, fontSize: 12, color: "#fff" }}>PDF</Text>
         </Pressable>
 
         {!isReceipt && !row.receiptId && row.status !== "cancelled" && (
           <Pressable
             onPress={onReceipt}
             disabled={busy}
-            className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 py-2.5"
+            className="h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 active:opacity-80"
           >
             <Ionicons name="receipt-outline" size={13} color="#047857" />
-            <Text className="text-[12px] font-bold text-emerald-700">Receipt</Text>
+            <Text style={{ fontFamily: BOLD, fontSize: 12, color: "#047857" }}>
+              Receipt
+            </Text>
           </Pressable>
         )}
 
@@ -460,14 +587,14 @@ function DocumentCard({
           <Pressable
             onPress={onIncome}
             disabled={busy}
-            className="flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 py-2.5"
+            className="h-10 flex-1 flex-row items-center justify-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 active:opacity-80"
           >
             {busy ? (
               <ActivityIndicator size="small" color="#0080ff" />
             ) : (
               <>
                 <Ionicons name="trending-up-outline" size={13} color="#0080ff" />
-                <Text className="text-[12px] font-bold text-blue-700">
+                <Text style={{ fontFamily: BOLD, fontSize: 12, color: "#1d4ed8" }}>
                   Add to income
                 </Text>
               </>
@@ -478,7 +605,7 @@ function DocumentCard({
         <Pressable
           onPress={onDelete}
           disabled={busy}
-          className="h-9 w-9 items-center justify-center rounded-xl border border-gray-200"
+          className="h-10 w-10 items-center justify-center rounded-xl bg-[#f8fafc] active:bg-gray-100"
         >
           {busy ? (
             <ActivityIndicator size="small" color="#94a3b8" />

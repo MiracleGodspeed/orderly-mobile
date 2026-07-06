@@ -1,130 +1,136 @@
-import {
-  Modal,
-  View,
-  Text,
-  Pressable,
-} from "react-native";
-import { useState } from "react";
-import AntDesign from '@expo/vector-icons/AntDesign';
-
+import { View, Text, Pressable, ScrollView, ActivityIndicator } from "react-native";
+import { useState, useEffect } from "react";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { useVendor } from "../../context/VendorContext";
+import { BottomSheet } from "./BottomSheet";
 
 interface Props {
   visible: boolean;
   onClose: () => void;
 }
 
+/**
+ * Storefront typography picker. Mirrors the curated list in the web's
+ * `storefront/store-fonts.ts` — keys MUST stay in sync (they're what
+ * the storefront maps to actual font files). The storefront itself is
+ * web, so this screen only records the choice in
+ * `storeFrontJson.fontFamily`; the store then renders with it for
+ * every customer, on every device.
+ */
+const STORE_FONTS: { key: string; label: string; vibe: string }[] = [
+  { key: "poppins", label: "Poppins", vibe: "Rounded & warm" },
+  { key: "quicksand", label: "Quicksand", vibe: "Soft & friendly" },
+  { key: "space-grotesk", label: "Space Grotesk", vibe: "Modern & premium" },
+  { key: "raleway", label: "Raleway", vibe: "Elegant & light" },
+  { key: "jost", label: "Jost", vibe: "Fashion-forward" },
+  { key: "barlow", label: "Barlow", vibe: "Bold & confident" },
+  { key: "marhey", label: "Marhey", vibe: "Playful & fun" },
+  { key: "playfair", label: "Playfair Display", vibe: "Editorial serif" },
+  { key: "roboto-slab", label: "Roboto Slab", vibe: "Sturdy slab serif" },
+  { key: "cormorant", label: "Cormorant Garamond", vibe: "Luxury boutique" },
+];
+
 export default function TypographyModal({ visible, onClose }: Props) {
-  const [selectedTypography, setSelectedTypography] = useState<string>("Modern");
+  const { updateVendorSettings, storeData } = useVendor();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  const handleSave = () => {
-    onClose();
+  useEffect(() => {
+    if (visible) {
+      setSelected((storeData as any)?.storeFrontJson?.fontFamily ?? null);
+    }
+  }, [visible, storeData]);
+
+  const handleSave = async () => {
+    if (!storeData) return;
+    setSaving(true);
+    try {
+      // Shallow-merge so the other storefront sections survive the save
+      // (same pattern as every other storeFrontJson editor modal).
+      const merged = {
+        ...((storeData as any)?.storeFrontJson ?? {}),
+        fontFamily: selected,
+      };
+      await updateVendorSettings({ storeFrontJson: merged } as any);
+      onClose();
+    } catch (e) {
+      console.error("Failed to save typography:", e);
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const handleCancel = () => {
-    onClose();
-  };
+  const Option = ({
+    active,
+    title,
+    subtitle,
+    onPress,
+  }: {
+    active: boolean;
+    title: string;
+    subtitle: string;
+    onPress: () => void;
+  }) => (
+    <Pressable
+      onPress={onPress}
+      className={`flex-row items-center justify-between rounded-2xl border px-4 py-3.5 mb-2 ${
+        active ? "border-blue-300 bg-blue-50/70" : "border-gray-200 bg-white"
+      }`}
+    >
+      <View className="flex-1 pr-3">
+        <Text className="text-[14.5px] font-bold text-gray-900">{title}</Text>
+        <Text className="text-[12px] text-gray-500">{subtitle}</Text>
+      </View>
+      {active && <Ionicons name="checkmark-circle" size={20} color="#0080ff" />}
+    </Pressable>
+  );
 
   return (
-    <Modal
+    <BottomSheet
       visible={visible}
-      animationType="slide"
-      transparent
-      statusBarTranslucent
+      onClose={onClose}
+      title="Typography"
+      subtitle="The font your whole storefront uses"
+      height="88%"
     >
-      <View className="flex-1 bg-black/40 justify-end">
-        <View className="bg-white rounded-t-2xl px-4 pt-4 pb-6 h-[45%]">
-         
-           <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
-                <Text className="text-base font-semibold">Typography</Text>
+      <ScrollView
+        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
+        showsVerticalScrollIndicator={false}
+      >
+        <Text className="text-[12.5px] leading-5 text-gray-500 mt-3 mb-4">
+          Applies to headings, product names and buttons across your store, on
+          every device your customers use.
+        </Text>
 
-            <Pressable>
-             <AntDesign name="close" size={24} color="black" onPress={onClose}/>
-            </Pressable>
-          </View>
+        <Option
+          active={selected == null}
+          title="Template default"
+          subtitle="Each template's own paired typography"
+          onPress={() => setSelected(null)}
+        />
+        {STORE_FONTS.map((f) => (
+          <Option
+            key={f.key}
+            active={selected === f.key}
+            title={f.label}
+            subtitle={f.vibe}
+            onPress={() => setSelected(f.key)}
+          />
+        ))}
 
-
-          <View className="pt-6">
-            <Text className="text-sm text-gray-700 mb-3">Select Font Style</Text>
-            
-            <View className="flex-row flex-wrap">
-              <Pressable 
-                onPress={() => setSelectedTypography("Modern")}
-                className={`${
-                  selectedTypography === "Modern" 
-                    ? "border-2 border-blue-600" 
-                    : "border border-gray-300"
-                } rounded-lg px-8 py-4 mr-3 mb-3`}
-              >
-                <Text className={`${
-                  selectedTypography === "Modern" 
-                    ? "text-blue-600" 
-                    : "text-gray-700"
-                } font-medium text-base`}>Modern</Text>
-              </Pressable>
-
-              <Pressable 
-                onPress={() => setSelectedTypography("Classic")}
-                className={`${
-                  selectedTypography === "Classic" 
-                    ? "border-2 border-blue-600" 
-                    : "border border-gray-300"
-                } rounded-lg px-8 py-4 mr-3 mb-3`}
-              >
-                <Text className={`${
-                  selectedTypography === "Classic" 
-                    ? "text-blue-600" 
-                    : "text-gray-700"
-                } font-medium text-base`}>Classic</Text>
-              </Pressable>
-
-              <Pressable 
-                onPress={() => setSelectedTypography("Elegant")}
-                className={`${
-                  selectedTypography === "Elegant" 
-                    ? "border-2 border-blue-600" 
-                    : "border border-gray-300"
-                } rounded-lg px-8 py-4 mr-3 mb-3`}
-              >
-                <Text className={`${
-                  selectedTypography === "Elegant" 
-                    ? "text-blue-600" 
-                    : "text-gray-700"
-                } font-medium text-base`}>Elegant</Text>
-              </Pressable>
-
-              <Pressable 
-                onPress={() => setSelectedTypography("Bold")}
-                className={`${
-                  selectedTypography === "Bold" 
-                    ? "border-2 border-blue-600" 
-                    : "border border-gray-300"
-                } rounded-lg px-8 py-4 mb-3`}
-              >
-                <Text className={`${
-                  selectedTypography === "Bold" 
-                    ? "text-blue-600" 
-                    : "text-gray-700"
-                } font-medium text-base`}>Bold</Text>
-              </Pressable>
-            </View>
-          </View>
-          <View className="flex-row items-center px-4 py-4 border-t border-gray-200 mb-5 mt-5">
-            <Pressable 
-              onPress={handleCancel}
-              className="flex-1 py-3 items-center justify-center rounded-full border border-gray-300 mr-3"
-            >
-              <Text className="text-gray-900 font-medium text-base">Cancel</Text>
-            </Pressable>
-
-            <Pressable 
-              onPress={handleSave}
-              className="flex-1 py-3 items-center justify-center rounded-full bg-blue-600"
-            >
-              <Text className="text-white font-medium text-base">Save Changes</Text>
-            </Pressable>
-          </View>
-        </View>
-      </View>
-    </Modal>
+        <Pressable
+          onPress={handleSave}
+          disabled={saving}
+          className="mt-4 flex-row items-center justify-center gap-2 rounded-2xl bg-[#0080ff] py-3.5"
+        >
+          {saving ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Ionicons name="checkmark" size={16} color="#fff" />
+          )}
+          <Text className="text-[14px] font-extrabold text-white">Save font</Text>
+        </Pressable>
+      </ScrollView>
+    </BottomSheet>
   );
 }

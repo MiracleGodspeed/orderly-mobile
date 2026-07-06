@@ -66,6 +66,13 @@ export type RootStackParamList = {
   Newsletter: undefined;
   DeleteAccount: undefined;
   LogOrder: undefined;
+  /** Invoices & receipts — list, generate receipts from invoices,
+   *  download branded PDFs. */
+  Invoices: undefined;
+  /** Create an invoice or receipt from catalog products. */
+  CreateInvoice: undefined;
+  /** Expense tracking — money out, so reports show real profit. */
+  Expenses: undefined;
   /** Surface for vendors to reject a manual bank-transfer payment.
    *  Reached from the Reject action button on the actionable push, or
    *  manually from order details when the payment is awaiting

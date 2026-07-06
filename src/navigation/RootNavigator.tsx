@@ -33,6 +33,9 @@ import SubscriptionBilling from '../screens/SubscriptionBilling';
 import Security from '../screens/Security';
 import ChangePassword from '../screens/ChangePassword';
 import LogOrder from '../screens/LogOrder';
+import Invoices from '../screens/Invoices';
+import CreateInvoice from '../screens/CreateInvoice';
+import Expenses from '../screens/Expenses';
 import RejectManualPayment from '../screens/RejectManualPayment';
 import PaymentSetup from '../screens/PaymentSetup';
 import StaffManagement from '../screens/StaffManagement';
@@ -135,6 +138,9 @@ export default function RootNavigator() {
         <Stack.Screen name="Security" component={Security} />
         <Stack.Screen name="ChangePassword" component={ChangePassword} />
         <Stack.Screen name="LogOrder" component={LogOrder} />
+        <Stack.Screen name="Invoices" component={Invoices} />
+        <Stack.Screen name="CreateInvoice" component={CreateInvoice} />
+        <Stack.Screen name="Expenses" component={Expenses} />
         <Stack.Screen
           name="RejectManualPayment"
           component={RejectManualPayment}

@@ -26,6 +26,7 @@ import AboutSectionModal from "../components/AboutSectionModal";
 import StoreLogoModal from "../components/StoreLogoModal";
 import BrandAssetsModal from "../components/BrandAssetsModal";
 import ThemeLayoutModal from "../components/ThemeAndLayout";
+import TypographyModal from "../components/TypographyModal";
 import ContactUsSectionModal from "../components/ContactUsModal";
 import CustomerReviewsModal from "../components/CustomerReviewsModal";
 import FeaturedProductsModal from "../components/FeaturedProductsModal";
@@ -173,6 +174,7 @@ export default function ManageStoreScreen() {
   const [showBrandAssetsModal, setShowBrandAssetsModal] = useState(false);
   const [showStoreLogoModal, setShowStoreLogoModal] = useState(false);
   const [showThemeLayoutModal, setShowThemeLayoutModal] = useState(false);
+  const [showTypographyModal, setShowTypographyModal] = useState(false);
   // Advanced storefront content (Grace template). Each section is a
   // standalone bottom-sheet editor that mutates one slice of
   // `storeFrontJson` and saves through the shared
@@ -231,6 +233,7 @@ export default function ManageStoreScreen() {
     return Array.isArray(arr) && arr.length > 0;
   }, [storeData]);
   const themeConfigured = !!storeData?.templateId;
+  const typographyConfigured = !!(storeData as any)?.storeFrontJson?.fontFamily;
   const logoConfigured = !!storeData?.logoUrl;
   const brandConfigured = !!(
     storeData?.primaryColor ||
@@ -620,6 +623,15 @@ export default function ManageStoreScreen() {
               />
 
               <SectionRow
+                icon="text-outline"
+                title="Typography"
+                subtitle="The font your whole storefront uses"
+                tone="cyan"
+                configured={typographyConfigured}
+                onPress={() => setShowTypographyModal(true)}
+              />
+
+              <SectionRow
                 icon="image-outline"
                 title="Store Logo"
                 subtitle={
@@ -762,6 +774,11 @@ export default function ManageStoreScreen() {
         visible={showThemeLayoutModal}
         onClose={() => setShowThemeLayoutModal(false)}
         initialTemplateId={storeData?.templateId}
+      />
+
+      <TypographyModal
+        visible={showTypographyModal}
+        onClose={() => setShowTypographyModal(false)}
       />
 
       {/* Paywall — opened when a vendor taps a gated section their plan

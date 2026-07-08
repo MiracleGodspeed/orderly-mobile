@@ -558,6 +558,18 @@ export default function Home() {
     navigation.navigate('CustomDomain');
   }, [canUseCustomDomain, navigation, tap]);
 
+  // Expenses is a paid feature (mirrors the MoreHub gate). Show the
+  // paywall instead of the screen when the plan doesn't include it.
+  const canUseExpenses = hasFeature(FEATURES.EXPENSES);
+  const handleOpenExpenses = useCallback(() => {
+    tap();
+    if (!canUseExpenses) {
+      setPaywallFeature(FEATURES.EXPENSES);
+      return;
+    }
+    navigation.navigate('Expenses');
+  }, [canUseExpenses, navigation, tap]);
+
   const handleQuickAction = useCallback(
     (screen: keyof RootStackParamList, params?: any) => {
       tap();
@@ -1273,7 +1285,8 @@ export default function Home() {
                 icon: 'wallet-outline',
                 tint: '#ede9fe',
                 iconColor: '#7c3aed',
-                onPress: () => handleQuickAction('Expenses'),
+                locked: !canUseExpenses,
+                onPress: handleOpenExpenses,
               },
               {
                 key: 'customers',

@@ -856,6 +856,61 @@ export const logOfflineOrder = async (
 };
 
 /**
+ * Edit a vendor-logged offline order. Same payload as logging one, but
+ * PUTs to the batch. The backend rejects anything that isn't a manual
+ * entry, so real storefront orders can never be edited here.
+ */
+export const editOfflineOrder = async (
+  batchId: string,
+  payload: LogOfflineOrderRequest
+): Promise<{ batchId: string }> => {
+  const response = await apiClient.put<{
+    code: string;
+    message: string;
+    data: string;
+  }>(
+    `/order-requests/log-offline/${encodeURIComponent(batchId)}`,
+    {
+      CustomerName: payload.customerName,
+      CustomerPhone: payload.customerPhone,
+      CustomerEmail: payload.customerEmail,
+      Channel: payload.channel,
+      MarkAsPaid: payload.markAsPaid ?? true,
+      Notes: payload.notes,
+      Items: payload.items.map((item) => ({
+        CatalogItemId: item.catalogItemId,
+        Quantity: item.quantity,
+        UnitPrice: item.unitPrice,
+        Color: item.color,
+        Size: item.size,
+      })),
+    },
+    { validateStatus: () => true }
+  );
+
+  if (response.data?.code !== '200') {
+    const detail =
+      response.data?.message ||
+      `HTTP ${response.status} ${response.statusText ?? ''}`.trim();
+    throw new Error(detail || "Couldn't update the order.");
+  }
+
+  return { batchId: response.data.data || batchId };
+};
+
+/** Delete a vendor-logged offline order (manual entries only; enforced
+ *  server-side). */
+export const deleteOfflineOrder = async (batchId: string): Promise<void> => {
+  const response = await apiClient.delete<{ code: string; message: string }>(
+    `/order-requests/log-offline/${encodeURIComponent(batchId)}`,
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== '200') {
+    throw new Error(response.data?.message || "Couldn't delete the order.");
+  }
+};
+
+/**
  * Fetches a prorated-upgrade quote for the vendor's current sub →
  * picked plan + cycle. Read-only — safe to call as the vendor flips
  * between plans/cycles in the picker. Drives the upgrade-preview

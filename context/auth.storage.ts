@@ -32,6 +32,50 @@ export const saveAuthToStorage = async (
   }
 };
 
+// ── Pending signup verification ──────────────────────────────────────
+// A signup that reached the OTP step but wasn't finished. Persisting it
+// (email only — never the password) lets a COLD BOOT resume the OTP
+// screen instead of dumping the user at Onboarding, so killing the app
+// mid-verification no longer loses the signup. Self-expires around the
+// OTP lifetime; cleared on successful verify. Deliberately NOT prefixed
+// with a user-scoped sweep prefix — there's no signed-in user yet.
+const PENDING_VERIFY_KEY = "pending_signup_verification";
+const PENDING_VERIFY_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
+export const savePendingVerification = async (email: string) => {
+  try {
+    await AsyncStorage.setItem(
+      PENDING_VERIFY_KEY,
+      JSON.stringify({ email, at: Date.now() })
+    );
+  } catch {}
+};
+
+export const getPendingVerification = async (): Promise<string | null> => {
+  try {
+    const raw = await AsyncStorage.getItem(PENDING_VERIFY_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { email?: string; at?: number };
+    if (
+      parsed?.email &&
+      typeof parsed.at === "number" &&
+      Date.now() - parsed.at < PENDING_VERIFY_TTL_MS
+    ) {
+      return parsed.email;
+    }
+    await AsyncStorage.removeItem(PENDING_VERIFY_KEY);
+    return null;
+  } catch {
+    return null;
+  }
+};
+
+export const clearPendingVerification = async () => {
+  try {
+    await AsyncStorage.removeItem(PENDING_VERIFY_KEY);
+  } catch {}
+};
+
 export const getAuthFromStorage = async () => {
   const token = await AsyncStorage.getItem(AUTH_TOKEN_KEY);
   const user = await AsyncStorage.getItem(AUTH_USER_KEY);
@@ -111,6 +155,9 @@ const USER_SCOPED_KEY_PREFIXES = [
 ];
 
 export const clearAuthFromStorage = async () => {
+  // Also drop any half-finished signup marker so a sign-out never leaves
+  // a stale OTP-resume around for the next cold boot.
+  await AsyncStorage.removeItem(PENDING_VERIFY_KEY).catch(() => {});
   try {
     const allKeys = await AsyncStorage.getAllKeys();
     const toRemove = allKeys.filter((k) =>

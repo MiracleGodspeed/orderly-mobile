@@ -20,6 +20,7 @@ import { useToast } from "react-native-toast-notifications";
 
 import { RootStackParamList } from "../navigation/types";
 import { useAuth } from "../../context/AuthContext";
+import { clearPendingVerification } from "../../context/auth.storage";
 import { verifyOtp, resendOtp } from "../api/auth/auth.api";
 import { OtpVerificationRequest } from "../api/auth/auth.types";
 
@@ -201,6 +202,10 @@ export default function OtpVerification({ route, navigation }: Props) {
         refreshTokenExpiresAt
       );
 
+      // Verified — drop the resume marker so a later cold boot doesn't
+      // send them back to OTP.
+      await clearPendingVerification();
+
       if (Platform.OS === "ios") {
         Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success
@@ -249,6 +254,19 @@ export default function OtpVerification({ route, navigation }: Props) {
     }
   };
 
+  // Back usually pops to the signup form. But when we RESUMED onto this
+  // screen from a cold boot, it's the root of the stack — there's nothing
+  // to pop to, so "back" means "start over": drop the resume marker and
+  // send them to the entry screen.
+  const handleBack = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      clearPendingVerification();
+      navigation.replace("Onboarding");
+    }
+  };
+
   const isOtpComplete = otp.length === OTP_LENGTH;
 
   return (
@@ -269,7 +287,7 @@ export default function OtpVerification({ route, navigation }: Props) {
           <View className="px-6 pt-4">
             <View className="flex-row items-center justify-between">
               <TouchableOpacity
-                onPress={() => navigation.goBack()}
+                onPress={handleBack}
                 activeOpacity={0.7}
                 className="w-10 h-10 bg-white border border-gray-200 rounded-full items-center justify-center"
               >

@@ -27,7 +27,9 @@ import {
   rejectManualPayment,
   updateOrderStatusByBatch,
   listOrderActivity,
+  deleteOfflineOrder,
 } from "../api/vendor/vendor.api";
+import { CHANNELS } from "../lib/orderChannels";
 import { OrderActivity } from "../api/vendor/vendor.types";
 import { useStaffPermissions } from "../hooks/useStaffPermissions";
 import { STAFF_PERMISSIONS } from "../lib/staffPermissions";
@@ -297,6 +299,65 @@ export default function OrderDetailsScreen() {
   // so paid + unpaid + every page get refetched together.
   const invalidateOrders = () => {
     qc.invalidateQueries({ queryKey: ["orders"] });
+  };
+
+  // ── Manual (offline) order edit / delete ──────────────────────────
+  // Only manually-entered orders expose these — real storefront orders
+  // stay locked (and the backend rejects edits/deletes on them). Edit
+  // reuses the LogOrder form in edit mode; delete removes the entry.
+  const isManualEntry = safeOrder.isManualEntry === true;
+  const [deleting, setDeleting] = useState(false);
+
+  const handleEditOrder = () => {
+    const channelKey = CHANNELS.some((c) => c.key === safeOrder.channel)
+      ? (safeOrder.channel as string)
+      : "other";
+    navigation.navigate("LogOrder", {
+      edit: {
+        batchId: safeOrder.id,
+        channel: channelKey,
+        customerName: safeOrder.buyerName ?? "",
+        customerPhone: safeOrder.buyerPhone ?? "",
+        customerEmail: safeOrder.buyerEmail ?? "",
+        markAsPaid: (safeOrder.status || "").toLowerCase() === "success",
+        items: (safeOrder.catalogItems ?? []).map((it: any) => ({
+          id: it.id,
+          title: it.name,
+          price: it.price,
+          image: it.image,
+          quantity: it.quantity,
+        })),
+      },
+    });
+  };
+
+  const handleDeleteOrder = () => {
+    Alert.alert(
+      "Delete this order?",
+      "This removes the offline sale from your records and reports. This can't be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            setDeleting(true);
+            try {
+              await deleteOfflineOrder(safeOrder.id);
+              invalidateOrders();
+              toast.show("Order deleted", { type: "success" });
+              navigation.goBack();
+            } catch (e: any) {
+              toast.show(e?.message ?? "Couldn't delete the order.", {
+                type: "danger",
+              });
+            } finally {
+              setDeleting(false);
+            }
+          },
+        },
+      ]
+    );
   };
 
   // Returns true on success, false on failure. The optional `silent` flag
@@ -1115,6 +1176,51 @@ export default function OrderDetailsScreen() {
                   </View>
                 </View>
               ))}
+            </View>
+          </View>
+        )}
+
+        {/* Manage entry — edit / delete, ONLY for manually-logged offline
+            orders. Real storefront orders never show this. */}
+        {isManualEntry && (
+          <View className="mx-5 mt-4 mb-2">
+            <Text
+              className="text-[11px] text-gray-400 uppercase tracking-[1.2px] mb-2 px-1"
+              style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+            >
+              Manage entry
+            </Text>
+            <View className="flex-row gap-3">
+              <Pressable
+                onPress={handleEditOrder}
+                disabled={deleting}
+                className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-gray-200 bg-white py-3.5 active:bg-gray-50"
+              >
+                <Ionicons name="create-outline" size={18} color="#111827" />
+                <Text
+                  className="text-[13.5px] text-gray-900"
+                  style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                >
+                  Edit order
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={handleDeleteOrder}
+                disabled={deleting}
+                className="flex-1 flex-row items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white py-3.5 active:bg-rose-50"
+              >
+                {deleting ? (
+                  <ActivityIndicator size="small" color="#e11d48" />
+                ) : (
+                  <Ionicons name="trash-outline" size={18} color="#e11d48" />
+                )}
+                <Text
+                  className="text-[13.5px] text-rose-600"
+                  style={{ fontFamily: "PlusJakartaSans_700Bold" }}
+                >
+                  Delete
+                </Text>
+              </Pressable>
             </View>
           </View>
         )}

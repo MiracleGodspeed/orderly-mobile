@@ -9,12 +9,20 @@ import Animated, {
   withSequence,
   Easing,
 } from "react-native-reanimated";
-import { getAuthFromStorage } from "../../context/auth.storage";
+import {
+  getAuthFromStorage,
+  getPendingVerification,
+} from "../../context/auth.storage";
 import { isRole, isUserStatus } from "../lib/authStatus";
 import { AppImage } from "../components/AppImage";
 
 const ROLE_STAFF = 6;
 const STATUS_PENDING_ONBOARDING = 2;
+
+type BootDestination = {
+  route: "Home" | "SetupStep1" | "Onboarding" | "OtpVerification";
+  params?: Record<string, unknown>;
+};
 
 /**
  * Decide where a returning user lands on cold boot. Mirrors the Login
@@ -22,17 +30,30 @@ const STATUS_PENDING_ONBOARDING = 2;
  * onboarding never finished (UserStatus still PendingOnboarding) must
  * resume setup, NOT land on a placeholder dashboard. Staff never own a
  * store, so they always go Home.
+ *
+ * Special case: someone who signed up but never verified their email has
+ * NO token yet. Rather than dropping them at Onboarding (losing the
+ * signup), we resume the OTP screen — this is what survives the app
+ * being killed mid-verification. Email is restored from storage; the
+ * password isn't needed to verify or resend a code.
  */
-async function resolveBootRoute(): Promise<
-  "Home" | "SetupStep1" | "Onboarding"
-> {
+async function resolveBootRoute(): Promise<BootDestination> {
   const { token, user } = await getAuthFromStorage();
-  if (!token || !user?.id) return "Onboarding";
-  if (isRole(user.role, ROLE_STAFF)) return "Home";
-  if (isUserStatus(user.userStatus, STATUS_PENDING_ONBOARDING)) {
-    return "SetupStep1";
+  if (!token || !user?.id) {
+    const pendingEmail = await getPendingVerification();
+    if (pendingEmail) {
+      return {
+        route: "OtpVerification",
+        params: { email: pendingEmail, password: "" },
+      };
+    }
+    return { route: "Onboarding" };
   }
-  return "Home";
+  if (isRole(user.role, ROLE_STAFF)) return { route: "Home" };
+  if (isUserStatus(user.userStatus, STATUS_PENDING_ONBOARDING)) {
+    return { route: "SetupStep1" };
+  }
+  return { route: "Home" };
 }
 
 const LOGO = require("../../assets/orderlySplash.png");
@@ -87,12 +108,12 @@ export default function SplashScreen({ navigation }: any) {
     // Whichever finishes last determines when we transition off.
     const minHold = new Promise<void>((r) => setTimeout(r, MIN_DISPLAY_MS));
     const ready = resolveBootRoute();
-    Promise.all([minHold, ready]).then(([, route]) => {
+    Promise.all([minHold, ready]).then(([, dest]) => {
       if (cancelled) return;
       fadeOutOpacity.value = withTiming(0, { duration: FADE_OUT_MS });
       setTimeout(() => {
         if (cancelled) return;
-        navigation.replace(route);
+        navigation.replace(dest.route, dest.params);
       }, FADE_OUT_MS);
     });
 

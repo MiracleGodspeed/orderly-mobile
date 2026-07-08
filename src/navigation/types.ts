@@ -9,6 +9,24 @@ export type OrderStatus = 'Pending' | 'Paid' | 'Shipped';
    image: any;
 };
 
+/** Prefill payload for editing a manually-entered offline order — passed
+ *  to the LogOrder screen so it opens in edit mode. */
+export type EditOfflineOrderParam = {
+  batchId: string;
+  channel: string | null;
+  customerName: string;
+  customerPhone: string;
+  customerEmail: string;
+  markAsPaid: boolean;
+  items: Array<{
+    id: string;
+    title: string;
+    price: number;
+    image?: string | null;
+    quantity: number;
+  }>;
+};
+
 export type RootStackParamList = {
   Splash: undefined;
   Onboarding: undefined;
@@ -65,7 +83,9 @@ export type RootStackParamList = {
    *  on/off and browse the subscriber list. */
   Newsletter: undefined;
   DeleteAccount: undefined;
-  LogOrder: undefined;
+  // With `edit` set, the LogOrder screen opens in edit mode, prefilled
+  // from an existing manually-entered offline order.
+  LogOrder: { edit?: EditOfflineOrderParam } | undefined;
   /** Invoices & receipts — list, generate receipts from invoices,
    *  download branded PDFs. */
   Invoices: undefined;

@@ -10,16 +10,22 @@ import {
 } from "react-native";
 import { useEffect, useMemo, useState } from "react";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
-import { NativeStackNavigationProp } from "@react-navigation/native-stack";
+import { useNavigation, useRoute } from "@react-navigation/native";
+import {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+} from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { RootStackParamList } from "../navigation/types";
+import {
+  RootStackParamList,
+  EditOfflineOrderParam,
+} from "../navigation/types";
 import { CHANNELS, ChannelMeta } from "../lib/orderChannels";
 import { useProducts } from "../hooks/useProducts";
-import { logOfflineOrder } from "../api/vendor/vendor.api";
+import { editOfflineOrder, logOfflineOrder } from "../api/vendor/vendor.api";
 import type {
   OrderChannel,
   Product,
@@ -31,6 +37,10 @@ import { AppImage } from "../components/AppImage";
 import KeyboardScreen from "../components/KeyboardScreen";
 
 type Nav = NativeStackNavigationProp<RootStackParamList>;
+type LogOrderRouteProp = NativeStackScreenProps<
+  RootStackParamList,
+  "LogOrder"
+>["route"];
 
 const haptic = (
   style: "light" | "medium" | "success" | "error" = "light"
@@ -69,15 +79,32 @@ interface CartLine {
  */
 export default function LogOrder() {
   const navigation = useNavigation<Nav>();
+  const route = useRoute<LogOrderRouteProp>();
+  const edit: EditOfflineOrderParam | undefined = route.params?.edit;
+  const isEdit = edit != null;
   const qc = useQueryClient();
 
-  const [channel, setChannel] = useState<OrderChannel | null>(null);
-  const [customerName, setCustomerName] = useState("");
-  const [customerPhone, setCustomerPhone] = useState("");
-  const [markAsPaid, setMarkAsPaid] = useState(true);
+  const [channel, setChannel] = useState<OrderChannel | null>(
+    (edit?.channel as OrderChannel) ?? null
+  );
+  const [customerName, setCustomerName] = useState(edit?.customerName ?? "");
+  const [customerPhone, setCustomerPhone] = useState(edit?.customerPhone ?? "");
+  const [markAsPaid, setMarkAsPaid] = useState(edit?.markAsPaid ?? true);
   const [notes, setNotes] = useState("");
 
-  const [cart, setCart] = useState<CartLine[]>([]);
+  const [cart, setCart] = useState<CartLine[]>(
+    edit
+      ? edit.items.map((it) => ({
+          product: {
+            id: it.id,
+            title: it.title,
+            price: it.price,
+            image: it.image ?? null,
+          } as Product,
+          quantity: it.quantity,
+        }))
+      : []
+  );
   const [pickerOpen, setPickerOpen] = useState(false);
   const [productSearch, setProductSearch] = useState("");
   // Debounced mirror of `productSearch`. Querying the API on every
@@ -185,6 +212,9 @@ export default function LogOrder() {
         channel,
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim() || undefined,
+        // Preserve the email on edit even though the form doesn't expose
+        // it, so a correction never wipes a linked customer's email.
+        customerEmail: edit?.customerEmail?.trim() || undefined,
         markAsPaid,
         notes: notes.trim() || undefined,
         items: cart.map((line) => ({
@@ -193,15 +223,19 @@ export default function LogOrder() {
           unitPrice: line.product.price,
         })),
       };
-      await logOfflineOrder(payload);
-      // Bust the orders cache so the new entry shows up immediately
-      // when the vendor lands back on the Orders screen — no more
-      // pull-to-refresh required. Invalidating by the "orders" prefix
-      // covers both paid + unpaid query keys regardless of page/search.
+      if (isEdit) {
+        await editOfflineOrder(edit!.batchId, payload);
+      } else {
+        await logOfflineOrder(payload);
+      }
+      // Bust the orders cache so the change shows up immediately when the
+      // vendor lands back on the Orders screen — no more pull-to-refresh
+      // required. Invalidating by the "orders" prefix covers both paid +
+      // unpaid query keys regardless of page/search.
       qc.invalidateQueries({ queryKey: ["orders"] });
       haptic("success");
       setToast({
-        title: "Order logged",
+        title: isEdit ? "Order updated" : "Order logged",
         subtitle: `${cart.length} ${
           cart.length === 1 ? "item" : "items"
         } · ${formatNaira(total)}`,
@@ -213,7 +247,7 @@ export default function LogOrder() {
       console.error("Log offline order failed:", e);
       haptic("error");
       setToast({
-        title: "Couldn't log the order",
+        title: isEdit ? "Couldn't update the order" : "Couldn't log the order",
         subtitle: e?.message ?? "Try again in a moment.",
         tone: "error",
       });
@@ -247,7 +281,7 @@ export default function LogOrder() {
           className="text-[16px] text-gray-900"
           style={{ fontFamily: "PlusJakartaSans_700Bold" }}
         >
-          Record offline sale
+          {isEdit ? "Edit offline sale" : "Record offline sale"}
         </Text>
       </View>
 
@@ -584,7 +618,7 @@ export default function LogOrder() {
               <>
                 <ActivityIndicator size="small" color="#fff" />
                 <Text className="text-white font-extrabold text-[14.5px]">
-                  Logging…
+                  {isEdit ? "Saving…" : "Logging…"}
                 </Text>
               </>
             ) : (
@@ -599,7 +633,7 @@ export default function LogOrder() {
                     canSubmit ? "text-white" : "text-gray-500"
                   }`}
                 >
-                  Log order
+                  {isEdit ? "Save changes" : "Log order"}
                 </Text>
               </>
             )}

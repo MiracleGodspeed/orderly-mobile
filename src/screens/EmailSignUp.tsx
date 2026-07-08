@@ -35,6 +35,7 @@ import { isUserStatus } from "../lib/authStatus";
 import { AppToast, AppToastTone } from "../components/AppToast";
 import { useAuth } from "../../context/AuthContext";
 import { useVendor } from "../../context/VendorContext";
+import { savePendingVerification } from "../../context/auth.storage";
 
 type ScreenNavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -243,6 +244,9 @@ export default function EmailSignUp() {
 
     try {
       await signup(payload);
+      // Remember this so a cold boot (app killed mid-verification) resumes
+      // the OTP screen instead of Onboarding. Email only — never password.
+      await savePendingVerification(email.trim().toLowerCase());
       navigation.navigate("OtpVerification", { email, password });
     } catch (err) {
       let message = "Check your details and try again.";

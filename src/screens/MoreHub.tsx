@@ -147,6 +147,22 @@ export default function MoreHub() {
                 screen: "PaymentSetup" as keyof RootStackParamList,
               },
               {
+                id: "wholesale",
+                icon: "layers-outline" as IoniconName,
+                tint: "#e0e7ff",
+                iconColor: "#4f46e5",
+                title: "Wholesale pricing",
+                subtitle:
+                  (storeData?.wholesaleRules?.length ?? 0) > 0
+                    ? `${storeData?.wholesaleRules?.length} ${
+                        (storeData?.wholesaleRules?.length ?? 0) === 1
+                          ? "policy"
+                          : "policies"
+                      } active`
+                    : "Auto-discount bulk buyers",
+                screen: "WholesalePricing" as keyof RootStackParamList,
+              },
+              {
                 id: "invoices",
                 icon: "document-text-outline" as IoniconName,
                 tint: canUseInvoices ? "#dbeafe" : "#f3f4f6",

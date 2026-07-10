@@ -15,6 +15,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
 import * as Haptics from "expo-haptics";
+import Svg, { Circle } from "react-native-svg";
 
 import { RootStackParamList } from "../navigation/types";
 import { useVendor } from "../../context/VendorContext";
@@ -165,6 +166,65 @@ function SectionRow({
   );
 }
 
+/**
+ * Circular setup-completion indicator shown in the store identity card.
+ * Turns emerald once every available section is configured. Purely a
+ * summary of `configured` flags — carries no logic of its own.
+ */
+function CompletionRing({
+  pct,
+  size = 58,
+  stroke = 6,
+}: {
+  pct: number;
+  size?: number;
+  stroke?: number;
+}) {
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference * (1 - clamped / 100);
+  const complete = clamped >= 100;
+  const color = complete ? "#059669" : "#2563eb";
+
+  return (
+    <View style={{ width: size, height: size }} className="items-center justify-center">
+      <Svg width={size} height={size}>
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke="#eef2f7"
+          strokeWidth={stroke}
+          fill="none"
+        />
+        <Circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          stroke={color}
+          strokeWidth={stroke}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          fill="none"
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        />
+      </Svg>
+      <View className="absolute items-center justify-center">
+        {complete ? (
+          <Ionicons name="checkmark" size={22} color={color} />
+        ) : (
+          <Text className="text-[14px] font-extrabold" style={{ color }}>
+            {clamped}
+            <Text className="text-[9px] font-bold">%</Text>
+          </Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
 export default function ManageStoreScreen() {
   const navigation = useNavigation<ScreenNavigationProp>();
   const [activeTab, setActiveTab] = useState<TabKey>("sections");
@@ -242,10 +302,40 @@ export default function ManageStoreScreen() {
     storeData?.accentColor
   );
 
-  const sectionsCount = [heroConfigured, aboutConfigured, contactConfigured]
-    .filter(Boolean).length;
-  const brandingCount = [themeConfigured, logoConfigured, brandConfigured]
-    .filter(Boolean).length;
+  // Single source of truth for progress. Each item declares whether it's
+  // `available` on the vendor's plan — locked upsell rows are excluded so a
+  // vendor is never scored against features they can't use. `done`/`total`
+  // count only available items; the tab counters and the identity-card
+  // completion ring both derive from these so the numbers can never disagree.
+  const tally = (
+    items: { configured: boolean; available: boolean }[],
+  ) => {
+    const available = items.filter((i) => i.available);
+    return { done: available.filter((i) => i.configured).length, total: available.length };
+  };
+
+  const sectionsTally = tally([
+    { configured: heroConfigured, available: true },
+    { configured: aboutConfigured, available: true },
+    { configured: contactConfigured, available: true },
+    { configured: reviewsConfigured, available: canUseAdvancedSetup },
+    { configured: featuredConfigured, available: canUseAdvancedSetup },
+    { configured: categoriesConfigured, available: canUseAdvancedSetup },
+    { configured: promoSocialConfigured, available: canUseAdvancedSetup },
+    { configured: whyChooseUsConfigured, available: canUseAdvancedSetup },
+  ]);
+  const brandingTally = tally([
+    { configured: themeConfigured, available: true },
+    { configured: typographyConfigured, available: canUseTypography },
+    { configured: logoConfigured, available: canUseLogo },
+    // Brand Assets always counts as done and stays in the total — vendors who
+    // fiddle with colors tend to pick bad ones, so we never nudge them here.
+    { configured: true, available: true },
+  ]);
+
+  const totalDone = sectionsTally.done + brandingTally.done;
+  const totalItems = sectionsTally.total + brandingTally.total;
+  const completionPct = totalItems ? (totalDone / totalItems) * 100 : 0;
 
   const isPublished = !!storeData?.isPublished;
   // Prefer the vendor's custom domain when an admin has marked their
@@ -349,7 +439,7 @@ export default function ManageStoreScreen() {
               )}
 
               {/* Store name + status */}
-              <View className="flex-1 min-w-0">
+              <View className="flex-1 min-w-0 pr-3">
                 <Text
                   className="text-[18px] font-extrabold text-gray-900 mb-1"
                   numberOfLines={1}
@@ -371,6 +461,14 @@ export default function ManageStoreScreen() {
                     </Text>
                   </View>
                 )}
+              </View>
+
+              {/* Setup completion */}
+              <View className="items-center">
+                <CompletionRing pct={completionPct} />
+                <Text className="text-[10px] font-bold text-gray-400 tracking-wide mt-1">
+                  {totalDone}/{totalItems} SET
+                </Text>
               </View>
             </View>
           </View>
@@ -414,14 +512,14 @@ export default function ManageStoreScreen() {
                 {
                   key: "sections" as const,
                   label: "Sections",
-                  count: sectionsCount,
-                  total: 3,
+                  count: sectionsTally.done,
+                  total: sectionsTally.total,
                 },
                 {
                   key: "branding" as const,
                   label: "Branding",
-                  count: brandingCount,
-                  total: 3,
+                  count: brandingTally.done,
+                  total: brandingTally.total,
                 },
               ]
             ).map((tab) => {
@@ -678,7 +776,7 @@ export default function ManageStoreScreen() {
                 title="Brand Assets"
                 subtitle="Pick your primary brand colors"
                 tone="cyan"
-                configured={brandConfigured}
+                configured={true}
                 preview={
                   brandConfigured ? (
                     <View className="flex-row -space-x-1.5">
@@ -717,6 +815,21 @@ export default function ManageStoreScreen() {
           elevation: 12,
         }}
       >
+        {!isPublished && (
+          <View className="flex-row items-center justify-center gap-1.5 mb-2.5">
+            <Ionicons
+              name={completionPct >= 100 ? "checkmark-circle" : "information-circle-outline"}
+              size={14}
+              color={completionPct >= 100 ? "#059669" : "#9ca3af"}
+            />
+            <Text className="text-[12px] text-gray-500">
+              {completionPct >= 100
+                ? "Everything's set — you're ready to go live."
+                : "You can publish now and keep refining later."}
+            </Text>
+          </View>
+        )}
+
         <Pressable
           onPress={handleTogglePublish}
           disabled={loading}

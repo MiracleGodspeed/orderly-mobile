@@ -16,6 +16,7 @@ import {
 } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
+import LinearGradient from "react-native-linear-gradient";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 
 import { RootStackParamList } from "../navigation/types";
@@ -226,6 +227,26 @@ export default function ReportsAnalytics({ navigation }: Props) {
     totalCustomers > 0 ? Math.round(totalRevenue / totalCustomers) : 0;
   const ordersPerCustomer =
     totalCustomers > 0 ? totalOrders / totalCustomers : 0;
+  const totalVisits = sales?.totalVisits ?? 0;
+
+  // Period-over-period revenue delta for the hero — the signature analytics
+  // "▲ 12% vs last month" cue. Only presets with a clean immediate predecessor
+  // in `growthTrend` qualify; other ranges hide the badge rather than invent a
+  // comparison. No extra network cost — this reuses growthTrend.
+  const heroDelta = useMemo(() => {
+    const t = data?.growthTrend;
+    if (!t) return null;
+    const pairs: Partial<
+      Record<Period, { cur: number; prev: number; label: string }>
+    > = {
+      today: { cur: t.today.totalRevenue, prev: t.yesterday.totalRevenue, label: "yesterday" },
+      thisweek: { cur: t.currentWeek.totalRevenue, prev: t.lastWeek.totalRevenue, label: "last week" },
+      thismonth: { cur: t.currentMonth.totalRevenue, prev: t.lastMonth.totalRevenue, label: "last month" },
+    };
+    const pair = pairs[period];
+    if (!pair) return null;
+    return { pct: calculateGrowthPct(pair.cur, pair.prev), label: pair.label };
+  }, [data?.growthTrend, period]);
 
   const bestSellers = useMemo<BestSellingProduct[]>(
     () => sales?.bestSellingProducts ?? [],
@@ -321,6 +342,34 @@ export default function ReportsAnalytics({ navigation }: Props) {
             >
               {loading ? "—" : formatCurrency(totalRevenue)}
             </Text>
+
+            {!loading && heroDelta && (
+              <View className="flex-row items-center gap-2 mt-2.5">
+                <View
+                  className="flex-row items-center gap-1 px-2 py-0.5 rounded-full"
+                  style={{
+                    backgroundColor:
+                      heroDelta.pct >= 0 ? "rgba(52,211,153,0.18)" : "rgba(248,113,113,0.18)",
+                  }}
+                >
+                  <Ionicons
+                    name={heroDelta.pct >= 0 ? "arrow-up" : "arrow-down"}
+                    size={11}
+                    color={heroDelta.pct >= 0 ? "#6ee7b7" : "#fca5a5"}
+                  />
+                  <Text
+                    className="text-[11.5px] font-extrabold"
+                    style={{ color: heroDelta.pct >= 0 ? "#6ee7b7" : "#fca5a5" }}
+                  >
+                    {Math.abs(heroDelta.pct).toFixed(1)}%
+                  </Text>
+                </View>
+                <Text className="text-blue-100/60 text-[11.5px]">
+                  vs {heroDelta.label}
+                </Text>
+              </View>
+            )}
+
             <View className="flex-row items-center gap-3 mt-2">
               <Text className="text-blue-100/80 text-[12px]">
                 {totalOrders.toLocaleString()} orders
@@ -383,7 +432,38 @@ export default function ReportsAnalytics({ navigation }: Props) {
               );
             })}
           </ScrollView>
+
+          {/* Edge fades — let pills dissolve into the background at the
+              screen edges instead of hard-cutting against them, so the rail
+              keeps the same 20px breathing room the cards respect. */}
+          <LinearGradient
+            pointerEvents="none"
+            colors={["#f9fafb", "rgba(249,250,251,0)"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 24 }}
+          />
+          <LinearGradient
+            pointerEvents="none"
+            colors={["rgba(249,250,251,0)", "#f9fafb"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: 24 }}
+          />
         </View>
+
+        {/* Traffic & conversion — a top-level, period-driven metric shown
+            above the view tabs so it stays visible on every tab, just like
+            the hero. Waits for data so it never flashes an empty funnel. */}
+        {!loading && (
+          <View className="px-5 mt-4">
+            <ConversionCard
+              visits={totalVisits}
+              orders={totalOrders}
+              revenue={totalRevenue}
+            />
+          </View>
+        )}
 
         {/* View tabs (Sales / Growth / Customers) */}
         <View className="mx-5 mt-4 bg-white rounded-2xl border border-gray-100 p-1 flex-row">
@@ -1101,6 +1181,148 @@ function HeroMoneyStat({
       >
         {value}
       </Text>
+    </View>
+  );
+}
+
+/**
+ * Traffic → orders funnel with a headline conversion rate. Built entirely
+ * from real report data (`totalVisits` + `totalOrders` + revenue), so it
+ * never fabricates a trend. Self-hides its numbers behind a friendly empty
+ * state when no visits were tracked in the period.
+ */
+function ConversionCard({
+  visits,
+  orders,
+  revenue,
+}: {
+  visits: number;
+  orders: number;
+  revenue: number;
+}) {
+  const conversionRate = visits > 0 ? (orders / visits) * 100 : 0;
+  const revenuePerVisit = visits > 0 ? Math.round(revenue / visits) : 0;
+  // Keep a sliver visible so a non-zero order count never renders as an
+  // invisible bar; cap at 100% for the (rare) orders > visits edge.
+  const ordersWidth =
+    visits > 0 ? Math.min(Math.max((orders / visits) * 100, 3), 100) : 0;
+
+  return (
+    <View
+      className="bg-white rounded-3xl border border-gray-100 p-5 mb-4"
+      style={{
+        shadowColor: "#0f172a",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 12,
+        elevation: 2,
+      }}
+    >
+      <View className="flex-row items-center justify-between mb-4">
+        <View className="flex-1 pr-3">
+          <Text className="text-[14px] font-extrabold text-gray-900">
+            Traffic & conversion
+          </Text>
+          <Text className="text-[12px] text-gray-500 mt-0.5">
+            How many visitors became buyers
+          </Text>
+        </View>
+        <View className="w-9 h-9 rounded-xl bg-indigo-50 items-center justify-center">
+          <Ionicons name="funnel-outline" size={17} color="#4f46e5" />
+        </View>
+      </View>
+
+      {visits === 0 ? (
+        <View className="py-4 items-center">
+          <View className="w-12 h-12 rounded-2xl bg-gray-50 items-center justify-center mb-2">
+            <Ionicons name="eye-off-outline" size={20} color="#9ca3af" />
+          </View>
+          <Text className="text-[13px] text-gray-500">
+            No store visits tracked yet
+          </Text>
+          <Text className="text-[11.5px] text-gray-400 mt-1 text-center max-w-[240px]">
+            Traffic to your storefront in this period will show up here.
+          </Text>
+        </View>
+      ) : (
+        <>
+          <View className="flex-row items-end gap-2 mb-4">
+            <Text
+              className="text-gray-900"
+              style={{
+                fontFamily: "PlusJakartaSans_700Bold",
+                fontSize: 30,
+                letterSpacing: -1,
+              }}
+            >
+              {conversionRate.toFixed(1)}%
+            </Text>
+            <Text className="text-[12.5px] text-gray-500 mb-1.5">
+              of visitors bought
+            </Text>
+          </View>
+
+          <View className="gap-3">
+            <FunnelRow label="Visits" value={visits} width={100} color="#c7d2fe" />
+            <FunnelRow label="Orders" value={orders} width={ordersWidth} color="#4f46e5" />
+          </View>
+
+          <View className="flex-row mt-4 pt-4 border-t border-gray-100">
+            <View className="flex-1">
+              <Text className="text-[10px] font-extrabold text-gray-400 uppercase tracking-[1.1px]">
+                Store visits
+              </Text>
+              <Text
+                className="text-gray-900 mt-1"
+                style={{ fontFamily: "PlusJakartaSans_700Bold", fontSize: 15 }}
+              >
+                {visits.toLocaleString()}
+              </Text>
+            </View>
+            <View className="flex-1">
+              <Text className="text-[10px] font-extrabold text-gray-400 uppercase tracking-[1.1px]">
+                Revenue / visit
+              </Text>
+              <Text
+                className="text-gray-900 mt-1"
+                style={{ fontFamily: "PlusJakartaSans_700Bold", fontSize: 15 }}
+              >
+                {compactCurrency(revenuePerVisit)}
+              </Text>
+            </View>
+          </View>
+        </>
+      )}
+    </View>
+  );
+}
+
+/** One labelled bar in the conversion funnel. */
+function FunnelRow({
+  label,
+  value,
+  width,
+  color,
+}: {
+  label: string;
+  value: number;
+  width: number;
+  color: string;
+}) {
+  return (
+    <View>
+      <View className="flex-row justify-between mb-1">
+        <Text className="text-[11.5px] font-bold text-gray-700">{label}</Text>
+        <Text className="text-[11.5px] font-extrabold text-gray-900">
+          {value.toLocaleString()}
+        </Text>
+      </View>
+      <View className="h-2.5 bg-gray-100 rounded-full overflow-hidden">
+        <View
+          className="h-full rounded-full"
+          style={{ width: `${width}%`, backgroundColor: color }}
+        />
+      </View>
     </View>
   );
 }

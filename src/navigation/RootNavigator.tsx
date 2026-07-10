@@ -21,6 +21,7 @@ import SetupStep2 from '../screens/SetupStep2';
 import SetupStep3 from '../screens/SetupStep3';
 import Home from '../screens/Home';
 import ManageStoreScreen from '../screens/ManageStore';
+import WholesalePricing from '../screens/WholesalePricing';
 import ProductsDashboard from '../screens/ProductDashboard';
 import ProductsList from '../screens/ProductsList';
 import Orders from '../screens/Orders';
@@ -126,6 +127,7 @@ export default function RootNavigator() {
         <Stack.Screen name="SetupStep3" component={SetupStep3} />
         <Stack.Screen name="Home" component={Home} />
         <Stack.Screen name="ManageStore" component={ManageStoreScreen} />
+        <Stack.Screen name="WholesalePricing" component={WholesalePricing} />
         <Stack.Screen name="ProductsDashboard" component={ProductsDashboard} />
         <Stack.Screen name="ProductsList" component={ProductsList} />
         <Stack.Screen name="Orders" component={Orders} />

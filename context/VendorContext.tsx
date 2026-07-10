@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, ReactNode, useEffect, useRef, useCallback } from "react";
 import { getStorefrontDetails, updateStorefrontSettings } from "../src/api/vendor/vendor.api";
+import type { WholesaleRule } from "../src/lib/wholesale";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AppState, Image } from "react-native";
 import { useAuth } from "./AuthContext";
@@ -61,6 +62,10 @@ export interface StoreData {
   accountName?: string | null;
   accountNumber?: string;
   discountOnAllProducts?: string | null;
+  /** Vendor-defined wholesale policies (bulk-discount rules), parsed
+   *  from the stored JSON by the API. Drives the Wholesale Pricing
+   *  screen; the server evaluates them authoritatively at checkout. */
+  wholesaleRules?: WholesaleRule[] | null;
   bank: string | null;
   feeBearer: 'vendor' | 'customer' | 'included';
   primaryColor: string | null;

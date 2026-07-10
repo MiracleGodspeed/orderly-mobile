@@ -50,6 +50,7 @@ export type RootStackParamList = {
   Reports: undefined;
   Profile: undefined;
   ManageStore: undefined;
+  WholesalePricing: undefined;
   ProductsDashboard: undefined;
   // Optional deep-link params: `filter` (low_stock | out_of_stock) or a
   // specific `productId` to focus.

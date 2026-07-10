@@ -1,4 +1,5 @@
 import { apiClient } from "../client";
+import type { WholesaleRule } from "../../lib/wholesale";
 import {
   GetCategoriesResponse,
   VendorOnboardingRequest,
@@ -506,6 +507,28 @@ export const setWhatsappCheckoutNumber = async (
     );
   }
   return response.data;
+};
+
+/**
+ * Replace the vendor's wholesale policies (full-list PUT — always send
+ * the complete set). The server sanitizes/normalizes each rule and
+ * returns the canonical list with server-assigned ids, which the caller
+ * should adopt.
+ */
+export const saveWholesaleRules = async (
+  rules: WholesaleRule[]
+): Promise<WholesaleRule[]> => {
+  const response = await apiClient.put<{
+    message: string;
+    code: string;
+    data: WholesaleRule[];
+  }>(`/storefront/wholesale-rules`, rules, { validateStatus: () => true });
+  if (response.data.code !== "200") {
+    throw new Error(
+      response.data.message || "Failed to save wholesale pricing"
+    );
+  }
+  return response.data.data ?? rules;
 };
 
 type GetProductsParams = {

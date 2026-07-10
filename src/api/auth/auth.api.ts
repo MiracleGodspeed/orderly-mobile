@@ -5,6 +5,7 @@ import {
   SignupRequest,
   SignupResponseComplete,
   SignupResponseInitial,
+  CreateAccountResult,
   OtpVerificationRequest,
   Country,
   ChangePasswordRequest,
@@ -42,13 +43,16 @@ export const login = async (
 
 export const signup = async (
   payload: SignupRequest
-): Promise<SignupResponseInitial> => {
+): Promise<CreateAccountResult> => {
   const response = await apiClient.post<SignupResponseInitial>(
-    "/auth/create-account", 
-    payload, 
+    "/auth/create-account",
+    payload,
     { validateStatus: () => true }
   );
-  return handleApiResponse<SignupResponseInitial>(response);
+  // `handleApiResponse` returns the envelope's inner `data`, which is the
+  // CreateAccountResult DTO (otpSent + resumeStage). A completed account
+  // comes back as a non-200 envelope and throws here, as before.
+  return handleApiResponse<CreateAccountResult>(response);
 };
 
 export const verifyOtp = async (

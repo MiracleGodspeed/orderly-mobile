@@ -243,7 +243,28 @@ export default function EmailSignUp() {
     };
 
     try {
-      await signup(payload);
+      const res = await signup(payload);
+      // This email already has an unfinished registration the backend
+      // recognised. "setup" means it's verified but the store isn't done —
+      // they must sign in to reach setup, so hand off to Login. "otp" means
+      // a fresh code was just emailed; fall through to the OTP screen.
+      if (res?.resumeStage === "setup") {
+        setLoading(false);
+        setToast({
+          title: "You already verified this email",
+          subtitle: "Sign in to finish setting up your store.",
+          tone: "info",
+        });
+        navigation.navigate("Login");
+        return;
+      }
+      if (res?.resumeStage === "otp") {
+        setToast({
+          title: "You already started an account",
+          subtitle: "We've sent a fresh code — enter it to continue.",
+          tone: "info",
+        });
+      }
       // Remember this so a cold boot (app killed mid-verification) resumes
       // the OTP screen instead of Onboarding. Email only — never password.
       await savePendingVerification(email.trim().toLowerCase());

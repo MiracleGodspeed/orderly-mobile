@@ -60,6 +60,17 @@ export interface SignupResponseInitial {
     data: boolean;
 }
 
+/**
+ * Inner `data` of a create-account response. `resumeStage` is null for a
+ * brand-new signup; "otp" when the email already has an unverified account
+ * (a fresh code was just emailed); "setup" when the email is verified but
+ * the store was never finished (resume by signing in).
+ */
+export interface CreateAccountResult {
+    otpSent: boolean;
+    resumeStage: "otp" | "setup" | null;
+}
+
 export interface OtpVerificationRequest {
   email: string;
   password: string;

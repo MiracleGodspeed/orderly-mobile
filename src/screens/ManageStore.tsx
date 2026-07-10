@@ -293,6 +293,7 @@ export default function ManageStoreScreen() {
     const arr = (storeData as any)?.storeFrontJson?.whyChooseUs;
     return Array.isArray(arr) && arr.length > 0;
   }, [storeData]);
+  const wholesaleConfigured = (storeData?.wholesaleRules?.length ?? 0) > 0;
   const themeConfigured = !!storeData?.templateId;
   const typographyConfigured = !!(storeData as any)?.storeFrontJson?.fontFamily;
   const logoConfigured = !!storeData?.logoUrl;
@@ -596,6 +597,20 @@ export default function ManageStoreScreen() {
                 tone="emerald"
                 configured={contactConfigured}
                 onPress={() => setShowContactUsModal(true)}
+              />
+
+              {/* Selling tools — pricing rules that apply at checkout. */}
+              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mt-6 mb-3 px-1">
+                Selling
+              </Text>
+
+              <SectionRow
+                icon="layers-outline"
+                title="Wholesale Pricing"
+                subtitle="Auto-discount bulk buyers with policies"
+                tone="cyan"
+                configured={wholesaleConfigured}
+                onPress={() => navigation.navigate("WholesalePricing")}
               />
 
               {/* Advanced storefront content — Grace template slots.

@@ -26,6 +26,7 @@ import {
   getCategories,
   submitVendorOnboarding,
 } from "../api/vendor/vendor.api";
+import { usePrefetchFeatures } from "../hooks/useFeatures";
 
 type NavProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -55,6 +56,8 @@ export default function SetupStep3() {
     fetchVendorData,
     markOnboarded,
   } = useVendor();
+
+  const prefetchFeatures = usePrefetchFeatures();
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCats, setLoadingCats] = useState(true);
@@ -176,18 +179,34 @@ export default function SetupStep3() {
       // while VendorContext refetches until the trial appears.
       markOnboarded();
 
+      // Warm the feature-gate cache now so the very first dashboard /
+      // add-product render already knows the trial is unlimited — without
+      // this a brand-new vendor briefly sees padlocks on everything.
+      prefetchFeatures();
+
       if (Platform.OS === "ios") {
         Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success
         ).catch(() => {});
       }
 
-      // Tiny pause so the user sees "all set"
+      // Tiny pause so the user sees "all set", then land on the
+      // StoreLive celebration stacked over Home — dismissing it drops
+      // the vendor straight onto the dashboard.
       setTimeout(() => {
         setModalVisible(false);
         navigation.reset({
-          index: 0,
-          routes: [{ name: "Home" }],
+          index: 1,
+          routes: [
+            { name: "Home" },
+            {
+              name: "StoreLive",
+              params: {
+                storeName: fresh?.storeName ?? null,
+                slug: fresh?.slugUrl ?? null,
+              },
+            },
+          ],
         });
       }, 800);
     } catch (err) {

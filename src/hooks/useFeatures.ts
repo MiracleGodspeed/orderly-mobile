@@ -122,3 +122,18 @@ export function useInvalidateFeatures() {
     AsyncStorage.removeItem(CACHE_KEY).catch(() => {});
   };
 }
+
+/**
+ * Warm the features cache ahead of first use. A brand-new vendor has
+ * neither the AsyncStorage snapshot nor an in-flight query, so their very
+ * first Home/product-form render would flash "everything locked" until
+ * the network answers. SetupStep3 calls this the moment onboarding
+ * commits so the trial's unlimited answer is already cached by the time
+ * they reach the dashboard.
+ */
+export function usePrefetchFeatures() {
+  const qc = useQueryClient();
+  return () => {
+    qc.prefetchQuery({ queryKey: FEATURES_KEY, queryFn: getMyFeatures }).catch(() => {});
+  };
+}

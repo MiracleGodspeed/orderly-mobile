@@ -1688,3 +1688,143 @@ export const listOrderActivity = async (batchId: string): Promise<OrderActivity[
   }
   return res.data.data ?? [];
 };
+// =============================================================
+// Product ratings & reviews — customers submit on the storefront;
+// the vendor reads every review here. Plan-gated on
+// products.reviews (client padlock via useFeatures).
+// =============================================================
+
+export interface ProductReviewRow {
+  id: string;
+  productId: string;
+  productTitle: string | null;
+  productImage: string | null;
+  rating: number;
+  reviewerName: string;
+  body: string | null;
+  /** Published on the public storefront? New reviews start hidden. */
+  isActive: boolean;
+  createdAt: string;
+}
+
+/** Publish/hide a review on the public storefront. Star aggregates
+ *  follow published reviews only (handled server-side). */
+export const setReviewActive = async (
+  id: string,
+  isActive: boolean
+): Promise<void> => {
+  const response = await apiClient.put<{ code: string; message?: string }>(
+    `/catalog/reviews/${id}/active`,
+    null,
+    { params: { isActive }, validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't update the review");
+  }
+};
+
+export const getMyReviews = async (params?: {
+  pageIndex?: number;
+  pageSize?: number;
+}): Promise<{
+  data: ProductReviewRow[];
+  totalCount: number;
+  totalPages: number;
+}> => {
+  const response = await apiClient.get<{
+    code: string;
+    message?: string;
+    totalCount?: number;
+    totalPages?: number;
+    data: ProductReviewRow[];
+  }>("/catalog/my-reviews", {
+    params: {
+      pageIndex: params?.pageIndex ?? 1,
+      pageSize: params?.pageSize ?? 20,
+    },
+    validateStatus: () => true,
+  });
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't load reviews");
+  }
+  return {
+    data: response.data.data ?? [],
+    totalCount: response.data.totalCount ?? 0,
+    totalPages: response.data.totalPages ?? 0,
+  };
+};
+
+// =============================================================
+// Discount / coupon codes — vendor-created checkout coupons.
+// Plan-gated on discounts.codes (server enforces at create; the
+// client padlocks via useFeatures).
+// =============================================================
+
+export interface DiscountCodeRow {
+  id: string;
+  code: string;
+  kind: "percent" | "amount";
+  value: number;
+  maxRedemptions: number | null;
+  redemptionCount: number;
+  remainingUses: number | null;
+  minOrderAmount: number | null;
+  expiresAtUtc: string | null;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export const getDiscountCodes = async (): Promise<DiscountCodeRow[]> => {
+  const response = await apiClient.get<{
+    code: string;
+    message?: string;
+    data: DiscountCodeRow[];
+  }>("/discount-codes", { validateStatus: () => true });
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't load coupons");
+  }
+  return response.data.data ?? [];
+};
+
+export const createDiscountCode = async (payload: {
+  code: string;
+  kind: "percent" | "amount";
+  value: number;
+  maxRedemptions?: number | null;
+  minOrderAmount?: number | null;
+  expiresAtUtc?: string | null;
+}): Promise<DiscountCodeRow> => {
+  const response = await apiClient.post<{
+    code: string;
+    message?: string;
+    data: DiscountCodeRow;
+  }>("/discount-codes", payload, { validateStatus: () => true });
+  if (response.data?.code !== "200" || !response.data.data) {
+    throw new Error(response.data?.message || "Couldn't create the coupon");
+  }
+  return response.data.data;
+};
+
+export const setDiscountCodeActive = async (
+  id: string,
+  isActive: boolean
+): Promise<void> => {
+  const response = await apiClient.put<{ code: string; message?: string }>(
+    `/discount-codes/${id}/active`,
+    null,
+    { params: { isActive }, validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't update the coupon");
+  }
+};
+
+export const deleteDiscountCode = async (id: string): Promise<void> => {
+  const response = await apiClient.delete<{ code: string; message?: string }>(
+    `/discount-codes/${id}`,
+    { validateStatus: () => true }
+  );
+  if (response.data?.code !== "200") {
+    throw new Error(response.data?.message || "Couldn't delete the coupon");
+  }
+};

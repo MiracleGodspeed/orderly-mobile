@@ -240,25 +240,25 @@ export const VendorProvider = ({ children }: { children: ReactNode }) => {
         setBusinessName(processedData.storeName || "");
         setIsServiceBased(processedData.isServiceBased);
 
-        // Checklist logic. Display order matters — "Set up payments" sits
-        // 3rd so the high-impact online-vs-manual decision is in front of
-        // the vendor before the payout-bank step.
+        // Checklist logic. Display order matters — "Add your first product"
+        // leads because a store with nothing to sell isn't really open yet;
+        // delivery and payout details can follow once there's a product.
         if (processedData.vendorOnboardProgressResponse) {
           setChecklistItems([
+            {
+              id: 'add-product',
+              title: 'Add your first product',
+              description: 'This is what makes your store real — add one product and you\'re open for business',
+              completed: processedData.vendorOnboardProgressResponse.addedFirstProduct,
+              isPrimary: true,
+              route: "/vendor/catalogs2"
+            },
             {
               id: 'add-delivery-locations',
               title: 'Add delivery locations',
               description: 'Tell customers where you deliver — without this, checkout stalls and orders can\'t be placed',
               completed: processedData.vendorOnboardProgressResponse.addedDeliveryLocations,
-              isPrimary: true,
               route: "/vendor/locations"
-            },
-            {
-              id: 'add-product',
-              title: 'Add your first product',
-              description: 'Upload product photos, set prices, and create your first listing',
-              completed: processedData.vendorOnboardProgressResponse.addedFirstProduct,
-              route: "/vendor/catalogs2"
             },
             {
               id: 'setup-payment',

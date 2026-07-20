@@ -53,6 +53,8 @@ import { AppImage } from '../components/AppImage';
 import { TrendBadge } from '../components/TrendBadge';
 import PromoCardCarousel from '../components/PromoCardCarousel';
 import InsightsCarousel from '../components/InsightsCarousel';
+import OrderMilestoneCelebration from '../components/OrderMilestoneCelebration';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatNaira, getGreeting, computeTrend, formatRelativeTime } from '../lib/format';
 import { FeaturePaywallSheet } from '../components/FeaturePaywallSheet';
 import { useFeatures } from '../hooks/useFeatures';
@@ -505,6 +507,34 @@ export default function Home() {
     navigation.navigate('ProductsList', { openAddProduct: true } as any);
   }, [navigation, tap]);
 
+  // Dismissal of the "get your first order" card — persisted per store
+  // so it stays gone once waved off. null = storage not checked yet;
+  // the card renders only on an explicit false so it never flashes.
+  const [firstOrderCardDismissed, setFirstOrderCardDismissed] = useState<boolean | null>(null);
+  useEffect(() => {
+    const slug = storeData?.slugUrl;
+    if (!slug) return;
+    let cancelled = false;
+    AsyncStorage.getItem(`orderly:first-order-card-dismissed:${slug}`)
+      .then((v) => {
+        if (!cancelled) setFirstOrderCardDismissed(v === '1');
+      })
+      .catch(() => {
+        if (!cancelled) setFirstOrderCardDismissed(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [storeData?.slugUrl]);
+
+  const dismissFirstOrderCard = useCallback(() => {
+    setFirstOrderCardDismissed(true);
+    const slug = storeData?.slugUrl;
+    if (slug) {
+      AsyncStorage.setItem(`orderly:first-order-card-dismissed:${slug}`, '1').catch(() => {});
+    }
+  }, [storeData?.slugUrl]);
+
   // Storefront share — opens the OS share sheet so the vendor can fire
   // their store URL into WhatsApp, Instagram, X, Messages, etc. with a
   // pre-filled invite line. RN's built-in `Share` API surfaces every
@@ -822,28 +852,31 @@ export default function Home() {
                 <View className="flex-row items-center gap-1.5 mt-1.5">
                   {/* Live pill — glass treatment with emerald tint so it
                       reads as a status badge belonging to the card, not
-                      a sticker pasted over the dark surface. */}
-                  {/* <View
-                    className="flex-row items-center gap-1 px-2 py-0.5 rounded-full border"
-                    style={{
-                      backgroundColor: 'rgba(52, 211, 153, 0.18)',
-                      borderColor: 'rgba(110, 231, 183, 0.35)',
-                    }}
-                  >
+                      a sticker pasted over the dark surface. Reassures
+                      new vendors their website really is public. */}
+                  {storeData?.slugUrl ? (
                     <View
-                      className="w-1.5 h-1.5 rounded-full"
+                      className="flex-row items-center gap-1 px-2 py-0.5 rounded-full border"
                       style={{
-                        backgroundColor: '#34d399',
-                        shadowColor: '#34d399',
-                        shadowOffset: { width: 0, height: 0 },
-                        shadowOpacity: 0.8,
-                        shadowRadius: 3,
+                        backgroundColor: 'rgba(52, 211, 153, 0.18)',
+                        borderColor: 'rgba(110, 231, 183, 0.35)',
                       }}
-                    />
-                    <Text className="text-[9.5px] text-emerald-50 font-extrabold uppercase tracking-wide">
-                      Live
-                    </Text>
-                  </View> */}
+                    >
+                      <View
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{
+                          backgroundColor: '#34d399',
+                          shadowColor: '#34d399',
+                          shadowOffset: { width: 0, height: 0 },
+                          shadowOpacity: 0.8,
+                          shadowRadius: 3,
+                        }}
+                      />
+                      <Text className="text-[9.5px] text-emerald-50 font-extrabold uppercase tracking-wide">
+                        Live
+                      </Text>
+                    </View>
+                  ) : null}
 
                   {/* URL pill — neutral glass so it reads as the secondary
                       bit of metadata, not as a competing accent. Tap copies
@@ -916,7 +949,126 @@ export default function Home() {
             analytics permission so staff without it don't see store
             performance. */}
         {canViewAnalytics && setupComplete && canUseInsights && <InsightsCarousel />}
-{/* here */}
+
+        {/* First-product hero — the single most important activation step
+            gets a card of its own at the top of the feed instead of hiding
+            inside the setup drawer. Only while the catalog is empty (and
+            only once products have actually loaded, so it never flashes
+            for stocked stores on a cold start). */}
+        {isOwnerView && !!productsData && totalProductCount === 0 && (
+          <View
+            className="mx-4 mb-2 p-4 bg-blue-50 rounded-2xl border border-blue-100"
+            style={{
+              shadowColor: '#2563eb',
+              shadowOffset: { width: 0, height: 2 },
+              shadowOpacity: 0.06,
+              shadowRadius: 12,
+              elevation: 2,
+            }}
+          >
+            <View className="flex-row items-center gap-3">
+              <View className="w-11 h-11 rounded-2xl bg-blue-100 items-center justify-center">
+                <Ionicons name="cube-outline" size={20} color="#2563eb" />
+              </View>
+              <View className="flex-1">
+                <Text
+                  className="text-[14.5px] text-gray-900"
+                  style={{ fontFamily: 'PlusJakartaSans_700Bold', letterSpacing: -0.2 }}
+                >
+                  Your store is live — but the shelves are empty
+                </Text>
+                <Text className="text-[12px] text-gray-500 mt-0.5 leading-[17px]">
+                  Add one product and you're officially open for business.
+                </Text>
+              </View>
+            </View>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              onPress={handleAddProduct}
+              className="h-11 mt-3 rounded-2xl bg-blue-600 items-center justify-center flex-row"
+              style={{
+                gap: 6,
+                shadowColor: '#2563eb',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.25,
+                shadowRadius: 8,
+                elevation: 4,
+              }}
+            >
+              <Text className="text-white font-bold text-[14px]">
+                Add your first product
+              </Text>
+              <Ionicons name="arrow-forward" size={15} color="white" />
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* First-order guidance — products exist but no orders yet. The
+            highest-leverage move now is distribution, so the card leads
+            with sharing the store link, not with more setup. Dismissible
+            (persisted per store) — advice shouldn't nag. */}
+        {isOwnerView &&
+          !!productsData &&
+          totalProductCount > 0 &&
+          !!ordersData &&
+          ordersData.totalCount === 0 &&
+          firstOrderCardDismissed === false && (
+            <View
+              className="mx-4 mb-2 p-4 bg-emerald-50 rounded-2xl border border-emerald-100"
+              style={{
+                shadowColor: '#059669',
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.06,
+                shadowRadius: 12,
+                elevation: 2,
+              }}
+            >
+              <Pressable
+                onPress={dismissFirstOrderCard}
+                hitSlop={8}
+                className="absolute top-2.5 right-2.5 w-7 h-7 rounded-full items-center justify-center active:bg-emerald-100"
+                accessibilityLabel="Dismiss"
+              >
+                <Ionicons name="close" size={16} color="rgba(4, 120, 87, 0.55)" />
+              </Pressable>
+              <View className="flex-row items-center gap-3 pr-6">
+                <View className="w-11 h-11 rounded-2xl bg-emerald-100 items-center justify-center">
+                  <Ionicons name="megaphone-outline" size={20} color="#059669" />
+                </View>
+                <View className="flex-1">
+                  <Text
+                    className="text-[14.5px] text-gray-900"
+                    style={{ fontFamily: 'PlusJakartaSans_700Bold', letterSpacing: -0.2 }}
+                  >
+                    You're open — now get your first order
+                  </Text>
+                  <Text className="text-[12px] text-gray-500 mt-0.5 leading-[17px]">
+                    Share your link on WhatsApp status, Instagram bio, and group
+                    chats — that's where first orders come from.
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                activeOpacity={0.85}
+                onPress={handleShareStore}
+                className="h-11 mt-3 rounded-2xl bg-emerald-600 items-center justify-center flex-row"
+                style={{
+                  gap: 6,
+                  shadowColor: '#059669',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.25,
+                  shadowRadius: 8,
+                  elevation: 4,
+                }}
+              >
+                <Ionicons name="share-social-outline" size={15} color="white" />
+                <Text className="text-white font-bold text-[14px]">
+                  Share your store
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
         {/* <View className="mx-4 mt-3 mb-4 bg-white rounded-2xl border border-gray-100 p-4 overflow-hidden"
           style={{
             shadowColor: '#0f172a',
@@ -1776,6 +1928,17 @@ export default function Home() {
         onClose={closeSetupModal}
         onStepPress={handleSetupStepPress}
       />
+
+      {/* First-order + order-count milestone confetti. Client-side
+          detection against AsyncStorage; the matching email + push come
+          from the backend milestone sweep. Only render once orders have
+          actually loaded so the baseline is never set from a partial 0. */}
+      {isOwnerView && !!ordersData && !!storeData?.slugUrl && (
+        <OrderMilestoneCelebration
+          orderCount={ordersData.totalCount}
+          storeKey={storeData.slugUrl}
+        />
+      )}
 
       {/* Onboarding for trial vendors so they understand the full-access
           window and aren't surprised when features lock after a

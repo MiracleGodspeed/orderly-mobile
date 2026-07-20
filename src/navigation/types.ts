@@ -42,6 +42,10 @@ export type RootStackParamList = {
   SetupStep1: undefined;
   SetupStep2: undefined;
   SetupStep3: undefined;
+  /** Post-onboarding "your store is live" celebration — stacked on top
+   *  of Home by SetupStep3 so dismissing it lands on the dashboard.
+   *  Params come straight from the fresh store fetched during setup. */
+  StoreLive: { storeName?: string | null; slug?: string | null };
   Home: undefined;
   // Optional `filter` lets Growth Partner insights deep-link to the
   // orders list pre-scoped (e.g. filter=unfulfilled).
@@ -52,9 +56,13 @@ export type RootStackParamList = {
   ManageStore: undefined;
   WholesalePricing: undefined;
   ProductsDashboard: undefined;
-  // Optional deep-link params: `filter` (low_stock | out_of_stock) or a
-  // specific `productId` to focus.
-  ProductsList: { filter?: string; productId?: string } | undefined;
+  // Optional deep-link params: `filter` (low_stock | out_of_stock), a
+  // specific `productId` to focus, or `openAddProduct` to land with the
+  // add-product modal already open (launch celebration, setup checklist,
+  // activation pushes).
+  ProductsList:
+    | { filter?: string; productId?: string; openAddProduct?: boolean }
+    | undefined;
   OrderDetails: {
     order: Order;
   };
@@ -83,6 +91,11 @@ export type RootStackParamList = {
   /** Vendor-facing newsletter management — toggle the storefront prompt
    *  on/off and browse the subscriber list. */
   Newsletter: undefined;
+  /** Product ratings & reviews from customers. Plan-gated on
+   *  products.reviews. */
+  Reviews: undefined;
+  /** Coupon/discount code management. Plan-gated on discounts.codes. */
+  Discounts: undefined;
   DeleteAccount: undefined;
   // With `edit` set, the LogOrder screen opens in edit mode, prefilled
   // from an existing manually-entered offline order.

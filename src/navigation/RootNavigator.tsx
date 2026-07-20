@@ -19,6 +19,7 @@ import ResetPassword from '../screens/ResetPassword'
 import SetupStep1 from '../screens/SetupStep1';
 import SetupStep2 from '../screens/SetupStep2';
 import SetupStep3 from '../screens/SetupStep3';
+import StoreLive from '../screens/StoreLive';
 import Home from '../screens/Home';
 import ManageStoreScreen from '../screens/ManageStore';
 import WholesalePricing from '../screens/WholesalePricing';
@@ -53,6 +54,8 @@ import SubscriptionFlowScreen from '../screens/SubscriptionFlowScreen';
 import CustomDomain from '../screens/CustomDomain';
 import Customers from '../screens/Customers';
 import Newsletter from '../screens/Newsletter';
+import Reviews from '../screens/Reviews';
+import Discounts from '../screens/Discounts';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -125,6 +128,7 @@ export default function RootNavigator() {
         <Stack.Screen name="SetupStep1" component={SetupStep1} />
         <Stack.Screen name="SetupStep2" component={SetupStep2} />
         <Stack.Screen name="SetupStep3" component={SetupStep3} />
+        <Stack.Screen name="StoreLive" component={StoreLive} />
         <Stack.Screen name="Home" component={Home} />
         <Stack.Screen name="ManageStore" component={ManageStoreScreen} />
         <Stack.Screen name="WholesalePricing" component={WholesalePricing} />
@@ -163,6 +167,8 @@ export default function RootNavigator() {
         <Stack.Screen name="CustomDomain" component={CustomDomain} />
         <Stack.Screen name="Customers" component={Customers} />
         <Stack.Screen name="Newsletter" component={Newsletter} />
+        <Stack.Screen name="Reviews" component={Reviews} />
+        <Stack.Screen name="Discounts" component={Discounts} />
         <Stack.Screen 
   name="SubscriptionFlow" 
   component={SubscriptionFlowScreen} 

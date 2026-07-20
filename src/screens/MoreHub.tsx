@@ -73,6 +73,9 @@ export default function MoreHub() {
   // Invoices/receipts + expenses are binary feature gates too.
   const canUseInvoices = has(FEATURES.INVOICES);
   const canUseExpenses = has(FEATURES.EXPENSES);
+  // Ratings & reviews + coupon codes — binary feature gates.
+  const canUseReviews = has(FEATURES.PRODUCT_REVIEWS);
+  const canUseDiscounts = has(FEATURES.DISCOUNT_CODES);
 
   // Plan-derived gate for the Staff & permissions row. Lock when the
   // backend reports `StaffLimit` as 0 or null (no plan or plan without
@@ -206,6 +209,36 @@ export default function MoreHub() {
                   : undefined,
                 locked: !canUseNewsletter,
                 paywallFeature: FEATURES.NEWSLETTERS,
+              },
+              {
+                id: "reviews",
+                icon: "star-outline" as IoniconName,
+                tint: canUseReviews ? "#fef3c7" : "#f3f4f6",
+                iconColor: canUseReviews ? "#d97706" : "#9ca3af",
+                title: "Reviews",
+                subtitle: canUseReviews
+                  ? "What customers say about your products"
+                  : "Upgrade your plan to unlock",
+                screen: canUseReviews
+                  ? ("Reviews" as keyof RootStackParamList)
+                  : undefined,
+                locked: !canUseReviews,
+                paywallFeature: FEATURES.PRODUCT_REVIEWS,
+              },
+              {
+                id: "discounts",
+                icon: "pricetag-outline" as IoniconName,
+                tint: canUseDiscounts ? "#dbeafe" : "#f3f4f6",
+                iconColor: canUseDiscounts ? "#2563eb" : "#9ca3af",
+                title: "Coupons",
+                subtitle: canUseDiscounts
+                  ? "Discount codes customers use at checkout"
+                  : "Upgrade your plan to unlock",
+                screen: canUseDiscounts
+                  ? ("Discounts" as keyof RootStackParamList)
+                  : undefined,
+                locked: !canUseDiscounts,
+                paywallFeature: FEATURES.DISCOUNT_CODES,
               },
             ],
           },

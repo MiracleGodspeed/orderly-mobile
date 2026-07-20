@@ -46,6 +46,7 @@ import {
 } from "../lib/productDrafts";
 import { useFeatures } from "../hooks/useFeatures";
 import { FEATURES, FeatureKey } from "../lib/features";
+import { suggestDescription } from "../lib/descriptionSuggest";
 import { FeaturePaywallSheet } from "./FeaturePaywallSheet";
 import { SelectionDrawer } from "./SelectionDrawer";
 import { AlertDialog } from "./AlertDialog";
@@ -1790,6 +1791,28 @@ export default function AddProductModal({
                     </Pressable>
                   );
                 })()}
+
+                {/* Free instant suggestion — template-based, no AI credits.
+                    Removes the blank-description wall for vendors who can't
+                    (or won't) use the paid AI writer. Fully editable after
+                    insert. Mirrors web ProductDrawer. */}
+                {!productDescription.trim() && productName.trim().length >= 3 && (
+                  <Pressable
+                    onPress={() => {
+                      const s = suggestDescription(productName);
+                      if (s) {
+                        setProductDescription(s.slice(0, 500));
+                        clearError("productDescription");
+                      }
+                    }}
+                    className="flex-row items-center self-start gap-1.5 px-2.5 py-1.5 rounded-full border border-gray-200 bg-gray-50 mb-3 active:bg-gray-100"
+                  >
+                    <Ionicons name="color-wand-outline" size={12} color="#4b5563" />
+                    <Text className="text-[10.5px] font-extrabold text-gray-600">
+                      Use a suggested description — free
+                    </Text>
+                  </Pressable>
+                )}
 
                 <TextInput
                   value={productDescription}

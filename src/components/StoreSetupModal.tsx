@@ -26,6 +26,15 @@ interface Step {
 // payments" step — the payment mode is chosen for them.
 const STEPS: Step[] = [
   {
+    id: "add-product",
+    title: "Add your first product",
+    description:
+      "This is what makes your store real — add one product and you're open for business.",
+    icon: "cube-outline",
+    tint: "#ecfeff",
+    iconColor: "#0891b2",
+  },
+  {
     id: "add-delivery-locations",
     title: "Add delivery locations",
     description:
@@ -33,15 +42,6 @@ const STEPS: Step[] = [
     icon: "location-outline",
     tint: "#fff1f2",
     iconColor: "#e11d48",
-  },
-  {
-    id: "add-product",
-    title: "Add your first product",
-    description:
-      "Upload photos, set prices, and organise inventory so customers can start shopping.",
-    icon: "cube-outline",
-    tint: "#ecfeff",
-    iconColor: "#0891b2",
   },
   {
     id: "setup-payment",

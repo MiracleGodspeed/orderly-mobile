@@ -40,6 +40,14 @@ export const FEATURES = {
   /** Storefront typography. Boolean gate. Mirrors backend `Features.TYPOGRAPHY`. */
   TYPOGRAPHY: "store.typography",
 
+  /** Product ratings & reviews. Boolean gate. Mirrors backend
+   *  `Features.PRODUCT_REVIEWS`. */
+  PRODUCT_REVIEWS: "products.reviews",
+
+  /** Coupon/discount codes. Boolean gate. Mirrors backend
+   *  `Features.DISCOUNT_CODES`. */
+  DISCOUNT_CODES: "discounts.codes",
+
   // Storefront templates — one key per template. Plans declare the
   // templates they support by listing these keys in their FeatureKeys
   // JSON column. Trial vendors resolve as Unlimited so every template
@@ -271,6 +279,30 @@ export const FEATURE_META: Record<FeatureKey, FeatureMeta> = {
       "Applies store-wide — headings, product names, buttons",
       "Looks consistent on phones, tablets, and desktops",
       "Set it once from Manage Storefront and you're done",
+    ],
+  },
+
+  [FEATURES.PRODUCT_REVIEWS]: {
+    label: "Ratings & reviews",
+    description:
+      "Let happy customers do your selling. Shoppers rate your products and leave written reviews right on your storefront — and you read every one from your dashboard.",
+    bullets: [
+      "Star ratings and written reviews on your product pages",
+      "Social proof that turns browsers into buyers",
+      "Read every review from your Reviews module",
+      "No customer account needed — zero friction to leave praise",
+    ],
+  },
+
+  [FEATURES.DISCOUNT_CODES]: {
+    label: "Coupon codes",
+    description:
+      "Run real promotions. Create discount codes with your own value, usage limit, and expiry — customers apply them at checkout and see exactly what they saved.",
+    bullets: [
+      "Percent or fixed-amount discounts — your call",
+      "Cap how many times a code can be used",
+      "Set expiry dates and minimum order amounts",
+      "Perfect for launches, loyal customers, and slow weeks",
     ],
   },
 

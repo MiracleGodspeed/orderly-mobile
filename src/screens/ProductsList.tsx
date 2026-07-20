@@ -6,6 +6,7 @@ import {
   TextInput,
   RefreshControl,
   Platform,
+  Share,
 } from "react-native";
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import MaterialIcons from "@expo/vector-icons/MaterialIcons";
@@ -83,6 +84,7 @@ function isActiveStatus(status: Product["status"]): boolean {
 interface ProductCardProps {
   product: Product;
   onPress: () => void;
+  onShare?: () => void;
   discountPercent: number;
   feeBearer: FeeBearer | null | undefined;
 }
@@ -90,6 +92,7 @@ interface ProductCardProps {
 function ProductCard({
   product,
   onPress,
+  onShare,
   discountPercent,
   feeBearer,
 }: ProductCardProps) {
@@ -150,6 +153,28 @@ function ProductCard({
               Draft
             </Text>
           </View>
+        )}
+
+        {/* Share the live product page — WhatsApp status, chats,
+            anywhere. Sits over the card press, so it stops the tap. */}
+        {onShare && (
+          <Pressable
+            onPress={(e) => {
+              e.stopPropagation();
+              onShare();
+            }}
+            hitSlop={6}
+            className="absolute top-2.5 right-2.5 w-8 h-8 rounded-full bg-white/90 items-center justify-center"
+            style={{
+              shadowColor: "#0f172a",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.12,
+              shadowRadius: 3,
+              elevation: 2,
+            }}
+          >
+            <Ionicons name="share-social-outline" size={14} color="#4b5563" />
+          </Pressable>
         )}
       </View>
 
@@ -342,6 +367,23 @@ export default function ProductsList() {
     setShowProductDetailsModal(true);
   };
 
+  // Share the live storefront product page — opens the OS share sheet
+  // so the vendor can fire the link into WhatsApp status, chats,
+  // Instagram, anywhere.
+  const handleShareProduct = (product: Product) => {
+    const slug = storeData?.slugUrl;
+    if (!slug) return;
+    if (Platform.OS === "ios") {
+      Haptics.selectionAsync().catch(() => {});
+    }
+    const url = `https://${slug}.orderlystores.com/products/${product.id}`;
+    Share.share(
+      Platform.OS === "ios"
+        ? { message: `${product.title} — available now at our store`, url }
+        : { message: `${product.title} — available now: ${url}` }
+    ).catch(() => {});
+  };
+
   const handleEditProduct = () => {
     setShowProductDetailsModal(false);
     setShowAddProductModal(true);
@@ -454,6 +496,15 @@ export default function ProductsList() {
       setActiveFilter("low_stock");
     }
   }, [route.params?.filter, canUseLowStock]);
+
+  // Open the add-product modal when deep-linked with `openAddProduct`
+  // (Home hero CTA, StoreLive celebration, setup checklist, activation
+  // pushes). Keyed on the param so repeat navigations re-open it.
+  useEffect(() => {
+    if (route.params?.openAddProduct) {
+      setShowAddProductModal(true);
+    }
+  }, [route.params?.openAddProduct]);
 
   const [savingFee, setSavingFee] = useState(false);
   const handleSaveFeeConfiguration = useCallback(async () => {
@@ -990,6 +1041,11 @@ export default function ProductsList() {
                   key={product.id}
                   product={product}
                   onPress={() => handleProductClick(product)}
+                  onShare={
+                    storeData?.slugUrl
+                      ? () => handleShareProduct(product)
+                      : undefined
+                  }
                   discountPercent={currentDiscountPercent}
                   feeBearer={currentFeeBearer}
                 />

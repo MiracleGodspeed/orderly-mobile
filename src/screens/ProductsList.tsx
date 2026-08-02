@@ -32,6 +32,7 @@ import { BottomSheet, BottomSheetFooter } from "../components/BottomSheet";
 import {
   applyGlobalDiscount,
   setTransactionChargeBearer,
+  setCostPriceEnabled,
   getCatalogCategories,
 } from "../../src/api/vendor/vendor.api";
 import { getDisplayPrice, FeeBearer } from "../lib/pricing";
@@ -254,6 +255,10 @@ export default function ProductsList() {
   const [showProductDetailsModal, setShowProductDetailsModal] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [configureFeeModalOpen, setConfigureFeeModalOpen] = useState(false);
+  // Cost-price preference. Optimistic so the switch moves under the
+  // vendor's finger; reverted if the save fails.
+  const [costPriceOn, setCostPriceOn] = useState(false);
+  const [savingCostPrice, setSavingCostPrice] = useState(false);
   const [selectedFeeOption, setSelectedFeeOption] = useState<
     "vendor" | "customer" | "included"
   >("customer");
@@ -575,10 +580,13 @@ export default function ProductsList() {
     }
   }, [applyDiscountModalOpen, currentDiscountPercent]);
   useEffect(() => {
+    if (configureFeeModalOpen) {
+      setCostPriceOn(!!storeData?.costPriceEnabled);
+    }
     if (configureFeeModalOpen && currentFeeBearer) {
       setSelectedFeeOption(currentFeeBearer);
     }
-  }, [configureFeeModalOpen, currentFeeBearer]);
+  }, [configureFeeModalOpen, currentFeeBearer, storeData?.costPriceEnabled]);
 
   // After paging, scroll back to the top of the product grid so the new page
   // is visible without an extra swipe up. The scroll is scheduled on the
@@ -1129,15 +1137,121 @@ export default function ProductsList() {
       <BottomSheet
         visible={configureFeeModalOpen}
         onClose={() => setConfigureFeeModalOpen(false)}
-        title="Transaction Fee"
-        subtitle="Decide who covers the platform fee on each order"
-        height="78%"
+        title="Product settings"
+        subtitle="Applies to every product in your store"
+        height="82%"
       >
         <ScrollView
           showsVerticalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: 24 }}
         >
+          {/* Cost price. Off by default and kept behind this sheet
+              rather than on the product form, because most vendors
+              don't want a second price box on every product and an
+              empty one would only make the form look unfinished. */}
           <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mt-4 mb-3">
+            Profit tracking
+          </Text>
+
+          <View
+            className={`rounded-2xl border-2 px-4 py-4 mb-2 ${
+              costPriceOn
+                ? "border-blue-600 bg-blue-50/40"
+                : "border-gray-100 bg-white"
+            }`}
+          >
+            <View className="flex-row items-start">
+              <View
+                className={`w-11 h-11 rounded-xl items-center justify-center mr-3 ${
+                  costPriceOn ? "bg-blue-100" : "bg-gray-100"
+                }`}
+              >
+                <Ionicons
+                  name="wallet-outline"
+                  size={20}
+                  color={costPriceOn ? "#2563eb" : "#9ca3af"}
+                />
+              </View>
+              <View className="flex-1">
+                <View className="flex-row items-start justify-between gap-3">
+                  <View className="flex-1">
+                    <Text className="text-[14px] font-bold text-gray-900">
+                      Track cost price
+                    </Text>
+                    <Text className="text-[12.5px] text-gray-600 leading-[18px] mt-0.5">
+                      Record what each product costs you to buy or make.
+                    </Text>
+                  </View>
+                  <Pressable
+                    accessibilityRole="switch"
+                    accessibilityState={{ checked: costPriceOn }}
+                    disabled={savingCostPrice}
+                    onPress={async () => {
+                      if (savingCostPrice) return;
+                      const next = !costPriceOn;
+                      if (Platform.OS === "ios") {
+                        Haptics.selectionAsync().catch(() => {});
+                      }
+                      setCostPriceOn(next);
+                      setSavingCostPrice(true);
+                      try {
+                        await setCostPriceEnabled(next);
+                        await fetchVendorData();
+                        toast.show(
+                          next
+                            ? "Cost price is on. You'll see it when adding a product."
+                            : "Cost price is off.",
+                          { type: "success" }
+                        );
+                      } catch (e: any) {
+                        setCostPriceOn(!next);
+                        toast.show(
+                          e?.message || "Couldn't update the cost price setting",
+                          { type: "danger" }
+                        );
+                      } finally {
+                        setSavingCostPrice(false);
+                      }
+                    }}
+                    className={`w-12 h-7 rounded-full px-1 justify-center ${
+                      costPriceOn ? "bg-blue-600" : "bg-gray-300"
+                    }`}
+                  >
+                    <View
+                      className={`w-5 h-5 rounded-full bg-white ${
+                        costPriceOn ? "self-end" : "self-start"
+                      }`}
+                    />
+                  </Pressable>
+                </View>
+
+                <View className="mt-3 pt-3 border-t border-gray-200/70 gap-2">
+                  <Text className="text-[12.5px] text-gray-700 leading-[18px]">
+                    A Cost price box appears next to Price when you add or edit
+                    a product.
+                  </Text>
+                  <Text className="text-[12.5px] text-gray-700 leading-[18px]">
+                    You'll see your profit per sale and which products actually
+                    earn their shelf space.
+                  </Text>
+                  <Text className="text-[12.5px] text-gray-500 leading-[18px]">
+                    It never shows on your storefront. Customers only ever see
+                    your selling price.
+                  </Text>
+                </View>
+              </View>
+            </View>
+          </View>
+
+          <Text className="text-[12px] text-gray-500 leading-[17px] mb-5">
+            This doesn't change your reports. Net profit there is still your
+            revenue minus the expenses you record yourself, so nothing gets
+            counted twice if you already log stock purchases.
+          </Text>
+
+          <View className="h-px bg-gray-100 mb-4" />
+
+          <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mb-3">
             Who pays the fee?
           </Text>
 

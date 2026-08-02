@@ -147,6 +147,10 @@ export interface Product {
   originalPrice: number;
   percentDiscount: number | null;
   price: number;
+  /** What the item costs the vendor per unit. Only ever populated on the
+   *  authenticated vendor catalog read — the public storefront shares
+   *  this shape and must never carry it. Null when untracked. */
+  costPrice?: number | null;
   stock: number;
   sales: number | null;
   reviews: number;
@@ -194,6 +198,9 @@ export interface CreateProductPayload {
    *  `CatalogCategoryId` (long). Null/undefined leaves the product
    *  uncategorised. */
   catalogCategoryId?: number | null;
+  /** Vendor's buying cost per unit. Undefined leaves it untouched;
+   *  null clears it. Only sent when the store tracks cost price. */
+  costPrice?: number | null;
   description: string;
   originalPrice: number;
   price: number;

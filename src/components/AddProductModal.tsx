@@ -37,6 +37,7 @@ import {
 import { AppImage } from "./AppImage";
 import KeyboardScreen from "./KeyboardScreen";
 import { useVendor } from "../../context/VendorContext";
+import { resolveVariantAxis } from "../utils/variantAxis";
 import { DraftsSheet } from "./DraftsSheet";
 import {
   appendDraft,
@@ -84,6 +85,98 @@ const PRESET_COLORS = [
   "#FFFFFF",
 ];
 
+/**
+ * Live margin under the cost field. Money first ("You make ₦8,000 on
+ * each one"), percentage second — vendors quote each other margins in
+ * naira, not points. Selling below cost is called out in words rather
+ * than as a negative number, which is easy to skim past on a phone.
+ */
+function MarginReadout({ price, cost }: { price: string; cost: string }) {
+  const p = Number((price ?? "").trim());
+  const c = Number((cost ?? "").trim());
+  if (!Number.isFinite(p) || p <= 0 || !(cost ?? "").trim() || !Number.isFinite(c)) {
+    return null;
+  }
+  const profit = p - c;
+  const pct = p > 0 ? Math.round((profit / p) * 100) : 0;
+  const money = (n: number) => `₦${Math.abs(n).toLocaleString()}`;
+
+  if (profit < 0) {
+    return (
+      <View className="mt-2 rounded-xl bg-rose-50 px-3 py-2.5">
+        <Text className="text-[12.5px] font-semibold text-rose-800 leading-[18px]">
+          You'd lose {money(profit)} on every sale. Your price is below what it
+          cost you.
+        </Text>
+      </View>
+    );
+  }
+  if (profit === 0) {
+    return (
+      <View className="mt-2 rounded-xl bg-amber-50 px-3 py-2.5">
+        <Text className="text-[12.5px] font-semibold text-amber-800 leading-[18px]">
+          You'd break even on this one. No profit, no loss.
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <View className="mt-2 rounded-xl bg-emerald-50 px-3 py-2.5">
+      <Text className="text-[12.5px] text-emerald-900 leading-[18px]">
+        You make <Text className="font-bold">{money(profit)}</Text> on each one,
+        a <Text className="font-bold">{pct}%</Text> margin.
+      </Text>
+    </View>
+  );
+}
+
+/** Numbered step heading inside the variant rule form — the shape of
+ *  a rule (size, then color, then price) should never be something a
+ *  vendor has to infer. */
+function VariantStep({ n, text }: { n: number; text: string }) {
+  return (
+    <View className="flex-row items-center gap-2 mb-2">
+      <View className="w-5 h-5 rounded-full bg-gray-900 items-center justify-center">
+        <Text className="text-[10px] font-extrabold text-white">{n}</Text>
+      </View>
+      <Text className="flex-1 text-[12.5px] font-bold text-gray-800">
+        {text}
+      </Text>
+    </View>
+  );
+}
+
+/** Pill choice used for the "Any ..." option and each existing value
+ *  on the variant axis (size, format, bottle size, ...). */
+function VariantChip({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable
+      onPress={onPress}
+      className={`h-9 px-3.5 rounded-full border items-center justify-center ${
+        selected
+          ? "bg-violet-600 border-violet-600"
+          : "bg-white border-gray-200"
+      }`}
+    >
+      <Text
+        className={`text-[13px] font-extrabold ${
+          selected ? "text-white" : "text-gray-700"
+        }`}
+      >
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 const isLightColor = (hex: string): boolean => {
   const c = hex.replace("#", "");
   if (c.length !== 6) return false;
@@ -120,7 +213,16 @@ export default function AddProductModal({
     message: string;
     isPlanLimit: boolean;
   } | null>(null);
-  const { fetchVendorData } = useVendor();
+  const { fetchVendorData, storeData } = useVendor();
+  // What this vendor's trade calls the non-colour variant axis: a
+  // clothing seller sizes things, a bookshop picks a format, a perfume
+  // seller a bottle size. Falls back to "Size" when the store's
+  // categories are unknown.
+  const axis = resolveVariantAxis({
+    categoryIds: storeData?.businessCategoryIds,
+    categoryNames: storeData?.businessCategoryNames,
+    isServiceBased: storeData?.isServiceBased,
+  });
 
   const [productImages, setProductImages] = useState<string[]>([]);
   const [productName, setProductName] = useState("");
@@ -135,6 +237,11 @@ export default function AddProductModal({
     []
   );
   const [price, setPrice] = useState("");
+  // Digits as typed. Empty means this product isn't tracking a cost,
+  // which is different from a cost of zero. Only rendered when the
+  // store turned cost tracking on in the Products settings sheet.
+  const [costPrice, setCostPrice] = useState("");
+  const costPriceEnabled = !!storeData?.costPriceEnabled;
   const [stockQuantity, setStockQuantity] = useState("");
   const [productDescription, setProductDescription] = useState("");
   const [sizes, setSizes] = useState<string[]>([]);
@@ -152,10 +259,19 @@ export default function AddProductModal({
     size: string | null;
     color: string | null;
     price: string;
+    /** Units left of this exact combination. Empty means the vendor
+     *  doesn't count stock at this level and the product's overall
+     *  stock applies instead. "0" means this one is sold out. */
+    stock?: string;
   };
   const [variantEntries, setVariantEntries] = useState<VariantEntry[]>([]);
   // The form for adding/editing a single entry. `index` === -1 means
   // "creating new"; >= 0 means "editing existing entry at that index".
+  // Scratch state for the rule form: a size the vendor is typing and
+  // whether the extra color palette is showing. Both live here rather
+  // than inside the form object so they survive a re-render of it.
+  const [variantSizeDraft, setVariantSizeDraft] = useState("");
+  const [variantPaletteOpen, setVariantPaletteOpen] = useState(false);
   const [variantForm, setVariantForm] = useState<
     | (VariantEntry & { index: number })
     | null
@@ -278,6 +394,9 @@ export default function AddProductModal({
       setProductName(productData.title ?? "");
       setCatalogCategoryId(productData.catalogCategoryId ?? null);
       setPrice(productData.price != null ? String(productData.price) : "");
+      setCostPrice(
+        productData.costPrice != null ? String(productData.costPrice) : ""
+      );
       setStockQuantity(
         productData.stock != null ? String(productData.stock) : ""
       );
@@ -306,6 +425,7 @@ export default function AddProductModal({
           size: v.size ?? null,
           color: v.color ?? null,
           price: String(v.price ?? ""),
+          stock: v.stock == null ? "" : String(v.stock),
         }))
       );
       setVariantForm(null);
@@ -315,6 +435,7 @@ export default function AddProductModal({
       setProductName(initialDraft.productName ?? "");
       setCatalogCategoryId(initialDraft.catalogCategoryId ?? null);
       setPrice(initialDraft.price ?? "");
+      setCostPrice(initialDraft.costPrice ?? "");
       setStockQuantity(initialDraft.stockQuantity ?? "");
       setProductDescription(initialDraft.productDescription ?? "");
       setProductImages(initialDraft.productImages ?? []);
@@ -333,6 +454,7 @@ export default function AddProductModal({
           size: sz || null,
           color: cl || null,
           price: String(v.price),
+          stock: v.stock == null ? "" : String(v.stock),
         });
       });
       setVariantEntries(draftEntries);
@@ -519,16 +641,23 @@ export default function AddProductModal({
       setSavingDraft(true);
       // Persist each explicit entry under a `${size}||${color}` key so the
       // legacy draft shape stays compatible.
-      const draftVariantPrices: Record<string, { price: string }> = {};
+      const draftVariantPrices: Record<
+        string,
+        { price: string; stock?: string }
+      > = {};
       variantEntries.forEach((entry) => {
         if (!entry.price || !entry.price.trim()) return;
         const key = `${entry.size ?? ""}||${entry.color ?? ""}`;
-        draftVariantPrices[key] = { price: entry.price };
+        draftVariantPrices[key] = {
+          price: entry.price,
+          ...(entry.stock ? { stock: entry.stock } : {}),
+        };
       });
       const updated = await appendDraft({
         productName,
         catalogCategoryId,
         price,
+        costPrice,
         stockQuantity,
         productDescription,
         productImages,
@@ -573,6 +702,7 @@ export default function AddProductModal({
         size: sz || null,
         color: cl || null,
         price: String(v.price),
+        stock: v.stock == null ? "" : String(v.stock),
       });
     });
     setVariantEntries(restored);
@@ -586,6 +716,7 @@ export default function AddProductModal({
     setProductName("");
     setCatalogCategoryId(null);
     setPrice("");
+    setCostPrice("");
     setStockQuantity("");
     setProductDescription("");
     setSizes([]);
@@ -626,25 +757,60 @@ export default function AddProductModal({
 
   const openVariantForm = (index: number) => {
     haptic();
+    setVariantSizeDraft("");
+    setVariantPaletteOpen(false);
     if (index === -1) {
-      setVariantForm({ index: -1, size: null, color: null, price: "" });
+      setVariantForm({
+        index: -1,
+        size: null,
+        color: null,
+        price: "",
+        stock: "",
+      });
     } else {
       const existing = variantEntries[index];
       setVariantForm({ index, ...existing });
     }
   };
 
-  const closeVariantForm = () => setVariantForm(null);
+  const closeVariantForm = () => {
+    setVariantForm(null);
+    setVariantSizeDraft("");
+    setVariantPaletteOpen(false);
+  };
+
+  // A size typed inside the rule form has to land on the product too,
+  // or the rule would price something no customer can select.
+  const commitVariantSizeDraft = () => {
+    const next = variantSizeDraft.trim().toUpperCase();
+    if (!next) return;
+    if (!sizes.includes(next)) setSizes((prev) => [...prev, next]);
+    setVariantForm((prev) => (prev ? { ...prev, size: next } : prev));
+    setVariantSizeDraft("");
+  };
+
+  // Same for a color picked from the palette inside the rule form.
+  const pickVariantColor = (hex: string) => {
+    haptic();
+    const H = hex.toUpperCase();
+    if (!colors.some((c) => c.toUpperCase() === H)) {
+      setColors((prev) => [...prev, H]);
+    }
+    setVariantForm((prev) => (prev ? { ...prev, color: H } : prev));
+    setVariantPaletteOpen(false);
+  };
 
   const saveVariantForm = () => {
     if (!variantForm) return;
-    const priceNum = Number((variantForm.price ?? "").trim());
-    if (!Number.isFinite(priceNum) || priceNum <= 0) {
-      toast.show("Enter a valid price", { type: "danger" });
+    if (!variantForm.size && !variantForm.color) {
+      toast.show(`Choose a ${axis.lower}, a color, or both for this rule`, {
+        type: "danger",
+      });
       return;
     }
-    if (!variantForm.size && !variantForm.color) {
-      toast.show("Pick a size, a color, or both", { type: "danger" });
+    const priceNum = Number((variantForm.price ?? "").trim());
+    if (!Number.isFinite(priceNum) || priceNum <= 0) {
+      toast.show("Enter the price for this combination", { type: "danger" });
       return;
     }
     if (
@@ -654,13 +820,22 @@ export default function AddProductModal({
         variantForm.index
       )
     ) {
-      toast.show("That combination already has a price", { type: "danger" });
+      toast.show("You already have a rule for that combination", {
+        type: "danger",
+      });
       return;
     }
+    const rawStock = (variantForm.stock ?? "").trim();
     const next: VariantEntry = {
       size: variantForm.size,
       color: variantForm.color,
       price: String(priceNum),
+      // Empty means "not tracked here". Zero is meaningful and must
+      // survive: it's how a vendor marks one combination sold out.
+      stock:
+        rawStock === ""
+          ? ""
+          : String(Math.max(0, parseInt(rawStock, 10) || 0)),
     };
     setVariantEntries((prev) => {
       if (variantForm.index === -1) return [...prev, next];
@@ -668,7 +843,7 @@ export default function AddProductModal({
       copy[variantForm.index] = next;
       return copy;
     });
-    setVariantForm(null);
+    closeVariantForm();
   };
 
   const deleteVariantEntry = (index: number) => {
@@ -689,25 +864,50 @@ export default function AddProductModal({
 
       // Send each explicit entry verbatim. The backend resolves matching
       // priority (exact > size-only > color-only > base) at purchase time.
+      // Rows naming a size/color the vendor has since removed are
+      // pruned — same rule the web drawer applies — so we never ship an
+      // override no customer can ever match.
+      const sizeSet = new Set(sizes);
+      const colorSet = new Set(colors.map((c) => c.toLowerCase()));
       const variantPricesPayload = enableVariants
         ? variantEntries
             .map((e) => {
               const parsed = Number((e.price ?? "").trim());
               if (!Number.isFinite(parsed) || parsed <= 0) return null;
+              if (!e.size && !e.color) return null;
+              if (e.size && !sizeSet.has(e.size)) return null;
+              if (e.color && !colorSet.has(e.color.toLowerCase())) return null;
+              const stockRaw = (e.stock ?? "").trim();
+              const stock = stockRaw === "" ? null : Number(stockRaw);
               return {
                 size: e.size && e.size.trim() ? e.size : null,
                 color: e.color && e.color.trim() ? e.color : null,
                 price: parsed,
+                // null tells the server this variant keeps no count of
+                // its own; a number (including 0) is authoritative.
+                stock: stock != null && Number.isFinite(stock) ? stock : null,
               };
             })
             .filter(
-              (v): v is { size: string | null; color: string | null; price: number } =>
-                v !== null
+              (
+                v,
+              ): v is {
+                size: string | null;
+                color: string | null;
+                price: number;
+                stock: number | null;
+              } => v !== null
             )
         : [];
 
+      const trimmedCost = (costPrice ?? "").trim();
       const payload: CreateProductPayload = {
         title: (productName ?? "").trim(),
+        // Only sent while the store tracks cost, so switching the
+        // feature off never wipes costs recorded earlier. Empty clears.
+        ...(costPriceEnabled
+          ? { costPrice: trimmedCost === "" ? null : Number(trimmedCost) }
+          : {}),
         catalogCategoryId,
         description: (productDescription ?? "").trim(),
         originalPrice: basePrice,
@@ -1181,6 +1381,33 @@ export default function AddProductModal({
                 </View>
               </View>
 
+              {/* Cost price + live margin. Only here when the vendor
+                  asked for it in the Products settings sheet. The margin
+                  read-back sits directly under the field because it's
+                  the whole reason to type a cost at all. */}
+              {costPriceEnabled && (
+                <View className="mt-4">
+                  <Text className={FIELD_LABEL}>Cost price</Text>
+                  <View className="flex-row items-center bg-white rounded-2xl px-4 h-12 border border-gray-200">
+                    <Text className="text-[15px] font-bold text-gray-500 mr-2">
+                      ₦
+                    </Text>
+                    <TextInput
+                      value={costPrice}
+                      onChangeText={(t) => setCostPrice(t.replace(/[^0-9.]/g, ""))}
+                      className="flex-1 text-[15px] text-gray-900 h-full"
+                      placeholder="What you paid for it"
+                      placeholderTextColor="#9ca3af"
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                  <Text className="text-[11.5px] text-gray-500 mt-1.5 ml-1">
+                    Never shown to customers.
+                  </Text>
+                  <MarginReadout price={price} cost={costPrice} />
+                </View>
+              )}
+
               <View className="h-5" />
 
               {/* VARIANTS — paywalled. Tapping while locked opens the
@@ -1235,8 +1462,8 @@ export default function AddProductModal({
                   </View>
                   <Text className="text-[12px] text-gray-500 leading-[16px]">
                     {canUseVariants
-                      ? "Add sizes and colors customers can pick"
-                      : "Upgrade to offer sizes, colors and per-variant pricing"}
+                      ? `Add ${axis.many.toLowerCase()} and colors customers can pick`
+                      : `Upgrade to offer ${axis.many.toLowerCase()}, colors and per-variant pricing`}
                   </Text>
                 </View>
                 {canUseVariants ? (
@@ -1258,15 +1485,15 @@ export default function AddProductModal({
 
               {enableVariants && (
                 <View className="bg-white border border-gray-100 rounded-2xl mt-3 px-4 py-4">
-                  {/* Sizes */}
-                  <Text className={FIELD_LABEL}>Sizes</Text>
+                  {/* Size / Format / Bottle size / ... named for the trade */}
+                  <Text className={FIELD_LABEL}>{axis.many}</Text>
                   <View className="flex-row items-center mb-3">
                     <View className="flex-1 flex-row items-center bg-gray-50 border border-gray-100 rounded-2xl px-4 h-11 mr-2">
                       <TextInput
                         value={currentSize}
                         onChangeText={setCurrentSize}
                         className="flex-1 text-[14px] text-gray-900 h-full"
-                        placeholder="S, M, L, XL..."
+                        placeholder={axis.examples}
                         placeholderTextColor="#9ca3af"
                         onSubmitEditing={addSize}
                         autoCapitalize="characters"
@@ -1388,270 +1615,501 @@ export default function AddProductModal({
                     </Text>
                   </Pressable>
 
-                  {/* Per-variant pricing — explicit list. Vendors only see
-                      what they themselves added; nothing is auto-generated.
-                      Each row pins one specific (size, color) — or just one
-                      of them — to a custom price. Tap a row to edit; tap
-                      the X to delete. */}
-                  {(sizes.length > 0 || colors.length > 0) && (
-                    <>
-                      <View className="h-px bg-gray-100 my-4" />
-                      <View className="flex-row items-start justify-between mb-1">
-                        <Text className={FIELD_LABEL}>Variant pricing</Text>
-                        {variantEntries.length > 0 && (
+                  {/* Per-variant pricing. Stands on its own now: it
+                      used to appear only after a size or color had
+                      been entered above, so vendors never found it
+                      while wondering whether per-size pricing even
+                      existed. The rule form is also where the
+                      combination gets built — pick or type the size,
+                      pick the color, set the price — and anything new
+                      joins the product's own size/color lists, since
+                      otherwise buyers could never pick the thing that
+                      was just priced. */}
+                  <View className="h-px bg-gray-100 my-4" />
+                  <View className="flex-row items-start justify-between mb-1">
+                    <Text className={FIELD_LABEL}>
+                      Price by {axis.lower} or color
+                    </Text>
+                    {variantEntries.length > 0 && (
+                      <Pressable
+                        onPress={() => {
+                          haptic();
+                          setVariantEntries([]);
+                          closeVariantForm();
+                        }}
+                        hitSlop={6}
+                      >
+                        <Text className="text-[11.5px] font-bold text-blue-600">
+                          Clear all
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                  <Text className="text-[11.5px] text-gray-500 leading-[16px] mb-3">
+                    Optional. Everything sells at your base price of{" "}
+                    <Text className="font-bold text-gray-700">
+                      ₦{price ? Number(price).toLocaleString() : "\u2014"}
+                    </Text>{" "}
+                    unless you add a rule. Use one when a {axis.lower} or color
+                    costs more or less, or to count stock for that exact
+                    combination.
+                  </Text>
+
+                  {/* Worked example, only while there's nothing to look at */}
+                  {variantEntries.length === 0 && !variantForm && (
+                    <View className="bg-gray-50 border border-gray-100 rounded-2xl px-3.5 py-3 mb-3">
+                      <Text className="text-[10.5px] font-bold text-gray-400 uppercase tracking-[1px] mb-1">
+                        Example
+                      </Text>
+                      <Text className="text-[12px] text-gray-600 leading-[17px]">
+                        Base price {price ? `₦${Number(price).toLocaleString()}` : "₦5,000"}.
+                        Add a rule for {axis.sample} at{" "}
+                        {price
+                          ? `₦${(Number(price) + 1500).toLocaleString()}`
+                          : "₦6,500"}{" "}
+                        and anyone who picks {axis.sample} pays that instead.
+                        Every other {axis.lower} keeps the base price.
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Existing rules */}
+                  {variantEntries.length > 0 && (
+                    <View className="bg-white border border-gray-100 rounded-2xl overflow-hidden mb-3">
+                      {variantEntries.map((entry, idx) => {
+                        const isLast = idx === variantEntries.length - 1;
+                        const swatchLight =
+                          entry.color && isLightColor(entry.color);
+                        // A rule can outlive the size/color it names if
+                        // the vendor deletes it above. It gets dropped at
+                        // save, so say so rather than letting it look
+                        // active.
+                        const stale =
+                          (!!entry.size && !sizes.includes(entry.size)) ||
+                          (!!entry.color &&
+                            !colors.some(
+                              (c) =>
+                                c.toLowerCase() === entry.color!.toLowerCase()
+                            ));
+                        return (
                           <Pressable
+                            key={`${entry.size ?? ""}||${entry.color ?? ""}||${idx}`}
+                            onPress={() => openVariantForm(idx)}
+                            className={`flex-row items-center px-3 py-3 ${
+                              isLast ? "" : "border-b border-gray-100"
+                            } active:bg-gray-50`}
+                          >
+                            <View className="flex-1 min-w-0">
+                              <View className="flex-row items-center gap-1.5">
+                                {entry.size ? (
+                                  <View className="bg-violet-50 border border-violet-100 rounded-md px-2 py-0.5">
+                                    <Text className="text-[12px] font-extrabold text-violet-700">
+                                      {entry.size}
+                                    </Text>
+                                  </View>
+                                ) : (
+                                  <Text className="text-[12.5px] font-semibold text-gray-500">
+                                    Any {axis.lower}
+                                  </Text>
+                                )}
+                                <Text className="text-[11px] text-gray-300">
+                                  {"\u00b7"}
+                                </Text>
+                                {entry.color ? (
+                                  <View
+                                    className="w-6 h-6 rounded-full"
+                                    style={{
+                                      backgroundColor: entry.color,
+                                      borderWidth: swatchLight ? 1 : 0,
+                                      borderColor: "#e5e7eb",
+                                    }}
+                                  />
+                                ) : (
+                                  <Text className="text-[12.5px] font-semibold text-gray-500">
+                                    Any color
+                                  </Text>
+                                )}
+                              </View>
+                              {stale && (
+                                <Text className="text-[11px] font-semibold text-amber-700 mt-0.5">
+                                  No longer on this product. Tap to fix
+                                </Text>
+                              )}
+                            </View>
+                            <View className="items-end mr-3">
+                              <Text className="text-[13.5px] font-extrabold text-gray-900">
+                                ₦{entry.price ? Number(entry.price).toLocaleString() : "\u2014"}
+                              </Text>
+                              {!!(entry.stock ?? "") && (
+                                <Text
+                                  className={`text-[11px] font-semibold ${
+                                    Number(entry.stock) === 0
+                                      ? "text-rose-600"
+                                      : "text-gray-500"
+                                  }`}
+                                >
+                                  {Number(entry.stock) === 0
+                                    ? "Sold out"
+                                    : `${Number(entry.stock).toLocaleString()} left`}
+                                </Text>
+                              )}
+                            </View>
+                            <Pressable
+                              onPress={() => deleteVariantEntry(idx)}
+                              hitSlop={6}
+                              className="w-7 h-7 rounded-full bg-white border border-gray-200 items-center justify-center"
+                            >
+                              <Ionicons name="close" size={12} color="#6b7280" />
+                            </Pressable>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  )}
+
+                  {/* Add / edit form — three numbered steps so the
+                      shape of a rule is never something to infer. */}
+                  {variantForm ? (
+                    <View className="bg-white border-2 border-blue-200 rounded-2xl p-4">
+                      <View className="flex-row items-center justify-between mb-3">
+                        <Text className="text-[13px] font-extrabold text-gray-900">
+                          {variantForm.index === -1
+                            ? "New price rule"
+                            : "Edit price rule"}
+                        </Text>
+                        <Pressable
+                          onPress={closeVariantForm}
+                          hitSlop={6}
+                          className="w-7 h-7 rounded-full bg-gray-50 items-center justify-center"
+                        >
+                          <Ionicons name="close" size={14} color="#6b7280" />
+                        </Pressable>
+                      </View>
+
+                      <VariantStep
+                        n={1}
+                        text={`Which ${axis.lower} does this price apply to?`}
+                      />
+                      <View className="flex-row flex-wrap items-center gap-2 mb-4">
+                        <VariantChip
+                          label={`Any ${axis.lower}`}
+                          selected={!variantForm.size}
+                          onPress={() => {
+                            haptic();
+                            setVariantForm((prev) =>
+                              prev ? { ...prev, size: null } : prev
+                            );
+                          }}
+                        />
+                        {sizes.map((s) => (
+                          <VariantChip
+                            key={s}
+                            label={s}
+                            selected={variantForm.size === s}
                             onPress={() => {
                               haptic();
-                              setVariantEntries([]);
-                              setVariantForm(null);
+                              setVariantForm((prev) =>
+                                prev ? { ...prev, size: s } : prev
+                              );
                             }}
-                            hitSlop={6}
-                          >
-                            <Text className="text-[11.5px] font-bold text-blue-600">
-                              Clear all
-                            </Text>
-                          </Pressable>
-                        )}
+                          />
+                        ))}
+                        <View className="flex-row items-center gap-1">
+                          <TextInput
+                            value={variantSizeDraft}
+                            onChangeText={(t) =>
+                              setVariantSizeDraft(t.toUpperCase())
+                            }
+                            onSubmitEditing={commitVariantSizeDraft}
+                            placeholder={`Add ${axis.lower}`}
+                            placeholderTextColor="#9ca3af"
+                            autoCapitalize="characters"
+                            returnKeyType="done"
+                            className="w-[104px] h-9 rounded-full border border-dashed border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-900"
+                          />
+                          {variantSizeDraft.trim().length > 0 && (
+                            <Pressable
+                              onPress={commitVariantSizeDraft}
+                              className="w-9 h-9 rounded-full bg-gray-900 items-center justify-center"
+                            >
+                              <Ionicons
+                                name="checkmark"
+                                size={16}
+                                color="white"
+                              />
+                            </Pressable>
+                          )}
+                        </View>
                       </View>
-                      <Text className="text-[11.5px] text-gray-500 leading-[16px] mb-3">
-                        Optional. Pick a size, a color, or both, and set a
-                        custom price — anything not listed uses the base
-                        price (₦{price ? Number(price).toLocaleString() : "—"}).
-                      </Text>
 
-                      {/* Existing entries */}
-                      {variantEntries.length > 0 && (
-                        <View className="bg-gray-50 border border-gray-100 rounded-2xl overflow-hidden mb-3">
-                          {variantEntries.map((entry, idx) => {
-                            const isLast = idx === variantEntries.length - 1;
-                            const swatchLight =
-                              entry.color && isLightColor(entry.color);
-                            return (
-                              <Pressable
-                                key={`${entry.size ?? ""}||${entry.color ?? ""}||${idx}`}
-                                onPress={() => openVariantForm(idx)}
-                                className={`flex-row items-center px-3 py-3 ${
-                                  isLast ? "" : "border-b border-gray-100"
-                                } active:bg-gray-100`}
-                              >
-                                <View className="flex-row items-center gap-2 flex-1 min-w-0">
-                                  {entry.color ? (
-                                    <View
-                                      className="w-7 h-7 rounded-full"
-                                      style={{
-                                        backgroundColor: entry.color,
-                                        borderWidth: swatchLight ? 1 : 0,
-                                        borderColor: "#e5e7eb",
-                                      }}
-                                    />
-                                  ) : null}
-                                  {entry.size ? (
-                                    <View className="bg-violet-50 border border-violet-100 rounded-md px-2 py-0.5">
-                                      <Text className="text-[12px] font-extrabold text-violet-700">
-                                        {entry.size}
-                                      </Text>
-                                    </View>
-                                  ) : null}
-                                  {!entry.size && !entry.color ? (
-                                    <Text className="text-[12px] text-gray-400 italic">
-                                      Empty
-                                    </Text>
-                                  ) : null}
-                                </View>
-                                <Text className="text-[13.5px] font-extrabold text-gray-900 mr-3">
-                                  ₦{entry.price ? Number(entry.price).toLocaleString() : "—"}
-                                </Text>
-                                <Pressable
-                                  onPress={() => deleteVariantEntry(idx)}
-                                  hitSlop={6}
-                                  className="w-7 h-7 rounded-full bg-white border border-gray-200 items-center justify-center"
-                                >
-                                  <Ionicons
-                                    name="close"
-                                    size={12}
-                                    color="#6b7280"
-                                  />
-                                </Pressable>
-                              </Pressable>
+                      <VariantStep
+                        n={2}
+                        text="Which color does this price apply to?"
+                      />
+                      <View className="flex-row flex-wrap items-center gap-2 mb-4">
+                        <VariantChip
+                          label="Any color"
+                          selected={!variantForm.color}
+                          onPress={() => {
+                            haptic();
+                            setVariantForm((prev) =>
+                              prev ? { ...prev, color: null } : prev
                             );
-                          })}
-                        </View>
-                      )}
-
-                      {/* Form for add/edit */}
-                      {variantForm ? (
-                        <View className="bg-white border-2 border-blue-200 rounded-2xl p-4">
-                          <View className="flex-row items-center justify-between mb-3">
-                            <Text className="text-[13px] font-extrabold text-gray-900">
-                              {variantForm.index === -1
-                                ? "New variant price"
-                                : "Edit variant price"}
-                            </Text>
+                          }}
+                        />
+                        {colors.map((c) => {
+                          const light = isLightColor(c);
+                          const selected =
+                            variantForm.color?.toLowerCase() ===
+                            c.toLowerCase();
+                          return (
                             <Pressable
-                              onPress={closeVariantForm}
-                              hitSlop={6}
-                              className="w-7 h-7 rounded-full bg-gray-50 items-center justify-center"
-                            >
-                              <Ionicons name="close" size={14} color="#6b7280" />
-                            </Pressable>
-                          </View>
-
-                          {/* Size picker — only shown when product has sizes */}
-                          {sizes.length > 0 && (
-                            <>
-                              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
-                                Size · {variantForm.size ? "selected" : "any"}
-                              </Text>
-                              <View className="flex-row flex-wrap gap-2 mb-4">
-                                {sizes.map((s) => {
-                                  const selected = variantForm.size === s;
-                                  return (
-                                    <Pressable
-                                      key={s}
-                                      onPress={() => {
-                                        haptic();
-                                        setVariantForm((prev) =>
-                                          prev
-                                            ? {
-                                                ...prev,
-                                                size: selected ? null : s,
-                                              }
-                                            : prev
-                                        );
-                                      }}
-                                      className={`px-3 h-9 rounded-full border items-center justify-center ${
-                                        selected
-                                          ? "bg-violet-600 border-violet-600"
-                                          : "bg-white border-gray-200"
-                                      }`}
-                                    >
-                                      <Text
-                                        className={`text-[13px] font-extrabold ${
-                                          selected ? "text-white" : "text-gray-700"
-                                        }`}
-                                      >
-                                        {s}
-                                      </Text>
-                                    </Pressable>
-                                  );
-                                })}
-                              </View>
-                            </>
-                          )}
-
-                          {/* Color picker — only shown when product has colors */}
-                          {colors.length > 0 && (
-                            <>
-                              <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
-                                Color · {variantForm.color ? "selected" : "any"}
-                              </Text>
-                              <View className="flex-row flex-wrap gap-2 mb-4">
-                                {colors.map((c) => {
-                                  const light = isLightColor(c);
-                                  const selected =
-                                    variantForm.color?.toLowerCase() ===
-                                    c.toLowerCase();
-                                  return (
-                                    <Pressable
-                                      key={c}
-                                      onPress={() => {
-                                        haptic();
-                                        setVariantForm((prev) =>
-                                          prev
-                                            ? {
-                                                ...prev,
-                                                color: selected ? null : c,
-                                              }
-                                            : prev
-                                        );
-                                      }}
-                                      style={{
-                                        width: 36,
-                                        height: 36,
-                                        borderRadius: 18,
-                                        backgroundColor: c,
-                                        borderWidth: selected ? 3 : light ? 1 : 0,
-                                        borderColor: selected ? "#2563eb" : "#e5e7eb",
-                                        alignItems: "center",
-                                        justifyContent: "center",
-                                      }}
-                                    >
-                                      {selected && (
-                                        <Ionicons
-                                          name="checkmark"
-                                          size={16}
-                                          color={light ? "#0f172a" : "white"}
-                                        />
-                                      )}
-                                    </Pressable>
-                                  );
-                                })}
-                              </View>
-                            </>
-                          )}
-
-                          {/* Price input */}
-                          <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
-                            Price (₦)
-                          </Text>
-                          <View className="flex-row items-center bg-gray-50 border border-gray-200 rounded-xl px-3 h-11 mb-4">
-                            <Text className="text-[14px] text-gray-400 mr-1">
-                              ₦
-                            </Text>
-                            <TextInput
-                              value={variantForm.price}
-                              onChangeText={(t) =>
+                              key={c}
+                              onPress={() => {
+                                haptic();
                                 setVariantForm((prev) =>
-                                  prev
-                                    ? {
-                                        ...prev,
-                                        price: t.replace(/[^0-9.]/g, ""),
-                                      }
-                                    : prev
-                                )
-                              }
-                              placeholder={
-                                price
-                                  ? Number(price).toLocaleString()
-                                  : "0"
-                              }
-                              placeholderTextColor="#cbd5e1"
-                              className="flex-1 text-[14px] text-gray-900 h-full"
-                              keyboardType="numeric"
-                            />
-                          </View>
-
-                          <View className="flex-row gap-2">
-                            <Pressable
-                              onPress={closeVariantForm}
-                              className="flex-1 h-11 rounded-xl border border-gray-200 bg-white items-center justify-center"
+                                  prev ? { ...prev, color: c } : prev
+                                );
+                              }}
+                              style={{
+                                width: 36,
+                                height: 36,
+                                borderRadius: 18,
+                                backgroundColor: c,
+                                borderWidth: selected ? 3 : light ? 1 : 0,
+                                borderColor: selected ? "#2563eb" : "#e5e7eb",
+                                alignItems: "center",
+                                justifyContent: "center",
+                              }}
                             >
-                              <Text className="text-[13px] font-extrabold text-gray-700">
-                                Cancel
-                              </Text>
+                              {selected && (
+                                <Ionicons
+                                  name="checkmark"
+                                  size={16}
+                                  color={light ? "#0f172a" : "white"}
+                                />
+                              )}
                             </Pressable>
-                            <Pressable
-                              onPress={saveVariantForm}
-                              className="flex-1 h-11 rounded-xl bg-blue-600 items-center justify-center"
-                            >
-                              <Text className="text-[13px] font-extrabold text-white">
-                                {variantForm.index === -1 ? "Add" : "Save"}
-                              </Text>
-                            </Pressable>
-                          </View>
-                        </View>
-                      ) : (
+                          );
+                        })}
                         <Pressable
-                          onPress={() => openVariantForm(-1)}
-                          className="flex-row items-center justify-center gap-2 h-11 rounded-2xl border-2 border-dashed border-gray-300 bg-white active:bg-gray-50"
+                          onPress={() => {
+                            haptic();
+                            setVariantPaletteOpen((prev) => !prev);
+                          }}
+                          className={`flex-row items-center gap-1 h-9 px-3 rounded-full border border-dashed ${
+                            variantPaletteOpen
+                              ? "border-blue-400 bg-blue-50"
+                              : "border-gray-300 bg-white"
+                          }`}
                         >
-                          <Ionicons name="add" size={16} color="#374151" />
-                          <Text className="text-[13px] font-extrabold text-gray-700">
-                            Add variant price
+                          <Ionicons
+                            name="add"
+                            size={14}
+                            color={variantPaletteOpen ? "#1d4ed8" : "#374151"}
+                          />
+                          <Text
+                            className={`text-[12.5px] font-bold ${
+                              variantPaletteOpen
+                                ? "text-blue-700"
+                                : "text-gray-700"
+                            }`}
+                          >
+                            Color
                           </Text>
                         </Pressable>
+                      </View>
+
+                      {variantPaletteOpen && (
+                        <View className="bg-gray-50 border border-gray-100 rounded-2xl p-3 mb-4">
+                          <Text className="text-[10.5px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
+                            Tap a color to use it
+                          </Text>
+                          <View className="flex-row flex-wrap gap-2">
+                            {PRESET_COLORS.map((c) => {
+                              const light = isLightColor(c);
+                              const selected =
+                                variantForm.color?.toUpperCase() ===
+                                c.toUpperCase();
+                              return (
+                                <Pressable
+                                  key={c}
+                                  onPress={() => pickVariantColor(c)}
+                                  style={{
+                                    width: 36,
+                                    height: 36,
+                                    borderRadius: 18,
+                                    backgroundColor: c,
+                                    borderWidth: selected ? 3 : light ? 1 : 0,
+                                    borderColor: selected
+                                      ? "#2563eb"
+                                      : "#e5e7eb",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                >
+                                  {selected && (
+                                    <Ionicons
+                                      name="checkmark"
+                                      size={16}
+                                      color={light ? "#0f172a" : "white"}
+                                    />
+                                  )}
+                                </Pressable>
+                              );
+                            })}
+                          </View>
+                          <Text className="text-[11px] text-gray-500 mt-2 leading-[15px]">
+                            New colors are added to this product automatically,
+                            so customers can pick them.
+                          </Text>
+                        </View>
                       )}
-                    </>
+
+                      <VariantStep
+                        n={3}
+                        text={`What should this ${axis.lower} cost, and how many are left?`}
+                      />
+                      <Text className="text-[10.5px] font-bold text-gray-500 uppercase tracking-[0.6px] mb-1">
+                        Price
+                      </Text>
+                      <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-3 h-12 mb-3">
+                        <Text className="text-[14px] font-bold text-gray-500 mr-1">
+                          ₦
+                        </Text>
+                        <TextInput
+                          value={variantForm.price}
+                          onChangeText={(t) =>
+                            setVariantForm((prev) =>
+                              prev
+                                ? { ...prev, price: t.replace(/[^0-9]/g, "") }
+                                : prev
+                            )
+                          }
+                          placeholder={
+                            price ? Number(price).toLocaleString() : "0"
+                          }
+                          placeholderTextColor="#cbd5e1"
+                          className="flex-1 text-[14px] font-semibold text-gray-900 h-full"
+                          keyboardType="number-pad"
+                        />
+                      </View>
+
+                      <Text className="text-[10.5px] font-bold text-gray-500 uppercase tracking-[0.6px] mb-1">
+                        In stock
+                      </Text>
+                      <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-3 h-12 mb-2">
+                        <TextInput
+                          value={variantForm.stock ?? ""}
+                          onChangeText={(t) =>
+                            setVariantForm((prev) =>
+                              prev
+                                ? { ...prev, stock: t.replace(/[^0-9]/g, "") }
+                                : prev
+                            )
+                          }
+                          placeholder="Leave empty"
+                          placeholderTextColor="#cbd5e1"
+                          className="flex-1 text-[14px] font-semibold text-gray-900 h-full"
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                      <Text className="text-[11px] text-gray-500 leading-[15px] mb-3">
+                        Leave stock empty to keep counting this one against the
+                        product's overall stock. Set it to 0 to mark just this
+                        combination sold out.
+                      </Text>
+
+                      {/* Plain-English read-back of the rule */}
+                      {!variantForm.size && !variantForm.color ? (
+                        <View className="bg-amber-50 rounded-xl px-3 py-2.5">
+                          <Text className="text-[12px] font-semibold text-amber-800 leading-[17px]">
+                            Choose a {axis.lower}, a color, or both. A rule for
+                            any {axis.lower} and any color would just be your
+                            base price.
+                          </Text>
+                        </View>
+                      ) : (
+                        <View className="flex-row items-center gap-2 bg-blue-50 rounded-xl px-3 py-2.5">
+                          {variantForm.color && (
+                            <View
+                              className="w-4 h-4 rounded-full"
+                              style={{
+                                backgroundColor: variantForm.color,
+                                borderWidth: isLightColor(variantForm.color)
+                                  ? 1
+                                  : 0,
+                                borderColor: "#bfdbfe",
+                              }}
+                            />
+                          )}
+                          <Text className="flex-1 text-[12px] text-blue-900 leading-[17px]">
+                            Customers who choose{" "}
+                            <Text className="font-bold">
+                              {variantForm.size && variantForm.color
+                                ? `${variantForm.size} in this color`
+                                : variantForm.size
+                                ? `${variantForm.size}, in any color`
+                                : `this color, in any ${axis.lower}`}
+                            </Text>{" "}
+                            pay{" "}
+                            <Text className="font-bold">
+                              {variantForm.price
+                                ? `₦${Number(variantForm.price).toLocaleString()}`
+                                : "this price"}
+                            </Text>
+                            .
+                            {!!(variantForm.stock ?? "") &&
+                              (Number(variantForm.stock) === 0 ? (
+                                <Text className="font-bold">
+                                  {" "}
+                                  This one shows as sold out.
+                                </Text>
+                              ) : (
+                                <Text>
+                                  {" "}
+                                  You have{" "}
+                                  <Text className="font-bold">
+                                    {Number(variantForm.stock)}
+                                  </Text>{" "}
+                                  of them.
+                                </Text>
+                              ))}
+                          </Text>
+                        </View>
+                      )}
+
+                      <View className="flex-row gap-2 mt-3">
+                        <Pressable
+                          onPress={closeVariantForm}
+                          className="flex-1 h-11 rounded-xl border border-gray-200 bg-white items-center justify-center"
+                        >
+                          <Text className="text-[13px] font-extrabold text-gray-700">
+                            Cancel
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={saveVariantForm}
+                          className="flex-1 h-11 rounded-xl bg-blue-600 items-center justify-center"
+                        >
+                          <Text className="text-[13px] font-extrabold text-white">
+                            {variantForm.index === -1 ? "Add rule" : "Save rule"}
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
+                  ) : (
+                    <Pressable
+                      onPress={() => openVariantForm(-1)}
+                      className="flex-row items-center justify-center gap-2 h-11 rounded-2xl border-2 border-dashed border-gray-300 bg-white active:bg-gray-50"
+                    >
+                      <Ionicons name="add" size={16} color="#374151" />
+                      <Text className="text-[13px] font-extrabold text-gray-700">
+                        {variantEntries.length === 0
+                          ? "Add a price rule"
+                          : "Add another price rule"}
+                      </Text>
+                    </Pressable>
                   )}
                 </View>
               )}

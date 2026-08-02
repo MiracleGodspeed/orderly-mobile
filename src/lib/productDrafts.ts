@@ -31,6 +31,9 @@ export interface ProductDraft {
   /** Optional per-variant price/stock map keyed by `${size}||${color}`.
    *  Persisted as a plain object so JSON round-trips cleanly. */
   variantPrices?: Record<string, { price: string; stock?: string }>;
+  /** Vendor's buying cost, digits as typed. Absent on drafts saved
+   *  before cost price shipped, and on stores that don't track it. */
+  costPrice?: string;
 }
 
 export async function loadDrafts(): Promise<ProductDraft[]> {

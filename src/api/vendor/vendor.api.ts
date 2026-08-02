@@ -467,6 +467,28 @@ export const applyGlobalDiscount = async (
  *                  `whatsappCheckoutEnabled=true` and clears the
  *                  other two modes.
  */
+/**
+ * Turn cost-price tracking on or off for this store. Its own endpoint
+ * rather than a field on the generic storefront update, which assigns
+ * booleans unconditionally and would switch this off for any caller
+ * that posted a partial payload.
+ */
+export const setCostPriceEnabled = async (
+  enabled: boolean
+): Promise<{ message: string; code: string }> => {
+  const response = await apiClient.post<{ message: string; code: string }>(
+    "/storefront/toggle-cost-price",
+    { enabled },
+    { validateStatus: () => true }
+  );
+  if (response.data.code !== "200") {
+    throw new Error(
+      response.data.message || "Failed to update the cost price setting"
+    );
+  }
+  return response.data;
+};
+
 export const setTransactionChargeBearer = async (
   bearer: "vendor" | "customer" | "included" | "direct" | "whatsapp"
 ): Promise<{ message: string; code: string }> => {
@@ -661,6 +683,16 @@ export const createProduct = async (
   // expects indexed fields (`VariantPrices[i].Field`) for object arrays.
   appendVariantPrices(formData, payload.variantPrices);
 
+  // Only sent when the caller supplied it, so a store with cost price
+  // switched off never clears costs recorded earlier. Empty clears
+  // deliberately.
+  if (payload.costPrice !== undefined) {
+    formData.append(
+      "CostPrice",
+      payload.costPrice == null ? "" : String(payload.costPrice)
+    );
+  }
+
   // Images
   if (payload.imageFile1) {
     formData.append("ImageFile1", {
@@ -732,6 +764,16 @@ export const updateProduct = async (
   );
 
   appendVariantPrices(formData, payload.variantPrices);
+
+  // Only sent when the caller supplied it, so a store with cost price
+  // switched off never clears costs recorded earlier. Empty clears
+  // deliberately.
+  if (payload.costPrice !== undefined) {
+    formData.append(
+      "CostPrice",
+      payload.costPrice == null ? "" : String(payload.costPrice)
+    );
+  }
 
   if (payload.imageFile1) {
     formData.append("ImageFile1", {

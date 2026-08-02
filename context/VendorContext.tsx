@@ -93,6 +93,18 @@ export interface StoreData {
    *  `/whatsapp-checkout-number` endpoint. */
   whatsappCheckoutNumber?: string | null;
   isServiceBased: boolean;
+  /** Whether this vendor tracks what their stock costs them. Off by
+   *  default; flipped from the settings sheet on the Products screen.
+   *  Drives whether the product form shows a cost field. */
+  costPriceEnabled?: boolean;
+  /** Business categories the vendor picked at onboarding. Used to name
+   *  the product variant axis in the vendor's own trade language, so a
+   *  bookshop is asked for a "Format" and a perfume seller for a
+   *  "Bottle size" instead of both being asked for a "Size". See
+   *  `src/utils/variantAxis.ts`. Absent on older API builds, which the
+   *  resolver treats as unknown and falls back to "Size". */
+  businessCategoryIds?: number[] | null;
+  businessCategoryNames?: string[] | null;
   templateId: string;
   isPublished: boolean;
   promoBanner: string | null;

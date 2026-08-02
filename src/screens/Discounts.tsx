@@ -13,10 +13,10 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
-import Modal from "react-native-modal";
 import { useToast } from "react-native-toast-notifications";
 
 import { ScreenHeader } from "../components/ScreenHeader";
+import { BottomSheet } from "../components/BottomSheet";
 import { FeaturePaywallSheet } from "../components/FeaturePaywallSheet";
 import { useFeatures } from "../hooks/useFeatures";
 import { FEATURES, FeatureKey } from "../lib/features";
@@ -420,30 +420,17 @@ function CreateCouponSheet({
     "bg-white border border-gray-200 rounded-xl px-3.5 py-3 text-[14px] text-gray-900";
 
   return (
-    <Modal
-      isVisible={visible}
-      onBackdropPress={onClose}
-      onBackButtonPress={onClose}
-      useNativeDriver
-      avoidKeyboard
-      style={{ justifyContent: "flex-end", margin: 0 }}
+    <BottomSheet
+      visible={visible}
+      onClose={onClose}
+      title="New coupon"
+      height="78%"
     >
-      <View className="bg-gray-50 rounded-t-3xl px-5 pt-5 pb-8">
-        <View className="flex-row items-center justify-between mb-4">
-          <Text
-            className="text-gray-900 text-[17px]"
-            style={{ fontFamily: "PlusJakartaSans_700Bold" }}
-          >
-            New coupon
-          </Text>
-          <Pressable
-            onPress={onClose}
-            className="w-8 h-8 rounded-full items-center justify-center active:bg-gray-100"
-          >
-            <Ionicons name="close" size={18} color="#9ca3af" />
-          </Pressable>
-        </View>
-
+      <ScrollView
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 32 }}
+      >
         <Text className="text-[12px] font-bold text-gray-700 mb-1.5">Code</Text>
         <View className="flex-row" style={{ gap: 8 }}>
           <TextInput
@@ -566,7 +553,7 @@ function CreateCouponSheet({
             {submitting ? "Creating…" : "Create coupon"}
           </Text>
         </Pressable>
-      </View>
-    </Modal>
+      </ScrollView>
+    </BottomSheet>
   );
 }

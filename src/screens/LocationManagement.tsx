@@ -9,7 +9,6 @@ import {
   NativeScrollEvent,
 } from "react-native";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import * as Haptics from "expo-haptics";
 import { useToast } from "react-native-toast-notifications";
@@ -24,6 +23,21 @@ import { ScreenHeader } from "../components/ScreenHeader";
 import { SelectionDrawer } from "../components/SelectionDrawer";
 import KeyboardScreen from "../components/KeyboardScreen";
 import NIGERIA_STATES from "../utils/nigeriaLocations";
+
+/**
+ * Delivery areas. Kept in lock-step with the web `LocationsClient`.
+ *
+ * The vendor's mental model is two levels deep, no jargon:
+ *
+ *   State  →  the areas *they* name  →  a fee per area
+ *
+ * Local governments are no longer offered during setup — vendors
+ * didn't recognise LGA names as "the places I deliver to", so they
+ * now type their own. Areas picked from the old LGA list still load,
+ * still render by their proper name (`resolveAreaName` falls back to
+ * the NIGERIA_STATES table), and stay editable and removable. We
+ * stopped offering LGAs, not reading them.
+ */
 
 interface SelectedLocation {
   stateId: string;
@@ -41,6 +55,20 @@ const haptic = () => {
   }
 };
 
+const ngn = (n: number) => `₦${n.toLocaleString("en-NG")}`;
+
+const slugify = (value: string) =>
+  value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+
+const normalizeName = (value: string) =>
+  value.trim().toLowerCase().replace(/\s+/g, " ");
+
+const digitsOnly = (value: string) => value.replace(/[^\d]/g, "");
+
 export default function LocationManagement() {
   const { storeData, updateVendorSettings, loading } = useVendor();
   const toast = useToast();
@@ -49,36 +77,44 @@ export default function LocationManagement() {
   const [selectedLocations, setSelectedLocations] = useState<
     SelectedLocation[]
   >([]);
-  const [deliveryCharges, setDeliveryCharges] = useState<DeliveryCharge[]>(
-    []
-  );
+  const [deliveryCharges, setDeliveryCharges] = useState<DeliveryCharge[]>([]);
   const [customLocations, setCustomLocations] = useState<
     VendorCustomLocations[]
   >([]);
 
   // UI state
   const [statePickerOpen, setStatePickerOpen] = useState(false);
-  const [lgaPickerStateId, setLgaPickerStateId] = useState<string | null>(
-    null
-  );
-  const [bulkPriceFor, setBulkPriceFor] = useState<string | null>(null);
-  const [bulkPriceValue, setBulkPriceValue] = useState("");
-  const [customForm, setCustomForm] = useState<{
-    stateId: string | null;
-    name: string;
-    charge: string;
-  }>({ stateId: null, name: "", charge: "" });
+  const [bulkFeeFor, setBulkFeeFor] = useState<string | null>(null);
+  const [bulkFeeValue, setBulkFeeValue] = useState("");
+  const [confirmRemove, setConfirmRemove] = useState<string | null>(null);
+  // Which state card has its "add an area" form open. A freshly added
+  // state opens automatically — that empty card used to be a dead end.
+  const [addFormFor, setAddFormFor] = useState<string | null>(null);
+  const [addName, setAddName] = useState("");
+  const [addFee, setAddFee] = useState("");
   const [stateSearch, setStateSearch] = useState("");
   const [saveStatus, setSaveStatus] = useState<
     "idle" | "saving" | "saved" | "error"
   >("idle");
 
+  // Cards open on arrival only for the first state. A vendor covering
+  // ten states was otherwise met with a wall of area rows and had to
+  // scroll past all of them to reach the one they came to edit.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const seededExpandedRef = useRef(false);
+
   // Hydrate from storeData
   useEffect(() => {
     if (!storeData) return;
-    setSelectedLocations(
-      (storeData.vendor_locations as VendorLocation[] | null) ?? []
-    );
+    const locations =
+      (storeData.vendor_locations as VendorLocation[] | null) ?? [];
+    setSelectedLocations(locations);
+    // Seed once — later storeData refreshes (a save, a focus refetch)
+    // must not slam the vendor's open cards shut.
+    if (!seededExpandedRef.current) {
+      seededExpandedRef.current = true;
+      setExpanded(new Set(locations.length > 0 ? [locations[0].stateId] : []));
+    }
     setDeliveryCharges(
       ((storeData.vendor_delivery_charges as VendorDelivery[] | null) ?? []).map(
         (c) => ({
@@ -94,59 +130,47 @@ export default function LocationManagement() {
   const getStateName = (stateId: string) =>
     NIGERIA_STATES.find((s) => s.id === stateId)?.name || stateId;
 
-  const getLgName = (stateId: string, lgId: string) => {
-    const customLoc = customLocations.find((c) => c.id === lgId);
-    if (customLoc) return customLoc.name;
+  /** Vendor-typed name first; falls back to the LGA table so areas
+   *  set up before we dropped LGAs keep reading properly. */
+  const resolveAreaName = (stateId: string, areaId: string) => {
+    const own = customLocations.find((c) => c.id === areaId);
+    if (own) return own.name;
     const state = NIGERIA_STATES.find((s) => s.id === stateId);
-    return state?.localGovernments.find((lg) => lg.id === lgId)?.name || lgId;
+    return state?.localGovernments.find((lg) => lg.id === areaId)?.name || areaId;
   };
 
-  const getCharge = (lgId: string) =>
-    deliveryCharges.find((c) => c.localGovernmentId === lgId)?.charge ?? 0;
+  const getCharge = (areaId: string) =>
+    deliveryCharges.find((c) => c.localGovernmentId === areaId)?.charge ?? 0;
 
-  const isCustom = (lgId: string) =>
-    customLocations.some((c) => c.id === lgId);
+  const areaIdsOf = (stateId: string) =>
+    selectedLocations.find((s) => s.stateId === stateId)?.localGovernmentIds ??
+    [];
 
-  const stateAllIds = (stateId: string): Set<string> => {
-    const state = NIGERIA_STATES.find((s) => s.id === stateId);
-    const lgIds = state?.localGovernments.map((lg) => lg.id) || [];
-    const customIds = customLocations
-      .filter((c) => c.stateId === stateId)
-      .map((c) => c.id);
-    return new Set([...lgIds, ...customIds]);
-  };
-
-  const activeStates = useMemo(
-    () => selectedLocations.filter((l) => l.localGovernmentIds.length > 0),
-    [selectedLocations]
-  );
-
-  const filteredActiveStates = useMemo(() => {
+  const filteredStates = useMemo(() => {
     const term = stateSearch.trim().toLowerCase();
-    if (!term) return activeStates;
-    return activeStates.filter((l) =>
+    if (!term) return selectedLocations;
+    return selectedLocations.filter((l) =>
       getStateName(l.stateId).toLowerCase().includes(term)
     );
-  }, [activeStates, stateSearch]);
+  }, [selectedLocations, stateSearch]);
 
   // Progressive rendering for vendors with many delivery states. We render
   // the first STATES_PAGE_SIZE cards on mount and reveal more in batches as
-  // the user scrolls near the bottom — each card is heavy (it expands to a
-  // list of LGA rows with TextInputs), so eager-rendering 30+ cards on a
-  // cold open noticeably stalls the screen.
-  const STATES_PAGE_SIZE = 2;
-  const [visibleStateCount, setVisibleStateCount] =
-    useState(STATES_PAGE_SIZE);
+  // the user scrolls near the bottom. Cards now arrive collapsed — a header
+  // strip each — so a batch is far cheaper than it was when every card
+  // eager-mounted its area rows and their TextInputs.
+  const STATES_PAGE_SIZE = 6;
+  const [visibleStateCount, setVisibleStateCount] = useState(STATES_PAGE_SIZE);
   // Reset the window when the search/list changes — otherwise switching from
   // a 30-state filter to a 5-state filter would leave the count stuck.
   useEffect(() => {
     setVisibleStateCount(STATES_PAGE_SIZE);
   }, [stateSearch]);
   const visibleStates = useMemo(
-    () => filteredActiveStates.slice(0, visibleStateCount),
-    [filteredActiveStates, visibleStateCount]
+    () => filteredStates.slice(0, visibleStateCount),
+    [filteredStates, visibleStateCount]
   );
-  const hasMoreStates = visibleStateCount < filteredActiveStates.length;
+  const hasMoreStates = visibleStateCount < filteredStates.length;
   const fetchingMoreRef = useRef(false);
   const handleListScroll = useCallback(
     (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -163,205 +187,262 @@ export default function LocationManagement() {
         // mount another batch — keeps the scroll smooth.
         setTimeout(() => {
           setVisibleStateCount((prev) =>
-            Math.min(prev + STATES_PAGE_SIZE, filteredActiveStates.length)
+            Math.min(prev + STATES_PAGE_SIZE, filteredStates.length)
           );
           fetchingMoreRef.current = false;
         }, 0);
       }
     },
-    [hasMoreStates, filteredActiveStates.length]
+    [hasMoreStates, filteredStates.length]
   );
 
   const totalAreas = useMemo(
     () =>
-      activeStates.reduce((sum, s) => sum + s.localGovernmentIds.length, 0),
-    [activeStates]
+      selectedLocations.reduce(
+        (sum, s) => sum + s.localGovernmentIds.length,
+        0
+      ),
+    [selectedLocations]
   );
 
-  const unsetCount = useMemo(
+  const noFeeCount = useMemo(
     () =>
-      activeStates.reduce(
+      selectedLocations.reduce(
         (sum, s) =>
           sum + s.localGovernmentIds.filter((id) => getCharge(id) === 0).length,
         0
       ),
-    [activeStates, deliveryCharges]
+    [selectedLocations, deliveryCharges]
+  );
+
+  const emptyStateCount = useMemo(
+    () =>
+      selectedLocations.filter((s) => s.localGovernmentIds.length === 0).length,
+    [selectedLocations]
   );
 
   const availableStateOptions = useMemo(
     () =>
       NIGERIA_STATES.filter(
-        (s) => !activeStates.some((a) => a.stateId === s.id)
+        (s) => !selectedLocations.some((a) => a.stateId === s.id)
       ).map((s) => ({ value: s.id, label: s.name })),
-    [activeStates]
+    [selectedLocations]
   );
 
-  const lgaPickerOptions = useMemo(() => {
-    if (!lgaPickerStateId) return [];
-    const state = NIGERIA_STATES.find((s) => s.id === lgaPickerStateId);
-    const stateLgs =
-      state?.localGovernments.map((lg) => ({
-        value: lg.id,
-        label: lg.name,
-      })) || [];
-    const customForState = customLocations
-      .filter((c) => c.stateId === lgaPickerStateId)
-      .map((c) => ({ value: c.id, label: `${c.name} (custom)` }));
-    return [...stateLgs, ...customForState];
-  }, [lgaPickerStateId, customLocations]);
-
-  const lgaPickerSelected =
-    selectedLocations.find((l) => l.stateId === lgaPickerStateId)
-      ?.localGovernmentIds || [];
-
   // ===== Mutations =====
-  const handleAddState = (stateId: string) => {
-    setSelectedLocations((prev) => {
-      if (prev.some((l) => l.stateId === stateId)) return prev;
-      return [...prev, { stateId, localGovernmentIds: [] }];
+  const toggleExpanded = (stateId: string) => {
+    haptic();
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(stateId)) next.delete(stateId);
+      else next.add(stateId);
+      return next;
     });
-    setLgaPickerStateId(stateId);
   };
 
-  const handleApplyLgas = (stateId: string, lgIds: string[]) => {
+  const expand = (stateId: string) =>
+    setExpanded((prev) => new Set(prev).add(stateId));
+
+  const openAddForm = (stateId: string) => {
+    setAddFormFor(stateId);
+    setAddName("");
+    setAddFee("");
+    setBulkFeeFor(null);
+    setConfirmRemove(null);
+    // Any action that opens a form has to open the card it lives in.
+    expand(stateId);
+  };
+
+  const handleAddState = (stateId: string) => {
+    // Newest first: the state they just picked is the one they're about
+    // to fill in, so it shouldn't be buried under the others — and on
+    // this screen only the first couple of cards are rendered up front,
+    // so appending would leave the new card off-screen entirely.
+    setSelectedLocations((prev) =>
+      prev.some((l) => l.stateId === stateId)
+        ? prev
+        : [{ stateId, localGovernmentIds: [] }, ...prev]
+    );
+    setStateSearch("");
+    // Land the vendor straight in the "name your area" field — the
+    // whole point of the redesign.
+    openAddForm(stateId);
+  };
+
+  /** Ids already spoken for anywhere in this state — vendor-typed
+   *  areas, legacy LGA picks, and the full LGA table (so a new area
+   *  can never collide with a legacy id and silently share its fee). */
+  const takenIdsIn = (stateId: string) => {
+    const lgaIds =
+      NIGERIA_STATES.find((s) => s.id === stateId)?.localGovernments.map(
+        (lg) => lg.id
+      ) ?? [];
+    return new Set<string>([
+      ...lgaIds,
+      ...customLocations.map((c) => c.id),
+      ...deliveryCharges.map((c) => c.localGovernmentId),
+      ...areaIdsOf(stateId),
+    ]);
+  };
+
+  const addArea = (stateId: string) => {
+    const name = addName.trim();
+    if (!name) {
+      toast.show("Type the name of the area first", { type: "warning" });
+      return;
+    }
+    const duplicate = areaIdsOf(stateId).some(
+      (id) => normalizeName(resolveAreaName(stateId, id)) === normalizeName(name)
+    );
+    if (duplicate) {
+      toast.show(`${name} is already on your ${getStateName(stateId)} list`, {
+        type: "warning",
+      });
+      return;
+    }
+
+    // State-prefixed so the same area name in two states keeps two
+    // separate fees — `vendor_delivery_charges` is a flat id → fee map.
+    const taken = takenIdsIn(stateId);
+    const base = `${stateId}-${slugify(name)}`;
+    let id = base;
+    let n = 2;
+    while (taken.has(id)) id = `${base}-${n++}`;
+
+    const fee = parseInt(addFee || "0", 10) || 0;
+
+    setCustomLocations((prev) => [
+      ...prev,
+      { id, name, stateId, deliveryCharge: String(fee) },
+    ]);
     setSelectedLocations((prev) => {
       if (!prev.some((l) => l.stateId === stateId)) {
-        return [...prev, { stateId, localGovernmentIds: lgIds }];
+        return [...prev, { stateId, localGovernmentIds: [id] }];
       }
       return prev.map((l) =>
-        l.stateId === stateId ? { ...l, localGovernmentIds: lgIds } : l
+        l.stateId === stateId
+          ? { ...l, localGovernmentIds: [...l.localGovernmentIds, id] }
+          : l
       );
     });
+    setDeliveryCharges((prev) => [...prev, { localGovernmentId: id, charge: fee }]);
 
-    const knownInState = stateAllIds(stateId);
-    setDeliveryCharges((prev) => {
-      const filtered = prev.filter(
-        (c) =>
-          !knownInState.has(c.localGovernmentId) ||
-          lgIds.includes(c.localGovernmentId)
-      );
-      const existingIds = new Set(filtered.map((c) => c.localGovernmentId));
-      const additions = lgIds
-        .filter((id) => !existingIds.has(id))
-        .map((id) => ({ localGovernmentId: id, charge: 0 }));
-      return [...filtered, ...additions];
-    });
-  };
-
-  const handleRemoveState = (stateId: string) => {
     haptic();
-    const ids = stateAllIds(stateId);
-    setSelectedLocations((prev) => prev.filter((l) => l.stateId !== stateId));
-    setDeliveryCharges((prev) =>
-      prev.filter((c) => !ids.has(c.localGovernmentId))
-    );
-    setCustomLocations((prev) => prev.filter((c) => c.stateId !== stateId));
+    // Vendors add areas in runs, so keep the form open and cleared
+    // rather than making them re-open it for every single one.
+    setAddName("");
+    setAddFee("");
   };
 
-  const removeLg = (stateId: string, lgId: string) => {
+  const removeArea = (stateId: string, areaId: string) => {
     setSelectedLocations((prev) =>
       prev.map((l) =>
         l.stateId === stateId
           ? {
               ...l,
               localGovernmentIds: l.localGovernmentIds.filter(
-                (id) => id !== lgId
+                (id) => id !== areaId
               ),
             }
           : l
       )
     );
     setDeliveryCharges((prev) =>
-      prev.filter((c) => c.localGovernmentId !== lgId)
+      prev.filter((c) => c.localGovernmentId !== areaId)
     );
-    if (isCustom(lgId)) {
-      setCustomLocations((prev) => prev.filter((c) => c.id !== lgId));
-    }
+    setCustomLocations((prev) => prev.filter((c) => c.id !== areaId));
   };
 
-  const updateCharge = (lgId: string, raw: string) => {
+  const removeState = (stateId: string) => {
+    haptic();
+    const ids = new Set(areaIdsOf(stateId));
+    setSelectedLocations((prev) => prev.filter((l) => l.stateId !== stateId));
+    setDeliveryCharges((prev) =>
+      prev.filter((c) => !ids.has(c.localGovernmentId))
+    );
+    setCustomLocations((prev) => prev.filter((c) => c.stateId !== stateId));
+    setConfirmRemove(null);
+    if (addFormFor === stateId) setAddFormFor(null);
+  };
+
+  const updateCharge = (areaId: string, raw: string) => {
     const parsed = raw === "" ? 0 : parseInt(raw, 10);
     const charge = isNaN(parsed) ? 0 : Math.max(0, parsed);
-    setDeliveryCharges((prev) =>
-      prev.map((c) =>
-        c.localGovernmentId === lgId ? { ...c, charge } : c
-      )
-    );
-  };
-
-  const applyBulkPrice = (stateId: string) => {
-    const parsed = parseInt(bulkPriceValue || "0", 10);
-    if (isNaN(parsed) || parsed < 0) return;
-    const ids = stateAllIds(stateId);
-    setDeliveryCharges((prev) =>
-      prev.map((c) =>
-        ids.has(c.localGovernmentId) ? { ...c, charge: parsed } : c
-      )
-    );
-    setBulkPriceFor(null);
-    setBulkPriceValue("");
-  };
-
-  const addCustomLocation = (stateId: string) => {
-    const name = customForm.name.trim();
-    const charge = parseInt(customForm.charge || "0", 10) || 0;
-    if (!name) {
-      toast.show("Enter a name for the custom area", { type: "warning" });
-      return;
-    }
-    const id = name.toLowerCase().replace(/\s+/g, "-");
-    if (
-      customLocations.some((c) => c.stateId === stateId && c.id === id)
-    ) {
-      toast.show("A custom area with this name already exists", {
-        type: "warning",
-      });
-      return;
-    }
-
-    setCustomLocations((prev) => [
-      ...prev,
-      { id, name, stateId, deliveryCharge: charge.toString() },
-    ]);
-    setSelectedLocations((prev) => {
-      const existing = prev.find((l) => l.stateId === stateId);
+    setDeliveryCharges((prev) => {
+      const existing = prev.find((c) => c.localGovernmentId === areaId);
       if (existing) {
-        return prev.map((l) =>
-          l.stateId === stateId
-            ? {
-                ...l,
-                localGovernmentIds: [...l.localGovernmentIds, id],
-              }
-            : l
+        return prev.map((c) =>
+          c.localGovernmentId === areaId ? { ...c, charge } : c
         );
       }
-      return [...prev, { stateId, localGovernmentIds: [id] }];
+      // Legacy rows sometimes arrive without a charge entry at all —
+      // insert instead of silently dropping the vendor's typing.
+      return [...prev, { localGovernmentId: areaId, charge }];
     });
-    setDeliveryCharges((prev) => [
-      ...prev,
-      { localGovernmentId: id, charge },
-    ]);
-    setCustomForm({ stateId: null, name: "", charge: "" });
+  };
+
+  const applyBulkFee = (stateId: string) => {
+    const parsed = parseInt(bulkFeeValue || "", 10);
+    if (isNaN(parsed) || parsed < 0) return;
+    const ids = new Set(areaIdsOf(stateId));
+    setDeliveryCharges((prev) => {
+      const updated = prev.map((c) =>
+        ids.has(c.localGovernmentId) ? { ...c, charge: parsed } : c
+      );
+      const known = new Set(updated.map((c) => c.localGovernmentId));
+      const missing = [...ids]
+        .filter((id) => !known.has(id))
+        .map((id) => ({ localGovernmentId: id, charge: parsed }));
+      return [...updated, ...missing];
+    });
+    setBulkFeeFor(null);
+    setBulkFeeValue("");
+    toast.show(`${ngn(parsed)} set for every area in ${getStateName(stateId)}`, {
+      type: "success",
+    });
   };
 
   const save = async () => {
-    if (activeStates.length === 0) {
-      toast.show("Add at least one delivery area before saving", {
-        type: "warning",
-      });
+    const ready = selectedLocations.filter(
+      (s) => s.localGovernmentIds.length > 0
+    );
+    if (ready.length === 0) {
+      toast.show("Add at least one area before saving", { type: "warning" });
       return;
     }
+    // States with no areas would be a dead end at checkout — the buyer
+    // picks the state, then finds nothing to pick. Drop them; the card
+    // already says they aren't live.
+    const liveIds = new Set(ready.flatMap((s) => s.localGovernmentIds));
     setSaveStatus("saving");
     try {
       await updateVendorSettings({
-        vendor_locations: selectedLocations,
-        vendor_delivery_charges: deliveryCharges.map((c) => ({
-          localGovernmentId: c.localGovernmentId,
-          charge: c.charge,
-        })) as VendorDelivery[],
-        vendor_custom_locations: customLocations,
+        vendor_locations: ready,
+        vendor_delivery_charges: deliveryCharges
+          .filter((c) => liveIds.has(c.localGovernmentId))
+          .map((c) => ({
+            localGovernmentId: c.localGovernmentId,
+            charge: c.charge,
+          })) as VendorDelivery[],
+        // Keep each area's own copy of the fee in step with the charges
+        // map, otherwise later edits leave it stale.
+        vendor_custom_locations: customLocations
+          .filter((c) => liveIds.has(c.id))
+          .map((c) => ({ ...c, deliveryCharge: String(getCharge(c.id)) })),
       });
+      const dropped = selectedLocations.filter(
+        (s) => s.localGovernmentIds.length === 0
+      );
+      setSelectedLocations(ready);
       setSaveStatus("saved");
+      if (dropped.length > 0) {
+        toast.show(
+          `${dropped.map((s) => getStateName(s.stateId)).join(", ")} ${
+            dropped.length === 1 ? "wasn't" : "weren't"
+          } saved. No areas added yet`,
+          { type: "warning" }
+        );
+      }
       if (Platform.OS === "ios") {
         Haptics.notificationAsync(
           Haptics.NotificationFeedbackType.Success
@@ -379,10 +460,29 @@ export default function LocationManagement() {
   // ===== Sub-renders =====
   const renderStateCard = (loc: SelectedLocation) => {
     const stateName = getStateName(loc.stateId);
-    const stateLgIds = loc.localGovernmentIds;
-    const unset = stateLgIds.filter((id) => getCharge(id) === 0).length;
-    const showingCustomForm = customForm.stateId === loc.stateId;
-    const showingBulkForm = bulkPriceFor === loc.stateId;
+    const areaIds = loc.localGovernmentIds;
+    const fees = areaIds.map(getCharge);
+    const priced = fees.filter((f) => f > 0);
+    const addFormOpen = addFormFor === loc.stateId;
+    const bulkOpen = bulkFeeFor === loc.stateId;
+    const confirming = confirmRemove === loc.stateId;
+    const isOpen = expanded.has(loc.stateId);
+    const unpriced = areaIds.length - priced.length;
+
+    // A collapsed card has to say everything that matters about the
+    // state, otherwise collapsing just hides problems.
+    const summary = (() => {
+      if (areaIds.length === 0) return "No areas yet";
+      const count = `${areaIds.length} area${areaIds.length === 1 ? "" : "s"}`;
+      if (priced.length === 0) return `${count} · no fees set`;
+      const min = Math.min(...priced);
+      const max = Math.max(...priced);
+      const range = min === max ? ngn(min) : `${ngn(min)} – ${ngn(max)}`;
+      return unpriced > 0
+        ? `${count} · ${range} · ${unpriced} with no fee`
+        : `${count} · ${range}`;
+    })();
+    const needsAttention = areaIds.length === 0 || unpriced > 0;
 
     return (
       <View
@@ -396,9 +496,16 @@ export default function LocationManagement() {
           elevation: 1,
         }}
       >
-        {/* Header */}
-        <View className="flex-row items-start justify-between gap-3 px-4 py-3.5 border-b border-gray-100">
-          <View className="flex-row items-center gap-3 flex-1 min-w-0">
+        {/* Header — the whole strip toggles the card open and shut */}
+        <View
+          className={`flex-row items-center justify-between pr-2 ${
+            isOpen ? "border-b border-gray-100" : ""
+          }`}
+        >
+          <Pressable
+            onPress={() => toggleExpanded(loc.stateId)}
+            className="flex-row items-center gap-3 flex-1 min-w-0 px-4 py-3.5 active:bg-gray-50"
+          >
             <View className="w-10 h-10 rounded-xl bg-blue-50 items-center justify-center">
               <Ionicons name="location" size={18} color="#2563eb" />
             </View>
@@ -407,22 +514,32 @@ export default function LocationManagement() {
                 className="font-extrabold text-gray-900 text-[15px]"
                 numberOfLines={1}
               >
-                {stateName} State
+                {stateName}
               </Text>
-              <Text className="text-[11.5px] text-gray-500 mt-0.5">
-                {stateLgIds.length}{" "}
-                {stateLgIds.length === 1 ? "area" : "areas"}
-                {unset > 0 && (
-                  <Text className="text-amber-700 font-semibold">
-                    {" · "}
-                    {unset} need{unset === 1 ? "s" : ""} pricing
-                  </Text>
-                )}
+              <Text
+                className={`text-[11.5px] mt-0.5 ${
+                  needsAttention
+                    ? "text-amber-700 font-semibold"
+                    : "text-gray-500"
+                }`}
+                numberOfLines={1}
+              >
+                {summary}
               </Text>
             </View>
-          </View>
+            <Ionicons
+              name={isOpen ? "chevron-up" : "chevron-down"}
+              size={16}
+              color="#9ca3af"
+            />
+          </Pressable>
           <Pressable
-            onPress={() => handleRemoveState(loc.stateId)}
+            onPress={() => {
+              setConfirmRemove(loc.stateId);
+              setAddFormFor(null);
+              setBulkFeeFor(null);
+              expand(loc.stateId);
+            }}
             className="w-8 h-8 rounded-full items-center justify-center active:bg-rose-50"
             hitSlop={6}
           >
@@ -430,51 +547,83 @@ export default function LocationManagement() {
           </Pressable>
         </View>
 
-        {/* LGA pricing list */}
-        {stateLgIds.map((lgId, idx) => {
-          const charge = getCharge(lgId);
-          const isUnset = charge === 0;
+        {/* Inline remove confirmation */}
+        {isOpen && confirming && (
+          <View className="px-4 py-3 bg-rose-50 border-b border-rose-100">
+            <Text className="text-[12.5px] font-bold text-rose-900">
+              Remove {stateName}?
+            </Text>
+            <Text className="text-[11.5px] text-rose-700 mt-0.5">
+              Its {areaIds.length} area{areaIds.length === 1 ? "" : "s"} and{" "}
+              {areaIds.length === 1 ? "its fee" : "their fees"} will be deleted.
+            </Text>
+            <View className="flex-row items-center gap-2 mt-2.5">
+              <Pressable
+                onPress={() => removeState(loc.stateId)}
+                className="px-3 h-9 rounded-xl bg-rose-600 items-center justify-center"
+              >
+                <Text className="text-[12.5px] font-bold text-white">
+                  Yes, remove
+                </Text>
+              </Pressable>
+              <Pressable
+                onPress={() => setConfirmRemove(null)}
+                className="px-3 h-9 rounded-xl items-center justify-center"
+              >
+                <Text className="text-[12.5px] font-semibold text-gray-700">
+                  Keep it
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
+
+        {/* Not-live warning for a state with nothing under it */}
+        {isOpen && areaIds.length === 0 && !confirming && (
+          <View className="flex-row items-start gap-2 px-4 py-3 bg-amber-50 border-b border-amber-100">
+            <Ionicons
+              name="alert-circle"
+              size={13}
+              color="#d97706"
+              style={{ marginTop: 1 }}
+            />
+            <Text className="flex-1 text-[11.5px] text-amber-800 leading-[16px]">
+              Customers can't choose {stateName} yet. Add at least one area
+              below.
+            </Text>
+          </View>
+        )}
+
+        {/* Area rows */}
+        {isOpen &&
+          areaIds.map((areaId, idx) => {
+          const charge = getCharge(areaId);
+          const noFee = charge === 0;
           return (
             <View
-              key={lgId}
+              key={areaId}
               className={`flex-row items-center gap-3 px-4 py-3 ${
                 idx > 0 ? "border-t border-gray-50" : ""
               }`}
             >
               <View className="flex-1 min-w-0">
-                <View className="flex-row items-center gap-1.5">
-                  <Text
-                    className="text-[14px] font-semibold text-gray-900 flex-shrink"
-                    numberOfLines={1}
-                  >
-                    {getLgName(loc.stateId, lgId)}
+                <Text
+                  className="text-[14px] font-semibold text-gray-900"
+                  numberOfLines={1}
+                >
+                  {resolveAreaName(loc.stateId, areaId)}
+                </Text>
+                {noFee && (
+                  <Text className="text-[11px] text-amber-700 font-semibold mt-0.5">
+                    No fee set, shows as free delivery
                   </Text>
-                  {isCustom(lgId) && (
-                    <View className="bg-blue-100 px-1.5 py-0.5 rounded">
-                      <Text className="text-[9px] font-extrabold text-blue-700 tracking-wide">
-                        CUSTOM
-                      </Text>
-                    </View>
-                  )}
-                </View>
-                {isUnset && (
-                  <View className="flex-row items-center gap-1 mt-0.5">
-                    <Ionicons
-                      name="alert-circle"
-                      size={11}
-                      color="#d97706"
-                    />
-                    <Text className="text-[11px] text-amber-700 font-semibold">
-                      Set delivery fee
-                    </Text>
-                  </View>
                 )}
               </View>
 
               <View className="flex-row items-center gap-1.5">
                 <View
                   className={`flex-row items-center bg-gray-50 border rounded-xl overflow-hidden ${
-                    isUnset ? "border-amber-200" : "border-gray-200"
+                    noFee ? "border-amber-200" : "border-gray-200"
                   }`}
                 >
                   <Text className="px-2 text-[13px] font-semibold text-gray-500">
@@ -482,7 +631,7 @@ export default function LocationManagement() {
                   </Text>
                   <TextInput
                     value={charge === 0 ? "" : String(charge)}
-                    onChangeText={(t) => updateCharge(lgId, t)}
+                    onChangeText={(t) => updateCharge(areaId, digitsOnly(t))}
                     keyboardType="number-pad"
                     placeholder="0"
                     placeholderTextColor="#cbd5e1"
@@ -491,7 +640,7 @@ export default function LocationManagement() {
                   />
                 </View>
                 <Pressable
-                  onPress={() => removeLg(loc.stateId, lgId)}
+                  onPress={() => removeArea(loc.stateId, areaId)}
                   className="w-7 h-7 rounded-full items-center justify-center active:bg-gray-100"
                   hitSlop={4}
                 >
@@ -502,48 +651,121 @@ export default function LocationManagement() {
           );
         })}
 
-        {/* Bulk price form */}
-        {showingBulkForm && (
-          <View className="px-4 py-3 bg-amber-50/60 border-t border-amber-100">
+        {/* Add-an-area form — the primary action, always one tap away */}
+        {!isOpen ? null : addFormOpen ? (
+          <View className="px-4 py-3.5 bg-blue-50 border-t border-blue-100">
+            <Text className="text-[12px] font-bold text-gray-700 mb-2">
+              Add an area in {stateName}
+            </Text>
+            <View className="gap-2">
+              <TextInput
+                autoFocus
+                value={addName}
+                onChangeText={setAddName}
+                placeholder="Area name, e.g. Lekki Phase 2"
+                placeholderTextColor="#9ca3af"
+                returnKeyType="next"
+                className="bg-white border border-gray-200 rounded-xl px-3 h-11 text-[13.5px] text-gray-900"
+              />
+              <View className="flex-row items-center gap-2">
+                <View className="flex-1 flex-row items-center bg-white border border-gray-200 rounded-xl overflow-hidden h-11">
+                  <Text className="px-3 text-[13px] font-semibold text-gray-500">
+                    ₦
+                  </Text>
+                  <TextInput
+                    value={addFee}
+                    onChangeText={(t) => setAddFee(digitsOnly(t))}
+                    keyboardType="number-pad"
+                    placeholder="Delivery fee"
+                    placeholderTextColor="#9ca3af"
+                    returnKeyType="done"
+                    onSubmitEditing={() => addArea(loc.stateId)}
+                    className="flex-1 pr-3 text-[13.5px] font-semibold text-gray-900"
+                  />
+                </View>
+                <Pressable
+                  onPress={() => addArea(loc.stateId)}
+                  className="px-5 h-11 rounded-xl bg-blue-600 items-center justify-center"
+                >
+                  <Text className="text-[13px] font-bold text-white">Add</Text>
+                </Pressable>
+              </View>
+            </View>
+            <View className="flex-row items-center justify-between gap-3 mt-2">
+              <Text className="flex-1 text-[11px] text-gray-500 leading-[15px]">
+                Leave the fee empty for free delivery. Add as many areas as you
+                like.
+              </Text>
+              <Pressable
+                onPress={() => setAddFormFor(null)}
+                className="px-2 py-1"
+                hitSlop={6}
+              >
+                <Text className="text-[12px] font-bold text-gray-600">Done</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => {
+              haptic();
+              openAddForm(loc.stateId);
+            }}
+            className="flex-row items-center gap-2 px-4 py-3 border-t border-gray-100 active:bg-blue-50"
+          >
+            <View className="w-6 h-6 rounded-full bg-blue-50 items-center justify-center">
+              <Ionicons name="add" size={14} color="#1d4ed8" />
+            </View>
+            <Text className="text-[13px] font-bold text-blue-700">
+              Add an area in {stateName}
+            </Text>
+          </Pressable>
+        )}
+
+        {/* One fee for every area */}
+        {isOpen && bulkOpen && (
+          <View className="px-4 py-3 bg-amber-50 border-t border-amber-100">
             <Text className="text-[12px] font-semibold text-gray-700 mb-2">
-              Apply this price to all {stateLgIds.length} areas in {stateName}
+              Charge the same fee for all {areaIds.length} areas in {stateName}
             </Text>
             <View className="flex-row items-center gap-2">
-              <View className="flex-1 flex-row items-center bg-white border border-gray-200 rounded-xl overflow-hidden max-w-[200px]">
+              <View className="flex-1 flex-row items-center bg-white border border-gray-200 rounded-xl overflow-hidden max-w-[160px] h-10">
                 <Text className="px-3 text-[13px] font-semibold text-gray-500">
                   ₦
                 </Text>
                 <TextInput
                   autoFocus
-                  value={bulkPriceValue}
-                  onChangeText={setBulkPriceValue}
+                  value={bulkFeeValue}
+                  onChangeText={(t) => setBulkFeeValue(digitsOnly(t))}
                   keyboardType="number-pad"
                   placeholder="e.g. 1500"
                   placeholderTextColor="#9ca3af"
-                  className="flex-1 py-2 pr-3 text-[13px] font-semibold text-gray-900"
+                  returnKeyType="done"
+                  onSubmitEditing={() => applyBulkFee(loc.stateId)}
+                  className="flex-1 pr-3 text-[13px] font-semibold text-gray-900"
                 />
               </View>
               <Pressable
-                onPress={() => applyBulkPrice(loc.stateId)}
-                disabled={!bulkPriceValue}
-                className={`px-3 h-9 rounded-xl items-center justify-center ${
-                  !bulkPriceValue ? "bg-gray-200" : "bg-blue-600"
+                onPress={() => applyBulkFee(loc.stateId)}
+                disabled={!bulkFeeValue}
+                className={`px-3 h-10 rounded-xl items-center justify-center ${
+                  !bulkFeeValue ? "bg-gray-200" : "bg-blue-600"
                 }`}
               >
                 <Text
                   className={`text-[12.5px] font-bold ${
-                    !bulkPriceValue ? "text-gray-400" : "text-white"
+                    !bulkFeeValue ? "text-gray-400" : "text-white"
                   }`}
                 >
-                  Apply
+                  Apply to all
                 </Text>
               </Pressable>
               <Pressable
                 onPress={() => {
-                  setBulkPriceFor(null);
-                  setBulkPriceValue("");
+                  setBulkFeeFor(null);
+                  setBulkFeeValue("");
                 }}
-                className="px-3 h-9 rounded-xl items-center justify-center"
+                className="px-2 h-10 items-center justify-center"
               >
                 <Text className="text-[12.5px] font-semibold text-gray-700">
                   Cancel
@@ -553,122 +775,48 @@ export default function LocationManagement() {
           </View>
         )}
 
-        {/* Custom area form */}
-        {showingCustomForm && (
-          <View className="px-4 py-3 bg-blue-50/60 border-t border-blue-100">
-            <Text className="text-[12px] font-semibold text-gray-700 mb-2">
-              Add a custom area in {stateName}
-            </Text>
-            <View className="gap-2">
-              <TextInput
-                autoFocus
-                value={customForm.name}
-                onChangeText={(t) =>
-                  setCustomForm((p) => ({ ...p, name: t }))
-                }
-                placeholder="Area name (e.g. Lekki Phase 2)"
-                placeholderTextColor="#9ca3af"
-                className="bg-white border border-gray-200 rounded-xl px-3 py-2.5 text-[13.5px] text-gray-900"
-              />
-              <View className="flex-row items-center gap-2">
-                <View className="flex-1 flex-row items-center bg-white border border-gray-200 rounded-xl overflow-hidden">
-                  <Text className="px-3 text-[13px] font-semibold text-gray-500">
-                    ₦
-                  </Text>
-                  <TextInput
-                    value={customForm.charge}
-                    onChangeText={(t) =>
-                      setCustomForm((p) => ({ ...p, charge: t }))
-                    }
-                    keyboardType="number-pad"
-                    placeholder="Delivery fee"
-                    placeholderTextColor="#9ca3af"
-                    className="flex-1 py-2 pr-3 text-[13.5px] font-semibold text-gray-900"
-                  />
-                </View>
-                <Pressable
-                  onPress={() => addCustomLocation(loc.stateId)}
-                  className="px-3 h-10 rounded-xl bg-blue-600 items-center justify-center"
-                >
-                  <Text className="text-[12.5px] font-bold text-white">
-                    Add area
-                  </Text>
-                </Pressable>
-              </View>
-              <Pressable
-                onPress={() =>
-                  setCustomForm({ stateId: null, name: "", charge: "" })
-                }
-                className="self-start px-3 py-1"
-              >
-                <Text className="text-[12px] font-semibold text-gray-600">
-                  Cancel
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        )}
-
-        {/* Action row */}
-        <View className="flex-row flex-wrap gap-2 px-4 py-3 bg-gray-50 border-t border-gray-100">
-          <Pressable
-            onPress={() => {
-              haptic();
-              setLgaPickerStateId(loc.stateId);
-            }}
-            className="flex-row items-center gap-1.5 px-3 h-8 rounded-full bg-white border border-gray-200"
-          >
-            <Ionicons name="create-outline" size={12} color="#374151" />
-            <Text className="text-[11.5px] font-bold text-gray-700">
-              Manage areas
-            </Text>
-          </Pressable>
-          <Pressable
-            onPress={() => {
-              haptic();
-              setCustomForm({ stateId: loc.stateId, name: "", charge: "" });
-              setBulkPriceFor(null);
-            }}
-            className="flex-row items-center gap-1.5 px-3 h-8 rounded-full bg-white border border-gray-200"
-          >
-            <Ionicons name="add" size={12} color="#374151" />
-            <Text className="text-[11.5px] font-bold text-gray-700">
-              Add custom area
-            </Text>
-          </Pressable>
-          {stateLgIds.length > 1 && (
+        {isOpen && areaIds.length > 1 && !bulkOpen && (
+          <View className="flex-row items-center gap-2 px-4 py-2.5 bg-gray-50 border-t border-gray-100">
             <Pressable
               onPress={() => {
                 haptic();
-                setBulkPriceFor(loc.stateId);
-                setBulkPriceValue("");
-                setCustomForm({ stateId: null, name: "", charge: "" });
+                setBulkFeeFor(loc.stateId);
+                setBulkFeeValue("");
+                setAddFormFor(null);
+                setConfirmRemove(null);
               }}
-              className="flex-row items-center gap-1.5 px-3 h-8 rounded-full bg-amber-50 border border-amber-200"
+              className="flex-row items-center gap-1.5 px-3 h-8 rounded-full bg-white border border-gray-200"
             >
-              <Ionicons name="flash" size={12} color="#b45309" />
-              <Text className="text-[11.5px] font-bold text-amber-800">
-                Set price for all
+              <Ionicons name="cash-outline" size={13} color="#374151" />
+              <Text className="text-[11.5px] font-bold text-gray-700">
+                Same fee for all areas
               </Text>
             </Pressable>
-          )}
-        </View>
+            {priced.length === areaIds.length && (
+              <View className="flex-row items-center gap-1">
+                <Ionicons name="checkmark-circle" size={13} color="#047857" />
+                <Text className="text-[11.5px] font-semibold text-emerald-700">
+                  Every area priced
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
       </View>
     );
   };
 
   return (
     <View className="flex-1 bg-gray-50">
-      <ScreenHeader title="Delivery Locations" />
+      <ScreenHeader title="Delivery Areas" />
 
       <KeyboardScreen
         className="flex-1"
-        // Generous cushion above the keyboard top — the price/area
-        // inputs are nested deep in stacked state cards, often near the
-        // bottom of a long list. Default 24px puts the focused input
-        // right at the keyboard edge, which reads as "covered" even
-        // when it technically isn't. 120 keeps the input clearly in
-        // view with room for the placeholder/value to breathe.
+        // Generous cushion above the keyboard top — the fee/area inputs
+        // are nested deep in stacked state cards, often near the bottom
+        // of a long list. Default 24px puts the focused input right at
+        // the keyboard edge, which reads as "covered" even when it
+        // technically isn't. 120 keeps it clearly in view.
         extraScrollHeight={120}
         // Reserve room at the bottom of the scroll content for the
         // sticky save bar (~110px) plus a comfort margin so the last
@@ -690,8 +838,9 @@ export default function LocationManagement() {
               <Text className="text-white text-[18px] font-extrabold tracking-tight">
                 Where you deliver
               </Text>
-              <Text className="text-white/75 text-[12.5px] mt-0.5">
-                Pick the states and areas, and set how much you charge.
+              <Text className="text-white/75 text-[12.5px] mt-0.5 leading-[17px]">
+                Add the places you deliver to and what you charge. Customers
+                pick from this list when they check out.
               </Text>
             </View>
           </View>
@@ -699,24 +848,22 @@ export default function LocationManagement() {
 
         <View className="px-5">
           {/* Stats strip */}
-          {activeStates.length > 0 && (
+          {selectedLocations.length > 0 && (
             <View className="flex-row gap-2 mb-4">
-              <SafeAreaView className="flex-1" edges={[]}>
+              <View className="flex-1">
                 <StatTile
                   label="States"
-                  value={String(activeStates.length)}
+                  value={String(selectedLocations.length)}
                 />
-              </SafeAreaView>
+              </View>
               <View className="flex-1">
                 <StatTile label="Areas" value={String(totalAreas)} />
               </View>
               <View className="flex-1">
                 <StatTile
-                  label={unsetCount > 0 ? "Need pricing" : "All priced"}
-                  value={
-                    unsetCount > 0 ? String(unsetCount) : <CheckGlyph />
-                  }
-                  tone={unsetCount > 0 ? "amber" : "emerald"}
+                  label={noFeeCount > 0 ? "No fee yet" : "All priced"}
+                  value={noFeeCount > 0 ? String(noFeeCount) : <CheckGlyph />}
+                  tone={noFeeCount > 0 ? "amber" : "emerald"}
                 />
               </View>
             </View>
@@ -725,11 +872,11 @@ export default function LocationManagement() {
           {/* Section heading */}
           <View className="flex-row items-center justify-between mb-3">
             <Text className="text-[14px] font-extrabold text-gray-900">
-              {activeStates.length === 0
+              {selectedLocations.length === 0
                 ? "Get started"
                 : "Your delivery areas"}
             </Text>
-            {activeStates.length > 0 && (
+            {selectedLocations.length > 0 && (
               <Pressable
                 onPress={() => setStatePickerOpen(true)}
                 className="flex-row items-center gap-1.5 px-3 h-8 rounded-full bg-blue-50 border border-blue-100 active:bg-blue-100"
@@ -743,7 +890,7 @@ export default function LocationManagement() {
           </View>
 
           {/* Search bar — only when it earns its space */}
-          {activeStates.length >= 3 && (
+          {selectedLocations.length >= 3 && (
             <View className="flex-row items-center bg-white border border-gray-200 rounded-2xl px-4 h-11 mb-3">
               <Ionicons name="search" size={16} color="#9ca3af" />
               <TextInput
@@ -766,42 +913,13 @@ export default function LocationManagement() {
           )}
 
           {/* Empty state OR cards */}
-          {activeStates.length === 0 ? (
-            <View className="bg-white rounded-3xl border border-dashed border-gray-200 px-6 py-10 items-center">
-              <View className="w-14 h-14 rounded-2xl bg-blue-50 items-center justify-center mb-3">
-                <Ionicons name="cube-outline" size={28} color="#2563eb" />
-              </View>
-              <Text className="text-[15px] font-extrabold text-gray-900">
-                No delivery areas yet
-              </Text>
-              <Text className="text-[12.5px] text-gray-500 text-center mt-1 mb-4 max-w-xs leading-[18px]">
-                Add the states and local governments you deliver to, then set
-                how much you charge for each.
-              </Text>
-              <Pressable
-                onPress={() => setStatePickerOpen(true)}
-                className="flex-row items-center gap-1.5 px-4 h-11 rounded-2xl bg-blue-600"
-                style={{
-                  shadowColor: "#2563eb",
-                  shadowOffset: { width: 0, height: 4 },
-                  shadowOpacity: 0.25,
-                  shadowRadius: 8,
-                  elevation: 4,
-                }}
-              >
-                <Ionicons name="add" size={16} color="white" />
-                <Text className="text-white font-bold text-[13.5px]">
-                  Add your first state
-                </Text>
-              </Pressable>
-            </View>
-          ) : filteredActiveStates.length === 0 ? (
+          {selectedLocations.length === 0 ? (
+            <EmptyState onAdd={() => setStatePickerOpen(true)} />
+          ) : filteredStates.length === 0 ? (
             <View className="bg-white rounded-2xl border border-gray-100 px-4 py-6 items-center">
               <Text className="text-[13px] text-gray-600 text-center">
                 No states match{" "}
-                <Text className="font-bold text-gray-900">
-                  "{stateSearch}"
-                </Text>
+                <Text className="font-bold text-gray-900">"{stateSearch}"</Text>
                 .
               </Text>
               <Pressable
@@ -843,27 +961,28 @@ export default function LocationManagement() {
         <View className="flex-row items-center gap-3">
           <View className="flex-1 min-w-0">
             <Text className="text-[11.5px] text-gray-500" numberOfLines={1}>
-              {activeStates.length === 0
-                ? "Add at least one delivery area to save."
-                : `${activeStates.length} state${
-                    activeStates.length === 1 ? "" : "s"
+              {totalAreas === 0
+                ? "Add at least one area to save."
+                : `${selectedLocations.length} state${
+                    selectedLocations.length === 1 ? "" : "s"
                   } · ${totalAreas} area${totalAreas === 1 ? "" : "s"}`}
             </Text>
-            {unsetCount > 0 && (
+            {emptyStateCount > 0 && (
               <Text className="text-[11px] font-semibold text-amber-700 mt-0.5">
-                {unsetCount} need{unsetCount === 1 ? "s" : ""} a price
+                {emptyStateCount} state
+                {emptyStateCount === 1 ? " has" : "s have"} no areas yet
               </Text>
             )}
           </View>
           <Pressable
             onPress={save}
-            disabled={loading || activeStates.length === 0}
+            disabled={loading || totalAreas === 0}
             className={`px-5 h-12 rounded-2xl items-center justify-center flex-row gap-2 ${
               saveStatus === "saved"
                 ? "bg-emerald-600"
                 : saveStatus === "error"
                 ? "bg-rose-600"
-                : loading || activeStates.length === 0
+                : loading || totalAreas === 0
                 ? "bg-gray-200"
                 : "bg-blue-600"
             }`}
@@ -871,8 +990,7 @@ export default function LocationManagement() {
               minWidth: 150,
               shadowColor: "#2563eb",
               shadowOffset: { width: 0, height: 4 },
-              shadowOpacity:
-                loading || activeStates.length === 0 ? 0 : 0.25,
+              shadowOpacity: loading || totalAreas === 0 ? 0 : 0.25,
               shadowRadius: 8,
               elevation: 4,
             }}
@@ -887,9 +1005,7 @@ export default function LocationManagement() {
             ) : saveStatus === "saved" ? (
               <>
                 <Ionicons name="checkmark-circle" size={16} color="white" />
-                <Text className="text-white font-bold text-[14px]">
-                  Saved
-                </Text>
+                <Text className="text-white font-bold text-[14px]">Saved</Text>
               </>
             ) : saveStatus === "error" ? (
               <Text className="text-white font-bold text-[14px]">
@@ -898,9 +1014,7 @@ export default function LocationManagement() {
             ) : (
               <Text
                 className={`font-bold text-[14px] ${
-                  activeStates.length === 0
-                    ? "text-gray-400"
-                    : "text-white"
+                  totalAreas === 0 ? "text-gray-400" : "text-white"
                 }`}
               >
                 Save changes
@@ -914,38 +1028,71 @@ export default function LocationManagement() {
       <SelectionDrawer
         visible={statePickerOpen}
         onClose={() => setStatePickerOpen(false)}
-        title="Add a state"
+        title="Which state do you deliver to?"
         searchPlaceholder="Search states..."
         options={availableStateOptions}
         onSelect={(val) => {
+          setStatePickerOpen(false);
           handleAddState(val);
         }}
         emptyMessage="You've already added every state."
-      />
-
-      {/* LGA picker (multi-select) */}
-      <SelectionDrawer
-        visible={!!lgaPickerStateId}
-        onClose={() => setLgaPickerStateId(null)}
-        title={
-          lgaPickerStateId
-            ? `Areas in ${getStateName(lgaPickerStateId)}`
-            : "Areas"
-        }
-        searchPlaceholder="Search areas..."
-        options={lgaPickerOptions}
-        multiSelect
-        selectedValues={lgaPickerSelected}
-        onApply={(values) =>
-          lgaPickerStateId && handleApplyLgas(lgaPickerStateId, values)
-        }
-        applyLabel="Done"
       />
     </View>
   );
 }
 
 // ----- Small helpers -----
+
+function EmptyState({ onAdd }: { onAdd: () => void }) {
+  const steps = [
+    "Pick a state you deliver to",
+    "Add the areas inside it, in your own words",
+    "Set what you charge for each one",
+  ];
+  return (
+    <View className="bg-white rounded-3xl border border-dashed border-gray-200 px-6 py-8 items-center">
+      <View className="w-14 h-14 rounded-2xl bg-blue-50 items-center justify-center mb-3">
+        <Ionicons name="location-outline" size={28} color="#2563eb" />
+      </View>
+      <Text className="text-[15px] font-extrabold text-gray-900">
+        No delivery areas yet
+      </Text>
+      <Text className="text-[12.5px] text-gray-500 text-center mt-1">
+        It takes three steps.
+      </Text>
+      <View className="w-full mt-4 mb-5 gap-2.5">
+        {steps.map((step, i) => (
+          <View key={step} className="flex-row items-start gap-2.5">
+            <View className="w-5 h-5 rounded-full bg-blue-600 items-center justify-center mt-[1px]">
+              <Text className="text-[11px] font-extrabold text-white">
+                {i + 1}
+              </Text>
+            </View>
+            <Text className="flex-1 text-[13px] text-gray-700 leading-[18px]">
+              {step}
+            </Text>
+          </View>
+        ))}
+      </View>
+      <Pressable
+        onPress={onAdd}
+        className="flex-row items-center gap-1.5 px-4 h-11 rounded-2xl bg-blue-600"
+        style={{
+          shadowColor: "#2563eb",
+          shadowOffset: { width: 0, height: 4 },
+          shadowOpacity: 0.25,
+          shadowRadius: 8,
+          elevation: 4,
+        }}
+      >
+        <Ionicons name="add" size={16} color="white" />
+        <Text className="text-white font-bold text-[13.5px]">
+          Pick your first state
+        </Text>
+      </Pressable>
+    </View>
+  );
+}
 
 function StatTile({
   label,
@@ -958,7 +1105,11 @@ function StatTile({
 }) {
   const styles =
     tone === "amber"
-      ? { container: "bg-amber-50 border-amber-100", label: "text-amber-700", value: "text-amber-800" }
+      ? {
+          container: "bg-amber-50 border-amber-100",
+          label: "text-amber-700",
+          value: "text-amber-800",
+        }
       : tone === "emerald"
       ? {
           container: "bg-emerald-50 border-emerald-100",

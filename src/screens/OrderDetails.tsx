@@ -195,6 +195,40 @@ const getPrevAction = (status: OrderStatus) => {
 // Linear progression a healthy order moves through.
 const STATUS_JOURNEY: OrderStatus[] = ["Pending", "Paid", "Shipped"];
 
+/**
+ * How one captured answer reads on a vendor's phone.
+ *
+ * Booleans travel as "true"/"false" and dates as ISO because that's what
+ * round-trips cleanly. Neither is what a baker should be squinting at
+ * over her first coffee, so both become English here.
+ *
+ * Read entirely off the snapshot on the answer row, never from the live
+ * question, so an order from months ago still reads correctly after she
+ * renamed or deleted the question that produced it.
+ */
+const formatAnswerValue = (answer: {
+  fieldType?: string;
+  value?: string | null;
+}): string => {
+  const raw = (answer.value ?? "").trim();
+  if (!raw) return "—";
+
+  if (answer.fieldType === "boolean") return raw === "true" ? "Yes" : "No";
+
+  if (answer.fieldType === "date") {
+    const parsed = new Date(`${raw}T00:00:00`);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toLocaleDateString("en-NG", {
+        weekday: "short",
+        day: "numeric",
+        month: "long",
+      });
+    }
+  }
+
+  return raw;
+};
+
 const formatNgn = (amount: number) =>
   `₦${Number(amount).toLocaleString(undefined, {
     minimumFractionDigits: 2,
@@ -242,6 +276,22 @@ export default function OrderDetailsScreen() {
   const qc = useQueryClient();
   const perms = useStaffPermissions();
   const { storeData } = useVendor();
+
+  // Order-scope answers only; the per-item ones are nested under their
+  // own line further down.
+  const orderAnswers = (safeOrder.answers ?? []).filter(
+    (answer: any) => !answer.orderRequestId,
+  );
+
+  // The first date answer is the due date. First, rather than matching a
+  // label like "delivery date", because vendors name these themselves —
+  // a baker's is "Event date", a tailor's is "Needed by" — and matching
+  // on wording we don't control would only work for the vendors who
+  // happened to pick ours.
+  const dueDate = orderAnswers.find(
+    (answer: any) =>
+      answer.fieldType === "date" && (answer.value ?? "").trim() !== "",
+  );
 
   const [status, setStatus] = useState<OrderStatus>(mapStatus(safeOrder));
   // Disables the action buttons while a status-change request is in
@@ -877,6 +927,28 @@ export default function OrderDetailsScreen() {
           </View>
         </View>
 
+        {/* === WHEN IT'S NEEDED ===
+            Pinned above the items in the largest type on the screen, and
+            only rendered when the vendor actually asks for a date. It is
+            the one fact here that decides what she does today — sitting
+            it in a list next to "is this a gift" would be the difference
+            between a cake being baked and not. */}
+        {dueDate ? (
+          <View className="px-5 mb-4">
+            <View className="flex-row items-center bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3.5">
+              <Ionicons name="calendar" size={20} color="#d97706" />
+              <View className="ml-3 flex-1 min-w-0">
+                <Text className="text-[10.5px] font-extrabold text-amber-700 uppercase tracking-[1.2px]">
+                  {dueDate.label}
+                </Text>
+                <Text className="text-[17px] font-extrabold text-amber-950 tracking-tight mt-0.5">
+                  {formatAnswerValue(dueDate)}
+                </Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
         {/* === ITEMS === */}
         <View className="px-5 mb-4">
           <View className="flex-row items-center justify-between mb-2 pl-1">
@@ -953,7 +1025,46 @@ export default function OrderDetailsScreen() {
                         </Text>
                       </View>
                     ) : null}
+                    {/* Vendor-defined options for this line. Only ever
+                        populated on the new system, so these never
+                        collide with the size/colour chips above. */}
+                    {(item.selectedOptions ?? []).map(
+                      (option: any, oi: number) => (
+                        <View
+                          key={`${option.type}-${option.value}-${oi}`}
+                          className="bg-violet-50 border border-violet-100 px-2 py-0.5 rounded-md"
+                        >
+                          <Text className="text-[11px] font-extrabold text-violet-700">
+                            {option.value}
+                          </Text>
+                        </View>
+                      ),
+                    )}
                   </View>
+
+                  {/* What the customer said about THIS item. Two cakes
+                      in one order each carry their own, which is why
+                      these are asked per product rather than once. */}
+                  {(item.answers ?? []).length > 0 && (
+                    <View className="mt-2 pl-2.5 border-l-2 border-gray-100">
+                      {item.answers.map((answer: any, ai: number) => (
+                        <View
+                          key={`${answer.label}-${ai}`}
+                          className="flex-row gap-1.5 mb-0.5"
+                        >
+                          <Text className="text-[11px] text-gray-400">
+                            {answer.label}:
+                          </Text>
+                          <Text
+                            className="text-[11px] font-semibold text-gray-700 flex-1"
+                            numberOfLines={3}
+                          >
+                            {formatAnswerValue(answer)}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  )}
                 </View>
 
                 <View className="justify-center items-end pl-2">
@@ -970,6 +1081,58 @@ export default function OrderDetailsScreen() {
             ))}
           </View>
         </View>
+
+        {/* === FROM THE CUSTOMER ===
+            Everything they told the vendor at checkout, in the order she
+            asked it. Rendered from the snapshot on each answer, so it
+            still reads correctly long after she edits the question. */}
+        {(orderAnswers.length > 0 || order.customerNote) && (
+          <View className="px-5 mb-4">
+            <Text className="text-[10.5px] font-extrabold text-gray-400 uppercase tracking-[1.2px] mb-2 pl-1">
+              From the customer
+            </Text>
+
+            <View
+              className="bg-white rounded-2xl border border-gray-100 overflow-hidden px-4 py-3.5"
+              style={{
+                shadowColor: "#0f172a",
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.04,
+                shadowRadius: 8,
+                elevation: 1,
+              }}
+            >
+              {orderAnswers.map((answer: any, index: number) => (
+                <View
+                  key={`${answer.label}-${index}`}
+                  className={index > 0 ? "mt-2.5" : ""}
+                >
+                  <Text className="text-[11px] text-gray-400">
+                    {answer.label}
+                  </Text>
+                  <Text className="text-[13.5px] font-semibold text-gray-900 mt-0.5">
+                    {formatAnswerValue(answer)}
+                  </Text>
+                </View>
+              ))}
+
+              {order.customerNote ? (
+                <View
+                  className={
+                    orderAnswers.length > 0
+                      ? "mt-3 pt-3 border-t border-gray-100"
+                      : ""
+                  }
+                >
+                  <Text className="text-[11px] text-gray-400">Their note</Text>
+                  <Text className="text-[13.5px] text-gray-900 mt-0.5 leading-5">
+                    {order.customerNote}
+                  </Text>
+                </View>
+              ) : null}
+            </View>
+          </View>
+        )}
 
         {/* === PAYMENT SUMMARY === */}
         <View className="px-5 mb-4">

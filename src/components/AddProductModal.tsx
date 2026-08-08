@@ -28,6 +28,7 @@ import {
   generateProductDescription,
   getAiDescriptionCredits,
   AiDescriptionLimitError,
+  MAX_PRODUCT_IMAGES,
 } from "../../src/api/vendor/vendor.api";
 import {
   CreateProductPayload,
@@ -69,6 +70,80 @@ interface Props {
 const SECTION_LABEL =
   "text-[11px] font-bold text-gray-400 uppercase tracking-[1.2px] mb-3 mt-1";
 const FIELD_LABEL = "text-[13px] font-semibold text-gray-700 mb-2";
+
+import VariantTypeBuilder, {
+  type VariantTypeDraft,
+} from "./VariantTypeBuilder";
+import VariantPricingTable, {
+  type CombinationValue,
+} from "./VariantPricingTable";
+import {
+  getVariantCombinations,
+  getVariantTypes,
+  saveVariantTypes,
+} from "../api/vendor/customOrders.api";
+
+/**
+ * Lays a classic product's Size/Colour lists out as builder cards.
+ *
+ * Presentation only — it does NOT convert the product. Those values stay
+ * in SizeOptions/ColorOptions and are saved back there unchanged unless
+ * the vendor does something the old shape can't hold. The point is one
+ * editor for every vendor rather than an old screen and a new screen.
+ */
+function classicToDrafts(
+  sizeList: string[],
+  colourList: string[],
+  axisName: string,
+): VariantTypeDraft[] {
+  const drafts: VariantTypeDraft[] = [];
+
+  if (sizeList.length > 0) {
+    drafts.push({
+      name: axisName,
+      kind: "list",
+      allowMultiple: false,
+      isRequired: false,
+      options: sizeList.map((label) => ({ label, priceDelta: "" })),
+    });
+  }
+
+  if (colourList.length > 0) {
+    drafts.push({
+      name: "Colour",
+      kind: "colour",
+      allowMultiple: false,
+      isRequired: false,
+      options: colourList.map((label) => ({ label, priceDelta: "" })),
+    });
+  }
+
+  return drafts;
+}
+
+/**
+ * Has the vendor done something the classic two-axis model can't
+ * express? That is the ONLY thing that moves a product onto the new
+ * system, so nobody is migrated just for opening the editor.
+ *
+ * A third axis, a price on a single choice, a pick-many axis, a required
+ * axis, or renaming the non-colour axis all need the new tables. Two
+ * plain lists called Size and Colour do not.
+ */
+function needsVariantTypes(
+  drafts: VariantTypeDraft[],
+  axisName: string,
+): boolean {
+  if (drafts.length > 2) return true;
+
+  return drafts.some((type) => {
+    if (type.allowMultiple || type.isRequired) return true;
+    if (type.options.some((o) => Number(o.priceDelta || 0) > 0)) return true;
+    if (type.kind === "colour") return false;
+    const name = type.name.trim().toLowerCase();
+    return name !== axisName.trim().toLowerCase() && name !== "size";
+  });
+}
 
 const PRESET_COLORS = [
   "#0F172A",
@@ -224,7 +299,15 @@ export default function AddProductModal({
     isServiceBased: storeData?.isServiceBased,
   });
 
-  const [productImages, setProductImages] = useState<string[]>([]);
+  // Slot-stable image list: index i is server slot i+1, holes stay as
+  // null so an image never silently "moves" into another slot on save.
+  const [productImages, setProductImages] = useState<(string | null)[]>([]);
+  // Slots the vendor explicitly cleared while editing an existing
+  // product — drives the RemoveImageN flags sent on save.
+  const [removedImageSlots, setRemovedImageSlots] = useState<boolean[]>([]);
+  // Which photo slot the full-screen magnified preview is showing;
+  // null = closed. Tapping a filled tile opens it.
+  const [previewSlot, setPreviewSlot] = useState<number | null>(null);
   const [productName, setProductName] = useState("");
   // Category is now an ID (linked to a CatalogCategory row), not a free
   // string. Null = uncategorised. Hydrated from productData.catalogCategoryId
@@ -245,8 +328,38 @@ export default function AddProductModal({
   const [stockQuantity, setStockQuantity] = useState("");
   const [productDescription, setProductDescription] = useState("");
   const [sizes, setSizes] = useState<string[]>([]);
-  const [currentSize, setCurrentSize] = useState("");
   const [colors, setColors] = useState<string[]>([]);
+
+  // The vendor's own option types for this product. There is ONE editor
+  // for everyone: a product still on the classic Size/Colour columns
+  // opens with those two already laid out as cards, so nobody sees a
+  // different screen and nothing has to be migrated.
+  const [variantTypes, setVariantTypes] = useState<VariantTypeDraft[]>([]);
+  // Sticky once the product is already converted, so deleting the extra
+  // type later doesn't drop it back onto classic data that's long gone.
+  const [alreadyConverted, setAlreadyConverted] = useState(false);
+  // Specific variant prices the vendor added by hand. Kept apart from
+  // `variantTypes` because a row spans several types at once and has
+  // nowhere sensible to live inside any one of them.
+  const [combinations, setCombinations] = useState<CombinationValue>([]);
+  // Set while the colour wheel is open on behalf of a builder card, so
+  // the chosen hex lands on the right option type instead of the legacy
+  // colour list.
+  const [colourTarget, setColourTarget] = useState<
+    ((hex: string) => void) | null
+  >(null);
+
+  // Once true this product saves through the new option tables.
+  //
+  // Priced variants force it. The classic size/colour grid can only
+  // express a full (size, colour) pair on exactly two fixed axes, so it
+  // cannot hold "all Blue is ₦45,000" or a third axis at all. Without
+  // this the save gate skips saveVariantTypes entirely and the vendor's
+  // rows are silently discarded.
+  const usesNewVariantSystem =
+    alreadyConverted ||
+    combinations.length > 0 ||
+    needsVariantTypes(variantTypes, axis.one);
   const [currentColor, setCurrentColor] = useState("#2563EB");
   const [features, setFeatures] = useState<string[]>([]);
   const [currentFeature, setCurrentFeature] = useState("");
@@ -270,12 +383,6 @@ export default function AddProductModal({
   // Scratch state for the rule form: a size the vendor is typing and
   // whether the extra color palette is showing. Both live here rather
   // than inside the form object so they survive a re-render of it.
-  const [variantSizeDraft, setVariantSizeDraft] = useState("");
-  const [variantPaletteOpen, setVariantPaletteOpen] = useState(false);
-  const [variantForm, setVariantForm] = useState<
-    | (VariantEntry & { index: number })
-    | null
-  >(null);
 
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [pickerReady, setPickerReady] = useState(false);
@@ -295,9 +402,22 @@ export default function AddProductModal({
 
   // Feature gating — secondary photo slot is paywalled. Tapping it when
   // locked opens the upgrade sheet instead of the image picker.
-  const { has: hasFeature, aiDescriptionCreditsPerDay: aiDailyLimit } =
-    useFeatures();
+  const {
+    has: hasFeature,
+    aiDescriptionCreditsPerDay: aiDailyLimit,
+    imagesPerProduct,
+  } = useFeatures();
   const canUseSecondaryImage = hasFeature(FEATURES.PRODUCTS_SECONDARY_IMAGE);
+  // How many of the 5 image slots this plan unlocks. The plan's numeric
+  // limit wins; legacy plans without one fall back to the boolean
+  // secondary-image key (granted = all slots, absent = cover only).
+  // Kept in lockstep with the server's EnforceImageFeatureGateAsync.
+  const allowedImageSlots =
+    imagesPerProduct != null && imagesPerProduct > 0
+      ? Math.min(imagesPerProduct, MAX_PRODUCT_IMAGES)
+      : canUseSecondaryImage
+        ? MAX_PRODUCT_IMAGES
+        : 1;
   const canUseVariants = hasFeature(FEATURES.PRODUCTS_VARIANTS);
   const canUseCategories = hasFeature(FEATURES.PRODUCTS_CATEGORIES);
   // Orderly AI is gated by both the boolean feature key AND the
@@ -402,10 +522,14 @@ export default function AddProductModal({
       );
       setProductDescription(productData.description ?? "");
 
-      const existingImages: string[] = [];
-      if (productData.image) existingImages.push(productData.image);
-      if (productData.image2) existingImages.push(productData.image2);
-      setProductImages(existingImages);
+      setProductImages([
+        productData.image ?? null,
+        productData.image2 ?? null,
+        productData.image3 ?? null,
+        productData.image4 ?? null,
+        productData.image5 ?? null,
+      ]);
+      setRemovedImageSlots([]);
 
       setSizes(productData.sizeOptions ?? []);
       setColors(productData.colourOptions ?? []);
@@ -413,9 +537,80 @@ export default function AddProductModal({
       setEnableVariants(
         !!(
           (productData.sizeOptions && productData.sizeOptions.length) ||
-          (productData.colourOptions && productData.colourOptions.length)
+          (productData.colourOptions && productData.colourOptions.length) ||
+          productData.usesVariantTypes === true
         )
       );
+
+      // Seed the builder. A converted product loads its real types; a
+      // classic one is SHOWN as Size and Colour cards without being
+      // converted, so the vendor sees one consistent editor and their
+      // data stays exactly where it is until they do something the old
+      // shape can't hold.
+      setAlreadyConverted(productData.usesVariantTypes === true);
+      setCombinations([]);
+      if (productData.usesVariantTypes) {
+        setVariantTypes([]);
+        void getVariantTypes(productData.id).then((types) => {
+          const drafts: VariantTypeDraft[] = types.map((type) => ({
+            id: type.id,
+            name: type.name,
+            kind: type.kind,
+            allowMultiple: type.allowMultiple,
+            isRequired: type.isRequired,
+            options: type.options.map((option) => ({
+              id: option.id,
+              label: option.label,
+              priceDelta: option.priceDelta ? String(option.priceDelta) : "",
+            })),
+          }));
+          setVariantTypes(drafts);
+
+          // Rows arrive as option IDS; the table is keyed by NAME.
+          // Translate once here against the drafts we just built.
+          void getVariantCombinations(productData.id).then((rows) => {
+            const byId = new Map<string, { typeName: string; optionLabel: string }>();
+            drafts.forEach((type) => {
+              type.options.forEach((option) => {
+                if (option.id) {
+                  byId.set(option.id, {
+                    typeName: type.name,
+                    optionLabel: option.label,
+                  });
+                }
+              });
+            });
+
+            setCombinations(
+              rows
+                .map((row) => {
+                  const parts = row.optionIds
+                    .map((id) => byId.get(id))
+                    .filter(
+                      (p): p is { typeName: string; optionLabel: string } => !!p,
+                    );
+                  // A row naming an option that no longer exists is
+                  // dropped; the choice it described went with it.
+                  if (parts.length !== row.optionIds.length) return null;
+                  return {
+                    parts,
+                    price: row.price == null ? "" : String(row.price),
+                    stock: row.stock == null ? "" : String(row.stock),
+                  };
+                })
+                .filter((r): r is CombinationValue[number] => r !== null),
+            );
+          });
+        });
+      } else {
+        setVariantTypes(
+          classicToDrafts(
+            productData.sizeOptions ?? [],
+            productData.colourOptions ?? [],
+            axis.one,
+          ),
+        );
+      }
       // Pre-fill explicit variant entries from the API. Each row keeps
       // its own (size, color) — either may be null when the vendor only
       // wants to constrain one axis.
@@ -428,7 +623,6 @@ export default function AddProductModal({
           stock: v.stock == null ? "" : String(v.stock),
         }))
       );
-      setVariantForm(null);
       return;
     }
     if (mode === "add" && initialDraft) {
@@ -439,6 +633,7 @@ export default function AddProductModal({
       setStockQuantity(initialDraft.stockQuantity ?? "");
       setProductDescription(initialDraft.productDescription ?? "");
       setProductImages(initialDraft.productImages ?? []);
+      setRemovedImageSlots([]);
       setSizes(initialDraft.sizes ?? []);
       setColors(initialDraft.colors ?? []);
       setFeatures(initialDraft.features ?? []);
@@ -458,7 +653,16 @@ export default function AddProductModal({
         });
       });
       setVariantEntries(draftEntries);
-      setVariantForm(null);
+      // Drafts are local and predate option types, so a resumed one lays
+      // its sizes and colours out as cards like any classic product.
+      setAlreadyConverted(false);
+      setVariantTypes(
+        classicToDrafts(
+          initialDraft.sizes ?? [],
+          initialDraft.colors ?? [],
+          axis.one,
+        ),
+      );
       return;
     }
     // Fresh Add — clean slate.
@@ -505,30 +709,33 @@ export default function AddProductModal({
       aspect: [1, 1],
     });
     if (!result.canceled && result.assets.length > 0) {
-      const next = [...productImages];
-      next[slot] = result.assets[0].uri;
-      setProductImages(next.filter(Boolean));
+      const uri = result.assets[0].uri;
+      setProductImages((prev) => {
+        const next = [...prev];
+        next[slot] = uri;
+        return next;
+      });
+      // A fresh pick supersedes a pending "remove" for the same slot.
+      setRemovedImageSlots((prev) => {
+        const next = [...prev];
+        next[slot] = false;
+        return next;
+      });
     }
   };
 
   const removeImage = (index: number) => {
-    setProductImages(productImages.filter((_, i) => i !== index));
+    // Null the slot instead of splicing so the other photos keep their
+    // server slots; mark it removed so an edit save clears it remotely.
+    setProductImages((prev) => prev.map((u, i) => (i === index ? null : u)));
+    setRemovedImageSlots((prev) => {
+      const next = [...prev];
+      next[index] = true;
+      return next;
+    });
   };
 
   // Sizes
-  const addSize = () => {
-    const value = currentSize.trim().toUpperCase();
-    if (!value) return;
-    if (sizes.includes(value)) {
-      toast.show("Size already added", { type: "info" });
-      return;
-    }
-    setSizes((prev) => [...prev, value]);
-    setCurrentSize("");
-  };
-  const removeSize = (sizeToRemove: string) => {
-    setSizes(sizes.filter((s) => s !== sizeToRemove));
-  };
 
   // Colors
   const onColorChange = (color: { hex: string }) => {
@@ -548,8 +755,110 @@ export default function AddProductModal({
     }
     requestAnimationFrame(() => setPickerReady(true));
   };
+  /**
+   * Opens the wheel on behalf of a builder card. The editor already owns
+   * the picker and all its state, so routing through here keeps custom
+   * shades working on mobile instead of quietly dropping them to a
+   * preset-only palette.
+   */
+  /** Writes the product's whole option setup in one call. */
+  const persistVariantTypes = async (catalogItemId: string) => {
+    // The payload drops unnamed types and blank choices, so the indices
+    // the server resolves refs against are the FILTERED ones. Rows are
+    // held by name precisely so this is a lookup rather than an
+    // index-shifting exercise.
+    const keptTypes = variantTypes.filter(
+      (t) => t.name.trim() && t.options.some((o) => o.label.trim()),
+    );
+    const keptOptions = keptTypes.map((t) =>
+      t.options.filter((o) => o.label.trim()),
+    );
+    const same = (a: string, b: string) =>
+      a.trim().toLowerCase() === b.trim().toLowerCase();
+
+    const combinationPayload = combinations
+      .map((entry) => {
+        const price = entry.price === "" ? null : Number(entry.price);
+        const stock = entry.stock === "" ? null : Number(entry.stock);
+        // A row with neither says nothing worth storing.
+        if (price === null && stock === null) return null;
+        if (price !== null && !Number.isFinite(price)) return null;
+        if (stock !== null && !Number.isFinite(stock)) return null;
+
+        const optionRefs = entry.parts.map((part) => {
+          const typeIndex = keptTypes.findIndex((t) =>
+            same(t.name, part.typeName),
+          );
+          if (typeIndex < 0) return null;
+          const optionIndex = keptOptions[typeIndex].findIndex((o) =>
+            same(o.label, part.optionLabel),
+          );
+          if (optionIndex < 0) return null;
+          return { typeIndex, optionIndex };
+        });
+
+        // A renamed or deleted choice leaves the row pointing at
+        // nothing. The table flags these with a "Check" badge, so
+        // dropping them here isn't silent.
+        if (optionRefs.some((r) => r === null)) return null;
+
+        return {
+          optionRefs: optionRefs as Array<{
+            typeIndex: number;
+            optionIndex: number;
+          }>,
+          price,
+          stock,
+        };
+      })
+      .filter(
+        (
+          c,
+        ): c is {
+          optionRefs: Array<{ typeIndex: number; optionIndex: number }>;
+          price: number | null;
+          stock: number | null;
+        } => c !== null,
+      );
+
+    await saveVariantTypes(catalogItemId, {
+      types: keptTypes.map((t) => ({
+        id: t.id ?? null,
+        name: t.name.trim(),
+        kind: t.kind,
+        allowMultiple: t.allowMultiple,
+        isRequired: t.isRequired,
+        options: t.options
+          .filter((o) => o.label.trim())
+          .map((o) => ({
+            id: o.id ?? null,
+            label: o.label.trim(),
+            priceDelta: Number(o.priceDelta || 0) || 0,
+          })),
+      })),
+      // Always sent from this editor, so clearing every row is possible
+      // here. Omitting it is what tells the server "leave them alone".
+      combinations: combinationPayload,
+    });
+  };
+
+  const requestCustomColour = (apply: (hex: string) => void) => {
+    setColourTarget(() => apply);
+    openColorPicker();
+  };
+
   const confirmColor = () => {
     const hex = currentColor.toUpperCase();
+
+    // A builder card asked for this one — hand it back and leave the
+    // legacy colour list alone.
+    if (colourTarget) {
+      colourTarget(hex);
+      setColourTarget(null);
+      setShowColorPicker(false);
+      return;
+    }
+
     if (colors.includes(hex)) {
       toast.show("Color already added", { type: "info" });
       setShowColorPicker(false);
@@ -557,14 +866,6 @@ export default function AddProductModal({
     }
     setColors((prev) => [...prev, hex]);
     setShowColorPicker(false);
-  };
-  const pickPresetColor = (hex: string) => {
-    haptic();
-    if (colors.includes(hex.toUpperCase())) return;
-    setColors((prev) => [...prev, hex.toUpperCase()]);
-  };
-  const removeColor = (hexToRemove: string) => {
-    setColors(colors.filter((c) => c !== hexToRemove));
   };
 
   // Features
@@ -630,7 +931,7 @@ export default function AddProductModal({
       (productName ?? "").trim() ||
       (productDescription ?? "").trim() ||
       (price ?? "").trim() ||
-      productImages.length > 0;
+      productImages.some(Boolean);
     if (!hasAnything) {
       toast.show("Add a name, photo, or description before saving a draft", {
         type: "info",
@@ -660,9 +961,20 @@ export default function AddProductModal({
         costPrice,
         stockQuantity,
         productDescription,
-        productImages,
-        sizes,
-        colors,
+        // Drafts predate slot-stable images — keep the legacy compact
+        // string[] shape so old app builds can still read them.
+        productImages: productImages.filter((u): u is string => !!u),
+        // Read off the builder, not the seed-only `sizes`/`colors`
+        // state, or a resumed draft would lose whatever the vendor
+        // actually typed.
+        sizes: variantTypes
+          .filter((t) => t.kind === "list")
+          .flatMap((t) => t.options.map((o) => o.label.trim()))
+          .filter(Boolean),
+        colors: variantTypes
+          .filter((t) => t.kind === "colour")
+          .flatMap((t) => t.options.map((o) => o.label.trim().toUpperCase()))
+          .filter(Boolean),
         features,
         enableVariants,
         variantPrices: draftVariantPrices,
@@ -690,6 +1002,7 @@ export default function AddProductModal({
     setStockQuantity(draft.stockQuantity ?? "");
     setProductDescription(draft.productDescription ?? "");
     setProductImages(draft.productImages ?? []);
+    setRemovedImageSlots([]);
     setSizes(draft.sizes ?? []);
     setColors(draft.colors ?? []);
     setFeatures(draft.features ?? []);
@@ -706,13 +1019,14 @@ export default function AddProductModal({
       });
     });
     setVariantEntries(restored);
-    setVariantForm(null);
     setDraftsSheetOpen(false);
     toast.show("Draft loaded", { type: "success" });
   };
 
   const resetForm = () => {
     setProductImages([]);
+    setRemovedImageSlots([]);
+    setPreviewSlot(null);
     setProductName("");
     setCatalogCategoryId(null);
     setPrice("");
@@ -722,11 +1036,9 @@ export default function AddProductModal({
     setSizes([]);
     setColors([]);
     setFeatures([]);
-    setCurrentSize("");
     setCurrentFeature("");
     setEnableVariants(false);
     setVariantEntries([]);
-    setVariantForm(null);
     setSaveError(null);
     setErrors({
       productName: "",
@@ -736,120 +1048,9 @@ export default function AddProductModal({
     });
   };
 
-  // === Variant entry editor helpers ===
 
-  // True when an existing entry in the list matches the form's
-  // (size, color) — used to block duplicate combos.
-  const entryConflicts = (
-    list: VariantEntry[],
-    candidate: { size: string | null; color: string | null },
-    skipIndex: number
-  ) => {
-    const norm = (v: string | null | undefined) =>
-      (v ?? "").trim().toLowerCase();
-    return list.some(
-      (e, i) =>
-        i !== skipIndex &&
-        norm(e.size) === norm(candidate.size) &&
-        norm(e.color) === norm(candidate.color)
-    );
-  };
 
-  const openVariantForm = (index: number) => {
-    haptic();
-    setVariantSizeDraft("");
-    setVariantPaletteOpen(false);
-    if (index === -1) {
-      setVariantForm({
-        index: -1,
-        size: null,
-        color: null,
-        price: "",
-        stock: "",
-      });
-    } else {
-      const existing = variantEntries[index];
-      setVariantForm({ index, ...existing });
-    }
-  };
 
-  const closeVariantForm = () => {
-    setVariantForm(null);
-    setVariantSizeDraft("");
-    setVariantPaletteOpen(false);
-  };
-
-  // A size typed inside the rule form has to land on the product too,
-  // or the rule would price something no customer can select.
-  const commitVariantSizeDraft = () => {
-    const next = variantSizeDraft.trim().toUpperCase();
-    if (!next) return;
-    if (!sizes.includes(next)) setSizes((prev) => [...prev, next]);
-    setVariantForm((prev) => (prev ? { ...prev, size: next } : prev));
-    setVariantSizeDraft("");
-  };
-
-  // Same for a color picked from the palette inside the rule form.
-  const pickVariantColor = (hex: string) => {
-    haptic();
-    const H = hex.toUpperCase();
-    if (!colors.some((c) => c.toUpperCase() === H)) {
-      setColors((prev) => [...prev, H]);
-    }
-    setVariantForm((prev) => (prev ? { ...prev, color: H } : prev));
-    setVariantPaletteOpen(false);
-  };
-
-  const saveVariantForm = () => {
-    if (!variantForm) return;
-    if (!variantForm.size && !variantForm.color) {
-      toast.show(`Choose a ${axis.lower}, a color, or both for this rule`, {
-        type: "danger",
-      });
-      return;
-    }
-    const priceNum = Number((variantForm.price ?? "").trim());
-    if (!Number.isFinite(priceNum) || priceNum <= 0) {
-      toast.show("Enter the price for this combination", { type: "danger" });
-      return;
-    }
-    if (
-      entryConflicts(
-        variantEntries,
-        { size: variantForm.size, color: variantForm.color },
-        variantForm.index
-      )
-    ) {
-      toast.show("You already have a rule for that combination", {
-        type: "danger",
-      });
-      return;
-    }
-    const rawStock = (variantForm.stock ?? "").trim();
-    const next: VariantEntry = {
-      size: variantForm.size,
-      color: variantForm.color,
-      price: String(priceNum),
-      // Empty means "not tracked here". Zero is meaningful and must
-      // survive: it's how a vendor marks one combination sold out.
-      stock:
-        rawStock === ""
-          ? ""
-          : String(Math.max(0, parseInt(rawStock, 10) || 0)),
-    };
-    setVariantEntries((prev) => {
-      if (variantForm.index === -1) return [...prev, next];
-      const copy = [...prev];
-      copy[variantForm.index] = next;
-      return copy;
-    });
-    closeVariantForm();
-  };
-
-  const deleteVariantEntry = (index: number) => {
-    haptic();
-    setVariantEntries((prev) => prev.filter((_, i) => i !== index));
-  };
 
   const handleSave = async () => {
     setSaveError(null);
@@ -867,8 +1068,30 @@ export default function AddProductModal({
       // Rows naming a size/color the vendor has since removed are
       // pruned — same rule the web drawer applies — so we never ship an
       // override no customer can ever match.
-      const sizeSet = new Set(sizes);
-      const colorSet = new Set(colors.map((c) => c.toLowerCase()));
+      // Which system this product saves under. Sticky via
+      // `alreadyConverted` so a converted product doesn't flip back to
+      // the classic columns when the vendor removes the extra type —
+      // the classic data for it is long gone by then.
+      const useTypes = enableVariants && usesNewVariantSystem;
+
+      // Derive the classic columns back out of the builder cards, for
+      // products that haven't converted.
+      const classicSizes = variantTypes
+        .filter((t) => t.kind === "list")
+        .flatMap((t) => t.options.map((o) => o.label.trim()))
+        .filter(Boolean);
+      const classicColours = variantTypes
+        .filter((t) => t.kind === "colour")
+        .flatMap((t) => t.options.map((o) => o.label.trim().toUpperCase()))
+        .filter(Boolean);
+
+      // Built from the builder's contents, NOT the legacy sizes/colors
+      // state — that state is only seeded on open now and never edited,
+      // so filtering against it would silently drop a vendor's price
+      // rules the moment they renamed a size.
+      const sizeSet = new Set(classicSizes);
+      const colorSet = new Set(classicColours.map((c) => c.toLowerCase()));
+
       const variantPricesPayload = enableVariants
         ? variantEntries
             .map((e) => {
@@ -919,39 +1142,58 @@ export default function AddProductModal({
             : `SKU-${Date.now()}`,
         badge: "New",
         features: features.length > 0 ? features : undefined,
-        colourOptions: colors.length > 0 ? colors : undefined,
-        sizeOptions: sizes.length > 0 ? sizes : undefined,
-        variantPrices: variantPricesPayload,
+        // Classic products keep writing SizeOptions/ColorOptions exactly
+        // as before. A product doing something the old shape can't hold
+        // sends the new tables instead, and then the classic columns are
+        // left out entirely so the two price resolvers can never both
+        // fire on the same line.
+        colourOptions: useTypes
+          ? undefined
+          : classicColours.length > 0
+            ? classicColours
+            : undefined,
+        sizeOptions: useTypes
+          ? undefined
+          : classicSizes.length > 0
+            ? classicSizes
+            : undefined,
+        variantPrices: useTypes ? undefined : variantPricesPayload,
       };
 
-      if (
-        productImages[0] &&
-        (productImages[0].startsWith("file://") ||
-          productImages[0].startsWith("content://"))
-      ) {
-        payload.imageFile1 = {
-          uri: productImages[0],
-          name: "image1.jpg",
-          type: "image/jpeg",
-        };
-      }
-      if (
-        productImages[1] &&
-        (productImages[1].startsWith("file://") ||
-          productImages[1].startsWith("content://"))
-      ) {
-        payload.imageFile2 = {
-          uri: productImages[1],
-          name: "image2.jpg",
-          type: "image/jpeg",
-        };
+      for (let slot = 0; slot < MAX_PRODUCT_IMAGES; slot++) {
+        const uri = productImages[slot];
+        // Only freshly-picked local files upload; slots still holding
+        // their server URL are left untouched by the API.
+        if (
+          uri &&
+          (uri.startsWith("file://") || uri.startsWith("content://"))
+        ) {
+          (payload as Record<string, any>)[`imageFile${slot + 1}`] = {
+            uri,
+            name: `image${slot + 1}.jpg`,
+            type: "image/jpeg",
+          };
+        } else if (mode === "edit" && removedImageSlots[slot] && !uri) {
+          // Cleared without replacement — ask the server to drop it.
+          (payload as Record<string, any>)[`removeImage${slot + 1}`] = true;
+        }
       }
 
       if (mode === "edit" && productData?.id) {
         await updateProduct(productData.id, payload);
+        // Option types are a separate call because they're separate
+        // tables. The product itself has saved by now, so a failure here
+        // is reported rather than rolled back — silently dropping the
+        // options would leave a cake with no flavours and no explanation.
+        if (useTypes) await persistVariantTypes(productData.id);
         toast.show("Product updated", { type: "success" });
       } else {
-        await createProduct(payload);
+        const created = await createProduct(payload);
+        // On create the id only exists once the product is written.
+        if (useTypes) {
+          const newId = (created as any)?.data?.id ?? (created as any)?.id;
+          if (newId) await persistVariantTypes(newId);
+        }
         toast.show("Product created", { type: "success" });
         // Creating the first product flips vendorOnboardProgressResponse on
         // the server. Refetch so checklistItems (and the onboarding progress
@@ -1112,91 +1354,107 @@ export default function AddProductModal({
               contentContainerStyle={{ paddingHorizontal: 20 }}
               bottomPadding={24}
             >
-              {/* IMAGES */}
+              {/* IMAGES — progressive grid: filled photos plus exactly one
+                  "add" tile. The next slot only appears after the previous
+                  one is filled, so the section never shows a wall of empty
+                  placeholder squares. */}
               <Text className={`${SECTION_LABEL} mt-5`}>Photos</Text>
-              <View className="flex-row gap-3 mb-1">
-                {[0, 1].map((slot) => {
-                  const uri = productImages[slot];
-                  const isPrimary = slot === 0;
-                  const isLocked = !isPrimary && !canUseSecondaryImage;
-                  return (
-                    <Pressable
-                      key={slot}
-                      onPress={() => {
-                        if (isLocked) {
-                          setPaywallFeature(FEATURES.PRODUCTS_SECONDARY_IMAGE);
-                          return;
-                        }
-                        pickImage(slot);
-                      }}
-                      className={`flex-1 aspect-square rounded-2xl overflow-hidden border border-dashed ${
-                        isLocked
-                          ? "bg-gray-50 border-gray-200"
-                          : "bg-white border-gray-200"
-                      }`}
-                    >
-                      {uri ? (
-                        <View className="w-full h-full">
-                          <AppImage
-                            uri={uri}
-                            style={{ width: "100%", height: "100%" }}
-                          />
-                          <View className="absolute inset-0 bg-black/15" />
-                          <View className="absolute top-2 left-2 bg-white/95 px-2 py-0.5 rounded-full">
-                            <Text className="text-[9px] font-extrabold text-gray-700 tracking-wide uppercase">
-                              {isPrimary ? "Primary" : "Secondary"}
-                            </Text>
-                          </View>
-                          <Pressable
-                            onPress={() => removeImage(slot)}
-                            className="absolute top-2 right-2 bg-white/95 w-7 h-7 rounded-full items-center justify-center"
-                            hitSlop={4}
-                          >
-                            <Ionicons name="trash-outline" size={14} color="#dc2626" />
-                          </Pressable>
-                        </View>
-                      ) : isLocked ? (
-                        <View className="flex-1 items-center justify-center px-3">
-                          <View className="w-10 h-10 rounded-full bg-white items-center justify-center mb-2 border border-gray-200">
-                            <Ionicons
-                              name="lock-closed"
-                              size={16}
-                              color="#9ca3af"
-                            />
-                          </View>
-                          <Text className="text-[12px] font-extrabold text-gray-700 text-center">
-                            Secondary photo
-                          </Text>
-                          <Text className="text-[10.5px] text-blue-600 font-bold text-center mt-0.5">
-                            Upgrade to unlock
-                          </Text>
-                        </View>
-                      ) : (
-                        <View className="flex-1 items-center justify-center px-3">
-                          <View className="w-10 h-10 rounded-full bg-blue-50 items-center justify-center mb-2">
-                            <Ionicons
-                              name="add"
-                              size={20}
-                              color="#2563eb"
-                            />
-                          </View>
-                          <Text className="text-[12px] font-semibold text-gray-700 text-center">
-                            {isPrimary ? "Primary photo" : "Secondary photo"}
-                          </Text>
-                          <Text className="text-[10.5px] text-gray-400 text-center mt-0.5">
-                            Tap to upload
-                          </Text>
-                        </View>
-                      )}
-                    </Pressable>
-                  );
-                })}
-              </View>
-              <Text className="text-[11px] text-gray-400 mb-5 ml-1">
-                {canUseSecondaryImage
-                  ? "Square images look best · max 2 photos"
-                  : "Square images look best · upgrade for a second photo"}
-              </Text>
+              {(() => {
+                const slots = Array.from(
+                  { length: MAX_PRODUCT_IMAGES },
+                  (_, i) => i
+                );
+                const filled = slots.filter((i) => !!productImages[i]);
+                const firstEmpty = slots.find((i) => !productImages[i]);
+                const showAddTile =
+                  firstEmpty !== undefined && firstEmpty < allowedImageSlots;
+                const visible = showAddTile
+                  ? [...filled, firstEmpty].sort((a, b) => a - b)
+                  : filled;
+                return (
+                  <View className="flex-row flex-wrap gap-3 mb-1">
+                    {visible.map((slot) => {
+                      const uri = productImages[slot];
+                      const isPrimary = slot === 0;
+                      const isOnlyTile = visible.length === 1;
+                      return (
+                        <Pressable
+                          key={slot}
+                          // Filled tiles magnify; empty tiles open the picker.
+                          onPress={() =>
+                            uri ? setPreviewSlot(slot) : pickImage(slot)
+                          }
+                          className={`${
+                            isOnlyTile ? "w-[47%]" : "w-[30%]"
+                          } aspect-square rounded-2xl overflow-hidden border ${
+                            uri
+                              ? "border-gray-100 bg-white"
+                              : "border-dashed border-gray-200 bg-white"
+                          }`}
+                        >
+                          {uri ? (
+                            <View className="w-full h-full">
+                              <AppImage
+                                uri={uri}
+                                style={{ width: "100%", height: "100%" }}
+                              />
+                              {isPrimary && (
+                                <View className="absolute top-2 left-2 bg-gray-900/85 px-2 py-0.5 rounded-full">
+                                  <Text className="text-[9px] font-extrabold text-white tracking-wide uppercase">
+                                    Cover
+                                  </Text>
+                                </View>
+                              )}
+                              <Pressable
+                                onPress={() => removeImage(slot)}
+                                className="absolute top-2 right-2 bg-white/95 w-7 h-7 rounded-full items-center justify-center"
+                                hitSlop={4}
+                              >
+                                <Ionicons
+                                  name="trash-outline"
+                                  size={14}
+                                  color="#dc2626"
+                                />
+                              </Pressable>
+                            </View>
+                          ) : (
+                            <View className="flex-1 items-center justify-center px-2">
+                              <View className="w-9 h-9 rounded-full bg-blue-50 items-center justify-center mb-1.5">
+                                <Ionicons name="add" size={18} color="#2563eb" />
+                              </View>
+                              <Text className="text-[11px] font-semibold text-gray-700 text-center">
+                                {isPrimary ? "Cover photo" : "Add photo"}
+                              </Text>
+                              <Text className="text-[10px] text-gray-400 text-center mt-0.5">
+                                Tap to upload
+                              </Text>
+                            </View>
+                          )}
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                );
+              })()}
+              {allowedImageSlots >= MAX_PRODUCT_IMAGES ? (
+                <Text className="text-[11px] text-gray-400 mb-5 ml-1">
+                  Add up to {MAX_PRODUCT_IMAGES} photos · square images look
+                  best
+                </Text>
+              ) : (
+                <Text className="text-[11px] text-gray-400 mb-5 ml-1">
+                  Your plan includes {allowedImageSlots}{" "}
+                  {allowedImageSlots === 1 ? "photo" : "photos"} per product ·{" "}
+                  <Text
+                    className="text-blue-600 font-bold"
+                    onPress={() =>
+                      setPaywallFeature(FEATURES.PRODUCTS_SECONDARY_IMAGE)
+                    }
+                  >
+                    upgrade for up to {MAX_PRODUCT_IMAGES}
+                  </Text>
+                </Text>
+              )}
 
               {/* PRODUCT DETAILS */}
               <Text className={SECTION_LABEL}>Product Details</Text>
@@ -1485,632 +1743,41 @@ export default function AddProductModal({
 
               {enableVariants && (
                 <View className="bg-white border border-gray-100 rounded-2xl mt-3 px-4 py-4">
-                  {/* Size / Format / Bottle size / ... named for the trade */}
-                  <Text className={FIELD_LABEL}>{axis.many}</Text>
-                  <View className="flex-row items-center mb-3">
-                    <View className="flex-1 flex-row items-center bg-gray-50 border border-gray-100 rounded-2xl px-4 h-11 mr-2">
-                      <TextInput
-                        value={currentSize}
-                        onChangeText={setCurrentSize}
-                        className="flex-1 text-[14px] text-gray-900 h-full"
-                        placeholder={axis.examples}
-                        placeholderTextColor="#9ca3af"
-                        onSubmitEditing={addSize}
-                        autoCapitalize="characters"
-                      />
-                    </View>
-                    <Pressable
-                      onPress={addSize}
-                      className="bg-gray-900 px-4 h-11 rounded-2xl items-center justify-center"
-                    >
-                      <Text className="text-white font-bold text-[13px]">
-                        Add
-                      </Text>
-                    </Pressable>
-                  </View>
-                  {sizes.length > 0 && (
-                    <View className="flex-row flex-wrap gap-2 mb-2">
-                      {sizes.map((size) => (
-                        <Pressable
-                          key={size}
-                          onPress={() => removeSize(size)}
-                          className="flex-row items-center gap-1.5 bg-violet-50 border border-violet-100 px-3 h-8 rounded-full"
-                        >
-                          <Text className="text-[12px] font-bold text-violet-700">
-                            {size}
-                          </Text>
-                          <Ionicons
-                            name="close-circle"
-                            size={14}
-                            color="#7c3aed"
-                          />
-                        </Pressable>
-                      ))}
-                    </View>
-                  )}
-
-                  <View className="h-px bg-gray-100 my-4" />
-
-                  {/* Colors */}
-                  <Text className={FIELD_LABEL}>Colors</Text>
-
-                  {colors.length > 0 && (
-                    <View className="flex-row flex-wrap gap-2 mb-3">
-                      {colors.map((hex) => {
-                        const light = isLightColor(hex);
-                        return (
-                          <Pressable
-                            key={hex}
-                            onPress={() => removeColor(hex)}
-                            className="relative"
-                          >
-                            <View
-                              className="w-10 h-10 rounded-full"
-                              style={{
-                                backgroundColor: hex,
-                                borderWidth: light ? 1 : 0,
-                                borderColor: "#e5e7eb",
-                              }}
-                            />
-                            <View className="absolute -top-1 -right-1 w-5 h-5 bg-gray-900 rounded-full items-center justify-center">
-                              <Ionicons
-                                name="close"
-                                size={12}
-                                color="white"
-                              />
-                            </View>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  )}
-
-                  <Text className="text-[11px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
-                    Curated palette
-                  </Text>
-                  <View className="flex-row flex-wrap gap-2 mb-3">
-                    {PRESET_COLORS.map((c) => {
-                      const light = isLightColor(c);
-                      const selected = colors.includes(c.toUpperCase());
-                      return (
-                        <Pressable
-                          key={c}
-                          onPress={() => pickPresetColor(c)}
-                          disabled={selected}
-                          style={{
-                            width: 36,
-                            height: 36,
-                            borderRadius: 18,
-                            backgroundColor: c,
-                            borderWidth: light ? 1 : 0,
-                            borderColor: "#e5e7eb",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            opacity: selected ? 0.4 : 1,
-                          }}
-                        >
-                          {selected && (
-                            <Ionicons
-                              name="checkmark"
-                              size={16}
-                              color={light ? "#0f172a" : "white"}
-                            />
-                          )}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-
-                  <Pressable
-                    onPress={openColorPicker}
-                    className="flex-row items-center gap-2 self-start px-3 h-9 rounded-full border-2 border-dashed border-gray-300 active:bg-gray-50"
-                  >
-                    <Ionicons
-                      name="color-palette-outline"
-                      size={14}
-                      color="#374151"
-                    />
-                    <Text className="text-[12.5px] font-bold text-gray-700">
-                      Custom color
-                    </Text>
-                  </Pressable>
-
-                  {/* Per-variant pricing. Stands on its own now: it
-                      used to appear only after a size or color had
-                      been entered above, so vendors never found it
-                      while wondering whether per-size pricing even
-                      existed. The rule form is also where the
-                      combination gets built — pick or type the size,
-                      pick the color, set the price — and anything new
-                      joins the product's own size/color lists, since
-                      otherwise buyers could never pick the thing that
-                      was just priced. */}
-                  <View className="h-px bg-gray-100 my-4" />
-                  <View className="flex-row items-start justify-between mb-1">
-                    <Text className={FIELD_LABEL}>
-                      Price by {axis.lower} or color
-                    </Text>
-                    {variantEntries.length > 0 && (
-                      <Pressable
-                        onPress={() => {
-                          haptic();
-                          setVariantEntries([]);
-                          closeVariantForm();
-                        }}
-                        hitSlop={6}
-                      >
-                        <Text className="text-[11.5px] font-bold text-blue-600">
-                          Clear all
-                        </Text>
-                      </Pressable>
-                    )}
-                  </View>
+                  <Text className={FIELD_LABEL}>Options</Text>
                   <Text className="text-[11.5px] text-gray-500 leading-[16px] mb-3">
-                    Optional. Everything sells at your base price of{" "}
-                    <Text className="font-bold text-gray-700">
-                      ₦{price ? Number(price).toLocaleString() : "\u2014"}
-                    </Text>{" "}
-                    unless you add a rule. Use one when a {axis.lower} or color
-                    costs more or less, or to count stock for that exact
-                    combination.
+                    What customers choose on this product. Set what each one
+                    costs, and how many you have, in Variant pricing below.
                   </Text>
 
-                  {/* Worked example, only while there's nothing to look at */}
-                  {variantEntries.length === 0 && !variantForm && (
-                    <View className="bg-gray-50 border border-gray-100 rounded-2xl px-3.5 py-3 mb-3">
-                      <Text className="text-[10.5px] font-bold text-gray-400 uppercase tracking-[1px] mb-1">
-                        Example
-                      </Text>
-                      <Text className="text-[12px] text-gray-600 leading-[17px]">
-                        Base price {price ? `₦${Number(price).toLocaleString()}` : "₦5,000"}.
-                        Add a rule for {axis.sample} at{" "}
-                        {price
-                          ? `₦${(Number(price) + 1500).toLocaleString()}`
-                          : "₦6,500"}{" "}
-                        and anyone who picks {axis.sample} pays that instead.
-                        Every other {axis.lower} keeps the base price.
+                  <VariantTypeBuilder
+                    value={variantTypes}
+                    onChange={setVariantTypes}
+                    presetColors={PRESET_COLORS}
+                    onRequestCustomColour={requestCustomColour}
+                  />
+
+                  {/* Per-choice and per-pairing pricing and stock. Always
+                      rendered: when there's no usable option type yet it
+                      says what it's waiting for rather than vanishing,
+                      which is indistinguishable from being broken. */}
+                  <VariantPricingTable
+                    types={variantTypes}
+                    basePrice={Number(price || 0) || 0}
+                    value={combinations}
+                    onChange={setCombinations}
+                  />
+
+                  {!usesNewVariantSystem && variantEntries.length > 0 && (
+                    <View className="bg-gray-50 rounded-xl px-3 py-2 mt-2.5">
+                      <Text className="text-[11.5px] text-gray-600 leading-[16px]">
+                        This product has {variantEntries.length} price rule
+                        {variantEntries.length === 1 ? "" : "s"} from the older
+                        size-and-colour grid. Saving here carries them into
+                        Variant pricing above, so nothing is lost.
                       </Text>
                     </View>
                   )}
 
-                  {/* Existing rules */}
-                  {variantEntries.length > 0 && (
-                    <View className="bg-white border border-gray-100 rounded-2xl overflow-hidden mb-3">
-                      {variantEntries.map((entry, idx) => {
-                        const isLast = idx === variantEntries.length - 1;
-                        const swatchLight =
-                          entry.color && isLightColor(entry.color);
-                        // A rule can outlive the size/color it names if
-                        // the vendor deletes it above. It gets dropped at
-                        // save, so say so rather than letting it look
-                        // active.
-                        const stale =
-                          (!!entry.size && !sizes.includes(entry.size)) ||
-                          (!!entry.color &&
-                            !colors.some(
-                              (c) =>
-                                c.toLowerCase() === entry.color!.toLowerCase()
-                            ));
-                        return (
-                          <Pressable
-                            key={`${entry.size ?? ""}||${entry.color ?? ""}||${idx}`}
-                            onPress={() => openVariantForm(idx)}
-                            className={`flex-row items-center px-3 py-3 ${
-                              isLast ? "" : "border-b border-gray-100"
-                            } active:bg-gray-50`}
-                          >
-                            <View className="flex-1 min-w-0">
-                              <View className="flex-row items-center gap-1.5">
-                                {entry.size ? (
-                                  <View className="bg-violet-50 border border-violet-100 rounded-md px-2 py-0.5">
-                                    <Text className="text-[12px] font-extrabold text-violet-700">
-                                      {entry.size}
-                                    </Text>
-                                  </View>
-                                ) : (
-                                  <Text className="text-[12.5px] font-semibold text-gray-500">
-                                    Any {axis.lower}
-                                  </Text>
-                                )}
-                                <Text className="text-[11px] text-gray-300">
-                                  {"\u00b7"}
-                                </Text>
-                                {entry.color ? (
-                                  <View
-                                    className="w-6 h-6 rounded-full"
-                                    style={{
-                                      backgroundColor: entry.color,
-                                      borderWidth: swatchLight ? 1 : 0,
-                                      borderColor: "#e5e7eb",
-                                    }}
-                                  />
-                                ) : (
-                                  <Text className="text-[12.5px] font-semibold text-gray-500">
-                                    Any color
-                                  </Text>
-                                )}
-                              </View>
-                              {stale && (
-                                <Text className="text-[11px] font-semibold text-amber-700 mt-0.5">
-                                  No longer on this product. Tap to fix
-                                </Text>
-                              )}
-                            </View>
-                            <View className="items-end mr-3">
-                              <Text className="text-[13.5px] font-extrabold text-gray-900">
-                                ₦{entry.price ? Number(entry.price).toLocaleString() : "\u2014"}
-                              </Text>
-                              {!!(entry.stock ?? "") && (
-                                <Text
-                                  className={`text-[11px] font-semibold ${
-                                    Number(entry.stock) === 0
-                                      ? "text-rose-600"
-                                      : "text-gray-500"
-                                  }`}
-                                >
-                                  {Number(entry.stock) === 0
-                                    ? "Sold out"
-                                    : `${Number(entry.stock).toLocaleString()} left`}
-                                </Text>
-                              )}
-                            </View>
-                            <Pressable
-                              onPress={() => deleteVariantEntry(idx)}
-                              hitSlop={6}
-                              className="w-7 h-7 rounded-full bg-white border border-gray-200 items-center justify-center"
-                            >
-                              <Ionicons name="close" size={12} color="#6b7280" />
-                            </Pressable>
-                          </Pressable>
-                        );
-                      })}
-                    </View>
-                  )}
-
-                  {/* Add / edit form — three numbered steps so the
-                      shape of a rule is never something to infer. */}
-                  {variantForm ? (
-                    <View className="bg-white border-2 border-blue-200 rounded-2xl p-4">
-                      <View className="flex-row items-center justify-between mb-3">
-                        <Text className="text-[13px] font-extrabold text-gray-900">
-                          {variantForm.index === -1
-                            ? "New price rule"
-                            : "Edit price rule"}
-                        </Text>
-                        <Pressable
-                          onPress={closeVariantForm}
-                          hitSlop={6}
-                          className="w-7 h-7 rounded-full bg-gray-50 items-center justify-center"
-                        >
-                          <Ionicons name="close" size={14} color="#6b7280" />
-                        </Pressable>
-                      </View>
-
-                      <VariantStep
-                        n={1}
-                        text={`Which ${axis.lower} does this price apply to?`}
-                      />
-                      <View className="flex-row flex-wrap items-center gap-2 mb-4">
-                        <VariantChip
-                          label={`Any ${axis.lower}`}
-                          selected={!variantForm.size}
-                          onPress={() => {
-                            haptic();
-                            setVariantForm((prev) =>
-                              prev ? { ...prev, size: null } : prev
-                            );
-                          }}
-                        />
-                        {sizes.map((s) => (
-                          <VariantChip
-                            key={s}
-                            label={s}
-                            selected={variantForm.size === s}
-                            onPress={() => {
-                              haptic();
-                              setVariantForm((prev) =>
-                                prev ? { ...prev, size: s } : prev
-                              );
-                            }}
-                          />
-                        ))}
-                        <View className="flex-row items-center gap-1">
-                          <TextInput
-                            value={variantSizeDraft}
-                            onChangeText={(t) =>
-                              setVariantSizeDraft(t.toUpperCase())
-                            }
-                            onSubmitEditing={commitVariantSizeDraft}
-                            placeholder={`Add ${axis.lower}`}
-                            placeholderTextColor="#9ca3af"
-                            autoCapitalize="characters"
-                            returnKeyType="done"
-                            className="w-[104px] h-9 rounded-full border border-dashed border-gray-300 bg-white px-3 text-[13px] font-bold text-gray-900"
-                          />
-                          {variantSizeDraft.trim().length > 0 && (
-                            <Pressable
-                              onPress={commitVariantSizeDraft}
-                              className="w-9 h-9 rounded-full bg-gray-900 items-center justify-center"
-                            >
-                              <Ionicons
-                                name="checkmark"
-                                size={16}
-                                color="white"
-                              />
-                            </Pressable>
-                          )}
-                        </View>
-                      </View>
-
-                      <VariantStep
-                        n={2}
-                        text="Which color does this price apply to?"
-                      />
-                      <View className="flex-row flex-wrap items-center gap-2 mb-4">
-                        <VariantChip
-                          label="Any color"
-                          selected={!variantForm.color}
-                          onPress={() => {
-                            haptic();
-                            setVariantForm((prev) =>
-                              prev ? { ...prev, color: null } : prev
-                            );
-                          }}
-                        />
-                        {colors.map((c) => {
-                          const light = isLightColor(c);
-                          const selected =
-                            variantForm.color?.toLowerCase() ===
-                            c.toLowerCase();
-                          return (
-                            <Pressable
-                              key={c}
-                              onPress={() => {
-                                haptic();
-                                setVariantForm((prev) =>
-                                  prev ? { ...prev, color: c } : prev
-                                );
-                              }}
-                              style={{
-                                width: 36,
-                                height: 36,
-                                borderRadius: 18,
-                                backgroundColor: c,
-                                borderWidth: selected ? 3 : light ? 1 : 0,
-                                borderColor: selected ? "#2563eb" : "#e5e7eb",
-                                alignItems: "center",
-                                justifyContent: "center",
-                              }}
-                            >
-                              {selected && (
-                                <Ionicons
-                                  name="checkmark"
-                                  size={16}
-                                  color={light ? "#0f172a" : "white"}
-                                />
-                              )}
-                            </Pressable>
-                          );
-                        })}
-                        <Pressable
-                          onPress={() => {
-                            haptic();
-                            setVariantPaletteOpen((prev) => !prev);
-                          }}
-                          className={`flex-row items-center gap-1 h-9 px-3 rounded-full border border-dashed ${
-                            variantPaletteOpen
-                              ? "border-blue-400 bg-blue-50"
-                              : "border-gray-300 bg-white"
-                          }`}
-                        >
-                          <Ionicons
-                            name="add"
-                            size={14}
-                            color={variantPaletteOpen ? "#1d4ed8" : "#374151"}
-                          />
-                          <Text
-                            className={`text-[12.5px] font-bold ${
-                              variantPaletteOpen
-                                ? "text-blue-700"
-                                : "text-gray-700"
-                            }`}
-                          >
-                            Color
-                          </Text>
-                        </Pressable>
-                      </View>
-
-                      {variantPaletteOpen && (
-                        <View className="bg-gray-50 border border-gray-100 rounded-2xl p-3 mb-4">
-                          <Text className="text-[10.5px] font-bold text-gray-400 uppercase tracking-[1px] mb-2">
-                            Tap a color to use it
-                          </Text>
-                          <View className="flex-row flex-wrap gap-2">
-                            {PRESET_COLORS.map((c) => {
-                              const light = isLightColor(c);
-                              const selected =
-                                variantForm.color?.toUpperCase() ===
-                                c.toUpperCase();
-                              return (
-                                <Pressable
-                                  key={c}
-                                  onPress={() => pickVariantColor(c)}
-                                  style={{
-                                    width: 36,
-                                    height: 36,
-                                    borderRadius: 18,
-                                    backgroundColor: c,
-                                    borderWidth: selected ? 3 : light ? 1 : 0,
-                                    borderColor: selected
-                                      ? "#2563eb"
-                                      : "#e5e7eb",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                  }}
-                                >
-                                  {selected && (
-                                    <Ionicons
-                                      name="checkmark"
-                                      size={16}
-                                      color={light ? "#0f172a" : "white"}
-                                    />
-                                  )}
-                                </Pressable>
-                              );
-                            })}
-                          </View>
-                          <Text className="text-[11px] text-gray-500 mt-2 leading-[15px]">
-                            New colors are added to this product automatically,
-                            so customers can pick them.
-                          </Text>
-                        </View>
-                      )}
-
-                      <VariantStep
-                        n={3}
-                        text={`What should this ${axis.lower} cost, and how many are left?`}
-                      />
-                      <Text className="text-[10.5px] font-bold text-gray-500 uppercase tracking-[0.6px] mb-1">
-                        Price
-                      </Text>
-                      <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-3 h-12 mb-3">
-                        <Text className="text-[14px] font-bold text-gray-500 mr-1">
-                          ₦
-                        </Text>
-                        <TextInput
-                          value={variantForm.price}
-                          onChangeText={(t) =>
-                            setVariantForm((prev) =>
-                              prev
-                                ? { ...prev, price: t.replace(/[^0-9]/g, "") }
-                                : prev
-                            )
-                          }
-                          placeholder={
-                            price ? Number(price).toLocaleString() : "0"
-                          }
-                          placeholderTextColor="#cbd5e1"
-                          className="flex-1 text-[14px] font-semibold text-gray-900 h-full"
-                          keyboardType="number-pad"
-                        />
-                      </View>
-
-                      <Text className="text-[10.5px] font-bold text-gray-500 uppercase tracking-[0.6px] mb-1">
-                        In stock
-                      </Text>
-                      <View className="flex-row items-center bg-white border border-gray-200 rounded-xl px-3 h-12 mb-2">
-                        <TextInput
-                          value={variantForm.stock ?? ""}
-                          onChangeText={(t) =>
-                            setVariantForm((prev) =>
-                              prev
-                                ? { ...prev, stock: t.replace(/[^0-9]/g, "") }
-                                : prev
-                            )
-                          }
-                          placeholder="Leave empty"
-                          placeholderTextColor="#cbd5e1"
-                          className="flex-1 text-[14px] font-semibold text-gray-900 h-full"
-                          keyboardType="number-pad"
-                        />
-                      </View>
-                      <Text className="text-[11px] text-gray-500 leading-[15px] mb-3">
-                        Leave stock empty to keep counting this one against the
-                        product's overall stock. Set it to 0 to mark just this
-                        combination sold out.
-                      </Text>
-
-                      {/* Plain-English read-back of the rule */}
-                      {!variantForm.size && !variantForm.color ? (
-                        <View className="bg-amber-50 rounded-xl px-3 py-2.5">
-                          <Text className="text-[12px] font-semibold text-amber-800 leading-[17px]">
-                            Choose a {axis.lower}, a color, or both. A rule for
-                            any {axis.lower} and any color would just be your
-                            base price.
-                          </Text>
-                        </View>
-                      ) : (
-                        <View className="flex-row items-center gap-2 bg-blue-50 rounded-xl px-3 py-2.5">
-                          {variantForm.color && (
-                            <View
-                              className="w-4 h-4 rounded-full"
-                              style={{
-                                backgroundColor: variantForm.color,
-                                borderWidth: isLightColor(variantForm.color)
-                                  ? 1
-                                  : 0,
-                                borderColor: "#bfdbfe",
-                              }}
-                            />
-                          )}
-                          <Text className="flex-1 text-[12px] text-blue-900 leading-[17px]">
-                            Customers who choose{" "}
-                            <Text className="font-bold">
-                              {variantForm.size && variantForm.color
-                                ? `${variantForm.size} in this color`
-                                : variantForm.size
-                                ? `${variantForm.size}, in any color`
-                                : `this color, in any ${axis.lower}`}
-                            </Text>{" "}
-                            pay{" "}
-                            <Text className="font-bold">
-                              {variantForm.price
-                                ? `₦${Number(variantForm.price).toLocaleString()}`
-                                : "this price"}
-                            </Text>
-                            .
-                            {!!(variantForm.stock ?? "") &&
-                              (Number(variantForm.stock) === 0 ? (
-                                <Text className="font-bold">
-                                  {" "}
-                                  This one shows as sold out.
-                                </Text>
-                              ) : (
-                                <Text>
-                                  {" "}
-                                  You have{" "}
-                                  <Text className="font-bold">
-                                    {Number(variantForm.stock)}
-                                  </Text>{" "}
-                                  of them.
-                                </Text>
-                              ))}
-                          </Text>
-                        </View>
-                      )}
-
-                      <View className="flex-row gap-2 mt-3">
-                        <Pressable
-                          onPress={closeVariantForm}
-                          className="flex-1 h-11 rounded-xl border border-gray-200 bg-white items-center justify-center"
-                        >
-                          <Text className="text-[13px] font-extrabold text-gray-700">
-                            Cancel
-                          </Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={saveVariantForm}
-                          className="flex-1 h-11 rounded-xl bg-blue-600 items-center justify-center"
-                        >
-                          <Text className="text-[13px] font-extrabold text-white">
-                            {variantForm.index === -1 ? "Add rule" : "Save rule"}
-                          </Text>
-                        </Pressable>
-                      </View>
-                    </View>
-                  ) : (
-                    <Pressable
-                      onPress={() => openVariantForm(-1)}
-                      className="flex-row items-center justify-center gap-2 h-11 rounded-2xl border-2 border-dashed border-gray-300 bg-white active:bg-gray-50"
-                    >
-                      <Ionicons name="add" size={16} color="#374151" />
-                      <Text className="text-[13px] font-extrabold text-gray-700">
-                        {variantEntries.length === 0
-                          ? "Add a price rule"
-                          : "Add another price rule"}
-                      </Text>
-                    </Pressable>
-                  )}
                 </View>
               )}
 
@@ -2481,7 +2148,10 @@ export default function AddProductModal({
           >
             <Pressable
               className="absolute inset-0 bg-black/60"
-              onPress={() => setShowColorPicker(false)}
+              onPress={() => {
+                setColourTarget(null);
+                setShowColorPicker(false);
+              }}
             />
             <View className="flex-1 justify-center px-6">
               <View
@@ -2499,7 +2169,10 @@ export default function AddProductModal({
                     Pick a color
                   </Text>
                   <Pressable
-                    onPress={() => setShowColorPicker(false)}
+                    onPress={() => {
+                setColourTarget(null);
+                setShowColorPicker(false);
+              }}
                     className="w-9 h-9 rounded-full bg-gray-100 items-center justify-center"
                     hitSlop={6}
                   >
@@ -2556,7 +2229,10 @@ export default function AddProductModal({
 
                 <View className="flex-row items-center px-5 pb-5 pt-2 gap-3">
                   <Pressable
-                    onPress={() => setShowColorPicker(false)}
+                    onPress={() => {
+                setColourTarget(null);
+                setShowColorPicker(false);
+              }}
                     className="flex-1 h-12 rounded-2xl border border-gray-200 items-center justify-center"
                   >
                     <Text className="text-gray-900 font-semibold text-[15px]">
@@ -2589,6 +2265,119 @@ export default function AddProductModal({
           feature={paywallFeature}
           onUpgrade={onClose}
         />
+
+        {/* Full-screen magnified photo preview. Nested Modal so it
+            overlays the page-sheet; chevrons walk through every filled
+            photo, and Replace/Remove act on the slot being viewed. */}
+        <Modal
+          visible={previewSlot != null}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setPreviewSlot(null)}
+        >
+          {previewSlot != null &&
+            (() => {
+              const filledSlots = Array.from(
+                { length: MAX_PRODUCT_IMAGES },
+                (_, i) => i
+              ).filter((i) => !!productImages[i]);
+              const position = filledSlots.indexOf(previewSlot);
+              const uri = productImages[previewSlot];
+              if (position === -1 || !uri) return null;
+              const prevSlot =
+                filledSlots[
+                  (position - 1 + filledSlots.length) % filledSlots.length
+                ];
+              const nextSlot = filledSlots[(position + 1) % filledSlots.length];
+              return (
+                <View className="flex-1 bg-black/95">
+                  <SafeAreaView className="flex-1">
+                    {/* Top bar */}
+                    <View className="flex-row items-center justify-between px-5 pt-2">
+                      <Text className="text-white/80 text-[13px] font-bold tabular-nums">
+                        {position + 1} / {filledSlots.length}
+                      </Text>
+                      <Pressable
+                        onPress={() => setPreviewSlot(null)}
+                        className="w-9 h-9 rounded-full bg-white/15 items-center justify-center"
+                        hitSlop={6}
+                      >
+                        <Ionicons name="close" size={18} color="#ffffff" />
+                      </Pressable>
+                    </View>
+
+                    {/* Photo */}
+                    <View className="flex-1 items-center justify-center px-4">
+                      <AppImage
+                        uri={uri}
+                        contentFit="contain"
+                        style={{ width: "100%", height: "100%" }}
+                      />
+                      {filledSlots.length > 1 && (
+                        <>
+                          <Pressable
+                            onPress={() => setPreviewSlot(prevSlot)}
+                            className="absolute left-3 w-10 h-10 rounded-full bg-white/15 items-center justify-center"
+                            hitSlop={6}
+                          >
+                            <Ionicons
+                              name="chevron-back"
+                              size={20}
+                              color="#ffffff"
+                            />
+                          </Pressable>
+                          <Pressable
+                            onPress={() => setPreviewSlot(nextSlot)}
+                            className="absolute right-3 w-10 h-10 rounded-full bg-white/15 items-center justify-center"
+                            hitSlop={6}
+                          >
+                            <Ionicons
+                              name="chevron-forward"
+                              size={20}
+                              color="#ffffff"
+                            />
+                          </Pressable>
+                        </>
+                      )}
+                    </View>
+
+                    {/* Actions */}
+                    <View className="flex-row gap-3 px-5 pb-4">
+                      <Pressable
+                        onPress={() => {
+                          const slot = previewSlot;
+                          setPreviewSlot(null);
+                          pickImage(slot);
+                        }}
+                        className="flex-1 h-12 rounded-2xl bg-white/15 items-center justify-center flex-row gap-2"
+                      >
+                        <Ionicons
+                          name="swap-horizontal"
+                          size={16}
+                          color="#ffffff"
+                        />
+                        <Text className="text-white font-bold text-[14px]">
+                          Replace
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => {
+                          removeImage(previewSlot);
+                          setPreviewSlot(null);
+                        }}
+                        className="flex-1 h-12 rounded-2xl bg-rose-600/90 items-center justify-center flex-row gap-2"
+                      >
+                        <Ionicons name="trash-outline" size={16} color="#ffffff" />
+                        <Text className="text-white font-bold text-[14px]">
+                          Remove
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </SafeAreaView>
+                </View>
+              );
+            })()}
+        </Modal>
 
         <SelectionDrawer
           visible={categoryPickerOpen}

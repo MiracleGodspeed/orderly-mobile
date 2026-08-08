@@ -120,7 +120,7 @@ export function SubscriptionStatusBanner() {
   // Phase derivation. The 5-day expiring window is a soft heads-up; the
   // grace and expired phases are non-negotiable — vendors must see them.
   let phase: "expiring" | "grace" | "expired";
-  console.log(sub, "daays")
+  // console.log(sub, "daays")
   if (days > 5) {
     return null; // healthy active sub — no banner needed
   } else if (days > 0) {
@@ -160,7 +160,7 @@ export function SubscriptionStatusBanner() {
   // Android routes to the in-app Paystack flow. iOS has no CTA at
   // all — the banner becomes purely informational and vendors must
   // navigate to More themselves, where "Manage account" (web,
-  // Paystack via handoff) is psychologically prominent and "Billing"
+  // Paystack via handoff) is psychologically prominent and the IAP row
   // (IAP) reads as admin chrome. This shape minimises IAP volume
   // without crossing Apple's 3.1.1 anti-steering line — the most
   // visible payment-urgency CTA on Home simply doesn't exist on iOS,

@@ -105,6 +105,10 @@ export function useFeatures() {
     // generation via the response headers parsed in
     // `generateProductDescription`.
     aiDescriptionCreditsPerDay: effective?.aiDescriptionCreditsPerDay ?? null,
+    // Max images per product on the active plan. null = plan doesn't
+    // set it (callers fall back to the PRODUCTS_SECONDARY_IMAGE key),
+    // positive int = slot cap, sentinel-large value (trial) = all slots.
+    imagesPerProduct: effective?.imagesPerProduct ?? null,
     // `isLoading` only stays true until either the cache hydrates or the
     // network responds — gives screens a way to suppress paywall sheets
     // during the first render so they don't open against a stale state.

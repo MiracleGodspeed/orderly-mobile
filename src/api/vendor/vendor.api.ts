@@ -606,6 +606,32 @@ function appendVariantPrices(
   });
 }
 
+/** Platform ceiling on image slots per product — mirrors the API's
+ *  MultipleImageUploadDto.MaxSlots. Plans can cap lower via the
+ *  `imagesPerProduct` feature (server-enforced either way). */
+export const MAX_PRODUCT_IMAGES = 5;
+
+// Appends every occupied image slot as a multipart file part, and a
+// RemoveImageN flag for slots the vendor explicitly cleared on edit.
+// A fresh upload for a slot always supersedes its removal flag.
+function appendImageSlots(
+  formData: FormData,
+  payload: import("./vendor.types").CreateProductPayload
+) {
+  for (let i = 1; i <= MAX_PRODUCT_IMAGES; i++) {
+    const file = (payload as Record<string, any>)[`imageFile${i}`];
+    if (file?.uri) {
+      formData.append(`ImageFile${i}`, {
+        uri: file.uri,
+        name: `image${i}.jpg`,
+        type: "image/jpeg",
+      } as any);
+    } else if ((payload as Record<string, any>)[`removeImage${i}`]) {
+      formData.append(`RemoveImage${i}`, "true");
+    }
+  }
+}
+
 /**
  * Uploads a local image (a file URI from expo-image-picker) to Cloudinary
  * via the backend and returns the hosted URL.
@@ -694,21 +720,7 @@ export const createProduct = async (
   }
 
   // Images
-  if (payload.imageFile1) {
-    formData.append("ImageFile1", {
-      uri: payload.imageFile1.uri,
-      name: "image1.jpg",
-      type: "image/jpeg",
-    } as any);
-  }
-
-  if (payload.imageFile2) {
-    formData.append("ImageFile2", {
-      uri: payload.imageFile2.uri,
-      name: "image2.jpg",
-      type: "image/jpeg",
-    } as any);
-  }
+  appendImageSlots(formData, payload);
 
   const response = await apiClient.post(
     "/catalog/create-catalog-item",
@@ -775,21 +787,7 @@ export const updateProduct = async (
     );
   }
 
-  if (payload.imageFile1) {
-    formData.append("ImageFile1", {
-      uri: payload.imageFile1.uri,
-      name: "image1.jpg",
-      type: "image/jpeg",
-    } as any);
-  }
-
-  if (payload.imageFile2) {
-    formData.append("ImageFile2", {
-      uri: payload.imageFile2.uri,
-      name: "image2.jpg",
-      type: "image/jpeg",
-    } as any);
-  }
+  appendImageSlots(formData, payload);
 
   const response = await apiClient.post(
     `/catalog/update-catalog-item?catalogItemId=${productId}`,
@@ -1337,6 +1335,11 @@ export interface MyFeaturesData {
    *  is NOT here — it's surfaced separately on each generation
    *  attempt via the `X-RateLimit-Remaining` response header. */
   aiDescriptionCreditsPerDay: number | null;
+  /** Max images per product on the active plan. null = the plan doesn't
+   *  set it (fall back to the PRODUCTS_SECONDARY_IMAGE key: granted =
+   *  all 5 slots, absent = cover only), positive integer = slot cap,
+   *  sentinel-large value (trial) = all slots. */
+  imagesPerProduct?: number | null;
 }
 
 export const getMyFeatures = async (): Promise<MyFeaturesData> => {

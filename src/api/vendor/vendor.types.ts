@@ -165,12 +165,22 @@ export interface Product {
   status: number | string;
   image: string | null;
   image2: string | null;
+  image3?: string | null;
+  image4?: string | null;
+  image5?: string | null;
   lastSold: string | null;
   trending: boolean | null;
   badge: string;
   features: string[];
   colourOptions: string[];
   sizeOptions: string[];
+  /** True once this product moved to the vendor's own named option
+   *  types. False (and absent on older API builds) means it's still on
+   *  the classic Size/Colour lists above, which are unchanged. */
+  usesVariantTypes?: boolean;
+  /** True when at least one of its options costs extra, so the price
+   *  reads "From ₦25,000" rather than a base the customer can't pay. */
+  hasPricedOptions?: boolean;
   /** Optional per-variant price/stock overrides. Empty means the base
    *  `price` applies to every combination. */
   variantPrices?: VariantPrice[] | null;
@@ -179,6 +189,9 @@ export interface Product {
   isAvailable: boolean;
   imageFile1: any | null;
   imageFile2: any | null;
+  imageFile3?: any | null;
+  imageFile4?: any | null;
+  imageFile5?: any | null;
   createdAt: string;
 }
 
@@ -216,12 +229,45 @@ export interface CreateProductPayload {
   variantPrices?: VariantPrice[];
   imageFile1?: any;
   imageFile2?: any;
+  imageFile3?: any;
+  imageFile4?: any;
+  imageFile5?: any;
+  /** Edit-only: ask the server to drop the saved photo in slot i.
+   *  A fresh upload for the same slot supersedes removal. */
+  removeImage1?: boolean;
+  removeImage2?: boolean;
+  removeImage3?: boolean;
+  removeImage4?: boolean;
+  removeImage5?: boolean;
 }
 
 export interface UpdateProductPayload extends CreateProductPayload {
   id: string;
 }
 
+
+/** One captured answer, as stored on the order.
+ *
+ *  Label and field type are SNAPSHOTS taken at order time, not a join
+ *  back to the live question. That is what lets a vendor rename or
+ *  delete a question without blanking out the orders that already
+ *  answered it. */
+export type OrderAnswer = {
+  label: string;
+  fieldType: string;
+  value?: string | null;
+  sortOrder: number;
+  /** Null for answers about the whole order; set for answers belonging
+   *  to one line. */
+  orderRequestId?: string | null;
+};
+
+/** One vendor-defined option the customer picked, snapshotted. */
+export type OrderSelectedOption = {
+  type: string;
+  value: string;
+  delta: number;
+};
 
 export type CatalogItem = {
   id: string;
@@ -231,6 +277,13 @@ export type CatalogItem = {
   color: string;
   size: string;
   quantity: number;
+  orderRequestId?: string;
+  /** Vendor-defined options for this line. Populated instead of
+   *  color/size on products using the new option system — a product is
+   *  on one or the other, never both. */
+  selectedOptions?: OrderSelectedOption[];
+  /** Answers to the per-product questions for this line. */
+  answers?: OrderAnswer[];
 };
 
 /** Sales channel attribution for an order. Empty/null when the order
@@ -288,6 +341,14 @@ export type Order = {
   /** True when the vendor logged this order from the dashboard
    *  rather than it arriving via the storefront. */
   isManualEntry?: boolean;
+  /** Answers to the vendor's checkout questions. Order-scope entries
+   *  have no orderRequestId; per-item ones are also nested on their
+   *  line above. */
+  answers?: OrderAnswer[];
+  /** Free text the customer left in the "Anything else?" box. Distinct
+   *  from the vendor's own private note on an offline order, which
+   *  lives on the payment. */
+  customerNote?: string | null;
 };
 
 export interface LogOfflineOrderRequest {

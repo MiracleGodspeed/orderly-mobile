@@ -52,14 +52,16 @@ export default function ProductDetailsModal({
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [activeImage, setActiveImage] = useState(0);
 
-  // Pull every non-empty image off the product. Future-proof: if more image
-  // slots get added (image3, image4...), tack them in here and the carousel
-  // will pick them up automatically.
+  // Pull every non-empty image off the product.
   const images = useMemo(() => {
     if (!product) return [];
-    return [product.image, product.image2].filter(
-      (s): s is string => !!s && s.length > 0
-    );
+    return [
+      product.image,
+      product.image2,
+      product.image3,
+      product.image4,
+      product.image5,
+    ].filter((s): s is string => !!s && s.length > 0);
   }, [product]);
 
   if (!product) return null;

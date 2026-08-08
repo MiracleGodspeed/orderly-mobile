@@ -96,6 +96,12 @@ export type RootStackParamList = {
   Reviews: undefined;
   /** Coupon/discount code management. Plan-gated on discounts.codes. */
   Discounts: undefined;
+  /** The vendor's own order questions — event date, message on the
+   *  cake, measurements. Deliberately NOT plan-gated at the nav level:
+   *  a downgraded vendor's questions are still live on their storefront
+   *  and still collecting, so the screen has to stay reachable and show
+   *  them read-only. */
+  OrderQuestions: undefined;
   DeleteAccount: undefined;
   // With `edit` set, the LogOrder screen opens in edit mode, prefilled
   // from an existing manually-entered offline order.

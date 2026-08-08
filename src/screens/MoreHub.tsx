@@ -240,6 +240,22 @@ export default function MoreHub() {
                 locked: !canUseDiscounts,
                 paywallFeature: FEATURES.DISCOUNT_CODES,
               },
+              {
+                id: "order-questions",
+                icon: "clipboard-outline" as IoniconName,
+                tint: "#ede9fe",
+                iconColor: "#7c3aed",
+                title: "Order questions",
+                subtitle: "Ask for an event date, a message, measurements",
+                // Deliberately never locked. A downgraded vendor's
+                // questions are still live on their storefront and still
+                // collecting answers, so the screen has to stay
+                // reachable — it shows them read-only with an upgrade
+                // note. Padlocking it would hide a running part of their
+                // shop from them.
+                screen: "OrderQuestions" as keyof RootStackParamList,
+                locked: false,
+              },
             ],
           },
           {
@@ -287,17 +303,31 @@ export default function MoreHub() {
                     },
                   ]
                 : []),
-              // Title is deliberately spare ("Billing", not
-              // "Subscription & billing") so vendors scanning the
-              // hub read it as administrative chrome and gravitate
-              // to "Manage account" above instead — the web path
-              // sidesteps Apple's 15–30% IAP fee and works for the
-              // majority of vendors who don't have an Apple-linked
-              // card. IAP remains discoverable for vendors who need
-              // it via the icon + subtitle. Apple's reviewer still
-              // finds the IAP path here — the App Review notes
-              // must point at "More → Billing → Manage plan", NOT
-              // the old "Subscription & billing" label.
+              // On iOS the row is named for exactly what it is: an
+              // App Store subscription. That is Apple's own term for
+              // the mechanism, so it is referential and accurate
+              // rather than an invented label, and it avoids using
+              // the "Apple" word mark on its own.
+              //
+              // Naming it plainly does two things at once. It makes
+              // IAP MORE discoverable to a reviewer, not less — no
+              // one can argue the in-app purchase path was hidden or
+              // disguised when the row says what it is. And a vendor
+              // who has already decided Apple's billing terms don't
+              // suit them routes themselves to "Manage account"
+              // above. That is self-selection on accurate
+              // information, which is the most defensible nudge
+              // available: no price comparison, no disparagement of
+              // IAP, no call to action pointing anywhere else.
+              //
+              // App Review notes must point at "More → Billing →
+              // App Store subscription → Manage plan". Update them
+              // before the next BINARY submission — this label ships
+              // over the air, but the next native build is reviewed
+              // against whatever is in the bundle at that point.
+              //
+              // Android keeps "Billing": there is no App Store there
+              // and no IAP/web tension to navigate.
               //
               // On iOS the subtitle is deliberately understated
               // ("Plan & receipts") — no future-tense hook like
@@ -318,7 +348,8 @@ export default function MoreHub() {
                 icon: "card-outline" as IoniconName,
                 tint: "#ede9fe",
                 iconColor: "#7c3aed",
-                title: "Billing",
+                title:
+                  Platform.OS === "ios" ? "App Store subscription" : "Billing",
                 subtitle:
                   Platform.OS === "ios"
                     ? "Plan & receipts"

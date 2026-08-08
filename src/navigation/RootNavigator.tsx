@@ -56,6 +56,7 @@ import Customers from '../screens/Customers';
 import Newsletter from '../screens/Newsletter';
 import Reviews from '../screens/Reviews';
 import Discounts from '../screens/Discounts';
+import OrderQuestions from '../screens/OrderQuestions';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -169,6 +170,7 @@ export default function RootNavigator() {
         <Stack.Screen name="Newsletter" component={Newsletter} />
         <Stack.Screen name="Reviews" component={Reviews} />
         <Stack.Screen name="Discounts" component={Discounts} />
+        <Stack.Screen name="OrderQuestions" component={OrderQuestions} />
         <Stack.Screen 
   name="SubscriptionFlow" 
   component={SubscriptionFlowScreen} 
